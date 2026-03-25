@@ -97,6 +97,7 @@ export default function LoginPage() {
       <div
         className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center overflow-hidden"
         style={{
+          height: "100vh",
           backgroundColor: "#0f1923",
           backgroundImage: `url(${LOGIN_BG})`,
           backgroundSize: "cover",

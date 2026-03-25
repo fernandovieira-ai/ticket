@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 
+// Remove characters that cannot be represented in LATIN1 (code point > 255).
+// Necessary because the PostgreSQL instance uses LATIN1 encoding.
+function san(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[^\x00-\xFF]/g, "");
+}
+
 // Evolution API sends webhook events to this endpoint
 // Configure in Evolution API: webhookUrl = https://yourdomain.com/api/whatsapp/webhook
 export async function POST(req: NextRequest) {
@@ -86,13 +94,14 @@ async function processarMensagemEntrada(
   if (!remoteJid || remoteJid.endsWith("@g.us")) return; // Groups are handled by processarMensagemGrupo
 
   const numero = remoteJid.replace("@s.whatsapp.net", "").replace(/\D/g, "");
-  const pushName = (msg.pushName as string) ?? null;
+  const pushName = san((msg.pushName as string) ?? null);
 
   const message = msg.message as Record<string, unknown> | undefined;
-  const texto =
+  const textoRaw =
     (message?.conversation as string) ??
     (message?.extendedTextMessage as Record<string, unknown>)?.text as string ??
     null;
+  const texto = san(textoRaw);
 
   if (!texto) return; // Only handle text messages for now
 
@@ -248,7 +257,7 @@ async function processarMensagemGrupo(
   );
 
   if (!grupo) {
-    const nomeGrupo = (msg.pushName as string) ?? groupJid.replace("@g.us", "");
+    const nomeGrupo = san((msg.pushName as string) ?? groupJid.replace("@g.us", "")) ?? groupJid.replace("@g.us", "");
     const [novo] = await query<{ id: string; monitorado: boolean }>(
       `INSERT INTO whatsapp_grupos
          (empresa_id, instancia_id, group_jid, nome, monitorado, ativo)
@@ -273,10 +282,11 @@ async function processarMensagemGrupo(
 
   // Extrai texto da mensagem
   const message = msg.message as Record<string, unknown> | undefined;
-  const conteudo =
+  const conteudo = san(
     (message?.conversation as string) ??
     ((message?.extendedTextMessage as Record<string, unknown>)?.text as string) ??
-    null;
+    null
+  );
 
   // Determina tipo da mensagem
   let tipo = "texto";
@@ -290,7 +300,7 @@ async function processarMensagemGrupo(
   }
 
   const remetenteJid  = participantJid ?? groupJid;
-  const remetenteNome = (msg.pushName as string) ?? null;
+  const remetenteNome = san((msg.pushName as string) ?? null);
 
   // Captura reply/citação enviada pela Evolution API (contextInfo)
   const contextInfo = (message?.extendedTextMessage as Record<string, unknown>)

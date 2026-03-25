@@ -93,7 +93,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="h-screen flex">
       {/* ─── Painel esquerdo ─── */}
       <div className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center bg-[#0f1923] overflow-hidden">
         {/* Imagem de fundo */}

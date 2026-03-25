@@ -99,6 +99,8 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const mountedRef = useRef(false);
   const [modoVisu, setModoVisu] = useState<ModoVisu>("lista");
   const [colunasVisiveis, setColunasVisiveis] = useState<Set<ColunaKey>>(
     new Set(COLUNAS_PADRAO),
@@ -201,7 +203,11 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   }, [buscaCliente]);
 
   const carregar = useCallback(async () => {
-    setLoading(true);
+    if (!mountedRef.current) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
       const params = new URLSearchParams({ q: busca, pageSize: "50" });
       const res = await fetch(`/api/usuarios?${params}`);
@@ -210,11 +216,14 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
       setTotal(data.total ?? 0);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      mountedRef.current = true;
     }
   }, [busca]);
 
   useEffect(() => {
-    const t = setTimeout(carregar, 300);
+    const delay = mountedRef.current ? 300 : 0;
+    const t = setTimeout(carregar, delay);
     return () => clearTimeout(t);
   }, [carregar]);
 
@@ -507,6 +516,9 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                 onChange={(e) => setBusca(e.target.value)}
                 className="pl-8 h-8 text-sm"
               />
+              {refreshing && (
+                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-gray-300" />
+              )}
             </div>
 
             {/* Botões de visualização — só mostrar quando painel fechado */}
@@ -573,9 +585,16 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
 
         <div className="flex-1 overflow-auto">
           {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            </div>
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-gray-50">
+                <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse flex-shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 bg-gray-100 rounded animate-pulse w-2/3" />
+                  <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
+                </div>
+                <div className="w-14 h-5 bg-gray-100 rounded animate-pulse flex-shrink-0" />
+              </div>
+            ))
           ) : usuarios.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <Users size={28} className="mx-auto mb-2 opacity-30" />
@@ -583,7 +602,8 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
             </div>
           ) : modoVisu === "lista" || painelAberto ? (
             /* ── MODO LISTA (cards) ── */
-            usuarios.map((u) => {
+            <div className={refreshing ? "opacity-60 transition-opacity duration-150" : ""}>
+            {usuarios.map((u) => {
               const initials = u.nome
                 .split(" ")
                 .slice(0, 2)
@@ -631,9 +651,11 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                   </div>
                 </button>
               );
-            })
+            })}
+            </div>
           ) : (
             /* ── MODO GRADE (tabela) ── */
+            <div className={refreshing ? "opacity-60 transition-opacity duration-150" : ""}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -746,6 +768,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                   })}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
         </div>

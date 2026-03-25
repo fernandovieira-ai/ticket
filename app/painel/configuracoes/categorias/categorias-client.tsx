@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,8 @@ export function CategoriasClient() {
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const mountedRef = useRef(false);
 
   const [painelAberto, setPainelAberto] = useState(false);
   const [modo, setModo] = useState<Modo>("criar");
@@ -66,7 +68,11 @@ export function CategoriasClient() {
   const [salvandoDep, setSalvandoDep] = useState(false);
 
   const carregar = useCallback(async () => {
-    setLoading(true);
+    if (!mountedRef.current) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
       const params = new URLSearchParams({ q: busca, pageSize: "100" });
       const res = await fetch(`/api/categorias?${params}`);
@@ -75,11 +81,14 @@ export function CategoriasClient() {
       setTotal(data.total ?? 0);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      mountedRef.current = true;
     }
   }, [busca]);
 
   useEffect(() => {
-    const t = setTimeout(carregar, 300);
+    const delay = mountedRef.current ? 300 : 0;
+    const t = setTimeout(carregar, delay);
     return () => clearTimeout(t);
   }, [carregar]);
 
@@ -308,6 +317,9 @@ export function CategoriasClient() {
               onChange={(e) => setBusca(e.target.value)}
               className="pl-8 h-8 text-sm"
             />
+            {refreshing && (
+              <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-gray-300" />
+            )}
           </div>
           <p className="text-[11px] text-gray-400 mt-2">{total} categoria(s)</p>
         </div>
@@ -315,16 +327,23 @@ export function CategoriasClient() {
         {/* Lista */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            </div>
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-gray-50">
+                <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse flex-shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 bg-gray-100 rounded animate-pulse w-2/3" />
+                  <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
+                </div>
+              </div>
+            ))
           ) : categorias.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <Tag size={28} className="mx-auto mb-2 opacity-30" />
               <p className="text-xs">Nenhuma categoria</p>
             </div>
           ) : (
-            categorias.map((c) => (
+            <div className={refreshing ? "opacity-60 transition-opacity duration-150" : ""}>
+            {categorias.map((c) => (
               <button
                 key={c.id}
                 onClick={() => abrirCategoria(c)}
@@ -365,7 +384,8 @@ export function CategoriasClient() {
                   <ChevronRight size={12} className="text-gray-300" />
                 </div>
               </button>
-            ))
+            ))}
+            </div>
           )}
         </div>
       </div>

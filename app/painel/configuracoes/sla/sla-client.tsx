@@ -244,9 +244,15 @@ export function SlaClient() {
 
             <div className="flex-1 overflow-y-auto">
               {loadingPrio ? (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                </div>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-50">
+                    <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3.5 bg-gray-100 rounded animate-pulse w-1/3" />
+                      <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3" />
+                    </div>
+                  </div>
+                ))
               ) : prioridades.length === 0 ? (
                 <div className="text-center py-12 text-gray-400">
                   <Timer size={28} className="mx-auto mb-2 opacity-30" />
@@ -495,8 +501,15 @@ export function SlaClient() {
             </div>
 
             {loadingHorario ? (
-              <div className="flex justify-center py-10">
-                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              <div className="space-y-2">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-[160px_1fr_1fr_52px] gap-3 items-center px-3 py-2.5 rounded-xl border border-gray-100 bg-gray-50">
+                    <div className="h-3.5 bg-gray-200 rounded animate-pulse w-24" />
+                    <div className="h-7 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-7 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-5 w-9 bg-gray-200 rounded-full animate-pulse mx-auto" />
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="space-y-2">

@@ -21,9 +21,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Find the instancia record
-    const instancia = await queryOne<{ id: string; empresa_id: string; status: string }>(
+    const instancia = await queryOne<{
+      id: string;
+      empresa_id: string;
+      status: string;
+    }>(
       `SELECT id, empresa_id, status FROM whatsapp_instancias WHERE nome_instancia = $1`,
-      [instance]
+      [instance],
     );
     if (!instancia) return NextResponse.json({ ok: true });
 
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
       if (novoStatus !== instancia.status) {
         await query(
           `UPDATE whatsapp_instancias SET status = $1, qr_code = NULL WHERE id = $2`,
-          [novoStatus, instancia.id]
+          [novoStatus, instancia.id],
         );
       }
       return NextResponse.json({ ok: true });
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
       if (qrCode) {
         await query(
           `UPDATE whatsapp_instancias SET qr_code = $1, status = 'aguardando_qr' WHERE id = $2`,
-          [qrCode, instancia.id]
+          [qrCode, instancia.id],
         );
       }
       return NextResponse.json({ ok: true });
@@ -62,11 +66,15 @@ export async function POST(req: NextRequest) {
       const messages = Array.isArray(data?.messages) ? data.messages : [data];
       for (const msg of messages) {
         const remoteJid = (msg as Record<string, unknown>)?.key
-          ? ((msg as Record<string, unknown>).key as Record<string, unknown>)?.remoteJid as string
+          ? (((msg as Record<string, unknown>).key as Record<string, unknown>)
+              ?.remoteJid as string)
           : null;
 
         if (remoteJid?.endsWith("@g.us")) {
-          await processarMensagemGrupo(instancia, msg as Record<string, unknown>);
+          await processarMensagemGrupo(
+            instancia,
+            msg as Record<string, unknown>,
+          );
         } else {
           await processarMensagemEntrada(instancia, msg);
         }
@@ -83,7 +91,7 @@ export async function POST(req: NextRequest) {
 
 async function processarMensagemEntrada(
   instancia: { id: string; empresa_id: string },
-  msg: Record<string, unknown>
+  msg: Record<string, unknown>,
 ) {
   // Evolution message structure
   const key = msg.key as Record<string, unknown> | undefined;
@@ -99,35 +107,45 @@ async function processarMensagemEntrada(
   const message = msg.message as Record<string, unknown> | undefined;
   const textoRaw =
     (message?.conversation as string) ??
-    (message?.extendedTextMessage as Record<string, unknown>)?.text as string ??
+    ((message?.extendedTextMessage as Record<string, unknown>)
+      ?.text as string) ??
     null;
   const texto = san(textoRaw);
 
   if (!texto) return; // Only handle text messages for now
 
   // Find or create contato
-  let contato = await queryOne<{ id: string; cliente_id: string | null }>(
-    `SELECT id, cliente_id FROM whatsapp_contatos WHERE empresa_id = $1 AND numero = $2`,
-    [instancia.empresa_id, numero]
+  let contato = await queryOne<{ id: string; usuario_id: string | null }>(
+    `SELECT id, usuario_id FROM whatsapp_contatos WHERE empresa_id = $1 AND numero = $2`,
+    [instancia.empresa_id, numero],
   );
 
   if (!contato) {
-    const [novo] = await query<{ id: string; cliente_id: string | null }>(
-      `INSERT INTO whatsapp_contatos (empresa_id, numero, nome) VALUES ($1, $2, $3) RETURNING id, cliente_id`,
-      [instancia.empresa_id, numero, pushName]
+    const [novo] = await query<{ id: string; usuario_id: string | null }>(
+      `INSERT INTO whatsapp_contatos (empresa_id, numero, nome) VALUES ($1, $2, $3) RETURNING id, usuario_id`,
+      [instancia.empresa_id, numero, pushName],
     );
     contato = novo;
-  } else if (pushName && !contato.cliente_id) {
-    await query(
-      `UPDATE whatsapp_contatos SET nome = $1 WHERE id = $2`,
-      [pushName, contato.id]
-    );
+  } else if (pushName && !contato.usuario_id) {
+    await query(`UPDATE whatsapp_contatos SET nome = $1 WHERE id = $2`, [
+      pushName,
+      contato.id,
+    ]);
   }
+
+  // Resolve cliente_id via clientes.usuario_id (para vincular ao ticket)
+  const clienteVinculado = contato.usuario_id
+    ? await queryOne<{ id: string }>(
+        `SELECT id FROM clientes WHERE empresa_id = $1 AND usuario_id = $2 LIMIT 1`,
+        [instancia.empresa_id, contato.usuario_id],
+      )
+    : null;
+  const clienteId = clienteVinculado?.id ?? null;
 
   // Avoid duplicate processing
   const existing = await queryOne(
     `SELECT id FROM whatsapp_mensagens WHERE message_id = $1 AND empresa_id = $2`,
-    [messageId, instancia.empresa_id]
+    [messageId, instancia.empresa_id],
   );
   if (existing) return;
 
@@ -139,7 +157,7 @@ async function processarMensagemEntrada(
   }>(
     `SELECT criar_ticket_auto, categoria_padrao_id, msg_ticket_criado
      FROM whatsapp_config WHERE empresa_id = $1`,
-    [instancia.empresa_id]
+    [instancia.empresa_id],
   );
 
   // Find open ticket for this contact to add message to, or create new one
@@ -157,7 +175,7 @@ async function processarMensagemEntrada(
        )
      ORDER BY t.criado_em DESC
      LIMIT 1`,
-    [instancia.empresa_id, contato.cliente_id]
+    [instancia.empresa_id, clienteId],
   );
 
   if (ticketAberto) {
@@ -169,23 +187,23 @@ async function processarMensagemEntrada(
        FROM usuarios u
        WHERE u.empresa_id = $2 AND u.perfil = 'admin'
        LIMIT 1`,
-      [ticketId, instancia.empresa_id, texto]
+      [ticketId, instancia.empresa_id, texto],
     );
   } else if (config?.criar_ticket_auto) {
     // Create new ticket automatically
     const statusAberto = await queryOne<{ id: string }>(
       `SELECT id FROM ticket_status WHERE empresa_id = $1 AND codigo = 'aberto' LIMIT 1`,
-      [instancia.empresa_id]
+      [instancia.empresa_id],
     );
     const prioridadeNormal = await queryOne<{ id: string }>(
       `SELECT id FROM ticket_prioridades WHERE empresa_id = $1 AND codigo = 'normal' LIMIT 1`,
-      [instancia.empresa_id]
+      [instancia.empresa_id],
     );
 
     if (statusAberto && prioridadeNormal) {
       const count = await queryOne<{ c: string }>(
         `SELECT COUNT(*) AS c FROM tickets WHERE empresa_id = $1`,
-        [instancia.empresa_id]
+        [instancia.empresa_id],
       );
       const numero_ticket = `#${String(Number(count?.c ?? 0) + 1).padStart(5, "0")}`;
 
@@ -206,9 +224,9 @@ async function processarMensagemEntrada(
           texto,
           statusAberto.id,
           prioridadeNormal.id,
-          contato.cliente_id ?? null,
+          clienteId,
           config.categoria_padrao_id ?? null,
-        ]
+        ],
       );
 
       if (novoTicket) {
@@ -217,7 +235,7 @@ async function processarMensagemEntrada(
         await query(
           `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna)
            VALUES ($1, $2, $3, FALSE)`,
-          [ticketId, instancia.empresa_id, texto]
+          [ticketId, instancia.empresa_id, texto],
         );
       }
     }
@@ -228,7 +246,7 @@ async function processarMensagemEntrada(
     `INSERT INTO whatsapp_mensagens
        (empresa_id, ticket_id, contato_id, message_id, direcao, tipo, corpo, status)
      VALUES ($1, $2, $3, $4, 'entrada', 'texto', $5, 'recebida')`,
-    [instancia.empresa_id, ticketId, contato.id, messageId, texto]
+    [instancia.empresa_id, ticketId, contato.id, messageId, texto],
   );
 }
 
@@ -238,14 +256,14 @@ async function processarMensagemEntrada(
 // ------------------------------------------------------------
 async function processarMensagemGrupo(
   instancia: { id: string; empresa_id: string },
-  msg: Record<string, unknown>
+  msg: Record<string, unknown>,
 ) {
   const key = msg.key as Record<string, unknown> | undefined;
   if (!key || key.fromMe) return;
 
-  const groupJid       = key.remoteJid as string;           // ex: 120363xxxxx@g.us
-  const participantJid = key.participant as string | null;  // ex: 5511999xxxxx@s.whatsapp.net
-  const messageId      = key.id as string;
+  const groupJid = key.remoteJid as string; // ex: 120363xxxxx@g.us
+  const participantJid = key.participant as string | null; // ex: 5511999xxxxx@s.whatsapp.net
+  const messageId = key.id as string;
 
   if (!groupJid || !messageId) return;
 
@@ -253,11 +271,13 @@ async function processarMensagemGrupo(
   let grupo = await queryOne<{ id: string; monitorado: boolean }>(
     `SELECT id, monitorado FROM whatsapp_grupos
      WHERE instancia_id = $1 AND group_jid = $2 AND ativo = TRUE`,
-    [instancia.id, groupJid]
+    [instancia.id, groupJid],
   );
 
   if (!grupo) {
-    const nomeGrupo = san((msg.pushName as string) ?? groupJid.replace("@g.us", "")) ?? groupJid.replace("@g.us", "");
+    const nomeGrupo =
+      san((msg.pushName as string) ?? groupJid.replace("@g.us", "")) ??
+      groupJid.replace("@g.us", "");
     const [novo] = await query<{ id: string; monitorado: boolean }>(
       `INSERT INTO whatsapp_grupos
          (empresa_id, instancia_id, group_jid, nome, monitorado, ativo)
@@ -265,7 +285,7 @@ async function processarMensagemGrupo(
        ON CONFLICT (instancia_id, group_jid) DO UPDATE
          SET ativo = TRUE
        RETURNING id, monitorado`,
-      [instancia.empresa_id, instancia.id, groupJid, nomeGrupo]
+      [instancia.empresa_id, instancia.id, groupJid, nomeGrupo],
     );
     grupo = novo;
   }
@@ -276,7 +296,7 @@ async function processarMensagemGrupo(
   const existente = await queryOne(
     `SELECT id FROM whatsapp_grupos_mensagens
      WHERE message_id = $1 AND grupo_id = $2`,
-    [messageId, grupo.id]
+    [messageId, grupo.id],
   );
   if (existente) return;
 
@@ -284,14 +304,15 @@ async function processarMensagemGrupo(
   const message = msg.message as Record<string, unknown> | undefined;
   const conteudo = san(
     (message?.conversation as string) ??
-    ((message?.extendedTextMessage as Record<string, unknown>)?.text as string) ??
-    null
+      ((message?.extendedTextMessage as Record<string, unknown>)
+        ?.text as string) ??
+      null,
   );
 
   // Determina tipo da mensagem
   let tipo = "texto";
   if (!conteudo) {
-    if (message?.imageMessage)    tipo = "imagem";
+    if (message?.imageMessage) tipo = "imagem";
     else if (message?.audioMessage || message?.pttMessage) tipo = "audio";
     else if (message?.videoMessage) tipo = "video";
     else if (message?.documentMessage) tipo = "documento";
@@ -299,13 +320,13 @@ async function processarMensagemGrupo(
     else return; // tipo desconhecido, ignora
   }
 
-  const remetenteJid  = participantJid ?? groupJid;
+  const remetenteJid = participantJid ?? groupJid;
   const remetenteNome = san((msg.pushName as string) ?? null);
 
   // Captura reply/citação enviada pela Evolution API (contextInfo)
   const contextInfo = (message?.extendedTextMessage as Record<string, unknown>)
     ?.contextInfo as Record<string, unknown> | undefined;
-  const quotedMessageId    = (contextInfo?.stanzaId as string)    ?? null;
+  const quotedMessageId = (contextInfo?.stanzaId as string) ?? null;
   const quotedRemetenteJid = (contextInfo?.participant as string) ?? null;
 
   const [msgSalva] = await query<{ id: string }>(
@@ -324,7 +345,7 @@ async function processarMensagemGrupo(
       conteudo,
       quotedMessageId,
       quotedRemetenteJid,
-    ]
+    ],
   );
 
   if (!msgSalva) return;
@@ -340,7 +361,7 @@ async function processarMensagemGrupo(
        AND perfil != 'cliente'
        AND ativo = true
      LIMIT 1`,
-    [instancia.empresa_id, remetenteJid]
+    [instancia.empresa_id, remetenteJid],
   );
 
   if (operador) {
@@ -360,7 +381,7 @@ async function processarMensagemGrupo(
              WHERE message_id = $4 AND grupo_id = $3
              LIMIT 1
            )`,
-        [msgSalva.id, operador.id, grupo.id, quotedMessageId]
+        [msgSalva.id, operador.id, grupo.id, quotedMessageId],
       );
     }
 
@@ -374,7 +395,7 @@ async function processarMensagemGrupo(
            tempo_resposta_seg = EXTRACT(EPOCH FROM (NOW() - msg_criada_em))::int
        WHERE grupo_id       = $3
          AND respondido_em  IS NULL`,
-      [msgSalva.id, operador.id, grupo.id]
+      [msgSalva.id, operador.id, grupo.id],
     );
   } else {
     // Não é operador → abre nova interação (apenas para mensagens de texto)
@@ -383,7 +404,13 @@ async function processarMensagemGrupo(
         `INSERT INTO whatsapp_grupos_interacoes
            (empresa_id, grupo_id, msg_cliente_id, remetente_jid, remetente_nome, msg_criada_em)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [instancia.empresa_id, grupo.id, msgSalva.id, remetenteJid, remetenteNome]
+        [
+          instancia.empresa_id,
+          grupo.id,
+          msgSalva.id,
+          remetenteJid,
+          remetenteNome,
+        ],
       );
     }
   }

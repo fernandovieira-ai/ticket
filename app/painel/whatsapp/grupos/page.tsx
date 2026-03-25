@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -14,6 +14,10 @@ import {
   Bot,
   Filter,
   Clock,
+  Search,
+  X,
+  ArrowUpDown,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -32,15 +36,15 @@ interface Grupo {
 }
 
 interface GrupoComStats extends Grupo {
-  total_mensagens_7d?: number;
+  total_mensagens?: number;
   ultimo_sentimento?: string;
   ultima_analise?: string;
 }
 
 function tempoRelativo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)   return "agora";
-  if (diff < 3600) return `${Math.floor(diff / 60)}min atrás`;
+  if (diff < 60)    return "agora";
+  if (diff < 3600)  return `${Math.floor(diff / 60)}min atrás`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
   return `${Math.floor(diff / 86400)}d atrás`;
 }
@@ -59,34 +63,55 @@ const SENTIMENTO_LABEL: Record<string, string> = {
   misto:    "Misto",
 };
 
+type OrdemCampo = "nome" | "mensagens" | "membros" | "sem_resposta";
+type Periodo = "hoje" | "7d";
+
+function buildStatsParams(periodo: Periodo): string {
+  if (periodo === "7d") return "";
+  const ate   = new Date();
+  const desde = new Date(ate);
+  desde.setHours(0, 0, 0, 0);
+  return `?desde=${desde.toISOString()}&ate=${ate.toISOString()}`;
+}
+
 export default function GruposWhatsappPage() {
   const [grupos, setGrupos] = useState<GrupoComStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [soComMensagens, setSoComMensagens] = useState(true);
+  const [periodo, setPeriodo] = useState<Periodo>("hoje");
+  const [busca, setBusca] = useState("");
+  const [filtroInstancia, setFiltroInstancia] = useState("");
+  const [filtroSentimento, setFiltroSentimento] = useState("");
+  const [ordem, setOrdem] = useState<OrdemCampo>("nome");
 
-  const carregarGrupos = useCallback(async (filtroMensagens?: boolean) => {
+  const carregarGrupos = useCallback(async (
+    filtroMensagens?: boolean,
+    periodoOverride?: Periodo,
+  ) => {
     setLoading(true);
     try {
-      const ativo = filtroMensagens !== undefined ? filtroMensagens : soComMensagens;
-      const params = ativo ? "?com_mensagens=true" : "";
+      const usarFiltro  = filtroMensagens !== undefined ? filtroMensagens : soComMensagens;
+      const usarPeriodo = periodoOverride ?? periodo;
+      const params = usarFiltro ? "?com_mensagens=true" : "";
       const res = await fetch(`/api/whatsapp/grupos${params}`);
       if (!res.ok) throw new Error("Falha ao carregar grupos");
       const data: Grupo[] = await res.json();
 
-      // Carrega stats básicos para grupos monitorados
+      const statsParams = buildStatsParams(usarPeriodo);
+
       const comStats: GrupoComStats[] = await Promise.all(
         data.map(async (g) => {
           if (!g.monitorado) return g;
           try {
-            const statsRes = await fetch(`/api/whatsapp/grupos/${g.id}/stats`);
+            const statsRes = await fetch(`/api/whatsapp/grupos/${g.id}/stats${statsParams}`);
             if (!statsRes.ok) return g;
             const stats = await statsRes.json();
             return {
               ...g,
-              total_mensagens_7d: stats.totais.mensagens,
+              total_mensagens:  stats.totais.mensagens,
               ultimo_sentimento: stats.ultima_analise?.sentimento,
-              ultima_analise: stats.ultima_analise?.criado_em,
+              ultima_analise:    stats.ultima_analise?.criado_em,
             };
           } catch {
             return g;
@@ -100,12 +125,17 @@ export default function GruposWhatsappPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [soComMensagens, periodo]);
 
   useEffect(() => {
-    carregarGrupos(true);
+    carregarGrupos(true, "hoje");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function trocarPeriodo(p: Periodo) {
+    setPeriodo(p);
+    carregarGrupos(undefined, p);
+  }
 
   async function analisarGrupo(grupoId: string) {
     setAnalisando(grupoId);
@@ -115,10 +145,7 @@ export default function GruposWhatsappPage() {
       const res = await fetch(`/api/whatsapp/grupos/${grupoId}/analisar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          desde: desde.toISOString(),
-          ate:   ate.toISOString(),
-        }),
+        body: JSON.stringify({ desde: desde.toISOString(), ate: ate.toISOString() }),
       });
       if (res.ok) {
         toast.success("Análise IA concluída! Atualizando dados...");
@@ -132,8 +159,39 @@ export default function GruposWhatsappPage() {
     }
   }
 
-  const gruposMonitorados   = grupos.filter((g) => g.monitorado);
-  const gruposDesmonitorados = grupos.filter((g) => !g.monitorado);
+  // Instâncias únicas para o dropdown
+  const instancias = useMemo(
+    () => [...new Set(grupos.map((g) => g.instancia_nome).filter(Boolean) as string[])].sort(),
+    [grupos]
+  );
+
+  // Aplica busca + filtros + ordenação
+  const gruposFiltrados = useMemo(() => {
+    const termo = busca.toLowerCase().trim();
+    return grupos
+      .filter((g) => {
+        if (termo && !g.nome.toLowerCase().includes(termo)) return false;
+        if (filtroInstancia && g.instancia_nome !== filtroInstancia) return false;
+        if (filtroSentimento && g.ultimo_sentimento !== filtroSentimento) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        if (ordem === "mensagens")    return (b.total_mensagens ?? 0) - (a.total_mensagens ?? 0);
+        if (ordem === "membros")      return (b.total_membros ?? 0) - (a.total_membros ?? 0);
+        if (ordem === "sem_resposta") {
+          // Sem atendimento algum → topo; depois mais antigo primeiro
+          const ta = a.ultimo_atendimento ? new Date(a.ultimo_atendimento).getTime() : 0;
+          const tb = b.ultimo_atendimento ? new Date(b.ultimo_atendimento).getTime() : 0;
+          return ta - tb;
+        }
+        return a.nome.localeCompare(b.nome, "pt-BR");
+      });
+  }, [grupos, busca, filtroInstancia, filtroSentimento, ordem]);
+
+  const gruposMonitorados    = gruposFiltrados.filter((g) => g.monitorado);
+  const gruposDesmonitorados = gruposFiltrados.filter((g) => !g.monitorado);
+  const filtrosAtivos        = busca || filtroInstancia || filtroSentimento;
+  const labelMsgs            = periodo === "hoje" ? "Msgs (hoje)" : "Msgs (7 dias)";
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -149,6 +207,31 @@ export default function GruposWhatsappPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Período */}
+          <div className="flex items-center gap-1 border border-zinc-200 rounded-md overflow-hidden text-xs">
+            <button
+              onClick={() => trocarPeriodo("hoje")}
+              className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
+                periodo === "hoje"
+                  ? "bg-green-600 text-white font-medium"
+                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+              }`}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Hoje
+            </button>
+            <button
+              onClick={() => trocarPeriodo("7d")}
+              className={`px-3 py-1.5 transition-colors ${
+                periodo === "7d"
+                  ? "bg-green-600 text-white font-medium"
+                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+              }`}
+            >
+              7 dias
+            </button>
+          </div>
+
           <button
             onClick={() => {
               const novo = !soComMensagens;
@@ -178,6 +261,81 @@ export default function GruposWhatsappPage() {
         </div>
       </div>
 
+      {/* Barra de busca e filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Busca por nome */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar grupo..."
+            className="w-full pl-8 pr-8 py-1.5 text-sm border border-zinc-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
+          />
+          {busca && (
+            <button
+              onClick={() => setBusca("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Filtro por instância */}
+        {instancias.length > 1 && (
+          <select
+            value={filtroInstancia}
+            onChange={(e) => setFiltroInstancia(e.target.value)}
+            className="text-sm border border-zinc-200 rounded-md px-2.5 py-1.5 bg-white text-zinc-700 focus:outline-none focus:ring-1 focus:ring-green-500"
+          >
+            <option value="">Todas instâncias</option>
+            {instancias.map((inst) => (
+              <option key={inst} value={inst}>{inst}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Filtro por sentimento */}
+        <select
+          value={filtroSentimento}
+          onChange={(e) => setFiltroSentimento(e.target.value)}
+          className="text-sm border border-zinc-200 rounded-md px-2.5 py-1.5 bg-white text-zinc-700 focus:outline-none focus:ring-1 focus:ring-green-500"
+        >
+          <option value="">Todos sentimentos</option>
+          <option value="positivo">Positivo</option>
+          <option value="neutro">Neutro</option>
+          <option value="misto">Misto</option>
+          <option value="negativo">Negativo</option>
+        </select>
+
+        {/* Ordenação */}
+        <div className="flex items-center gap-1 text-xs text-zinc-500 border border-zinc-200 rounded-md px-2.5 py-1.5 bg-white">
+          <ArrowUpDown className="h-3.5 w-3.5" />
+          <select
+            value={ordem}
+            onChange={(e) => setOrdem(e.target.value as OrdemCampo)}
+            className="bg-transparent focus:outline-none text-zinc-700"
+          >
+            <option value="nome">Nome A–Z</option>
+            <option value="mensagens">+ Mensagens</option>
+            <option value="membros">+ Membros</option>
+            <option value="sem_resposta">Sem resposta há mais tempo</option>
+          </select>
+        </div>
+
+        {/* Limpar filtros */}
+        {filtrosAtivos && (
+          <button
+            onClick={() => { setBusca(""); setFiltroInstancia(""); setFiltroSentimento(""); }}
+            className="text-xs text-zinc-400 hover:text-zinc-600 underline"
+          >
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
       {/* Estatísticas rápidas */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white border border-zinc-200 rounded-lg p-4">
@@ -189,9 +347,9 @@ export default function GruposWhatsappPage() {
           <p className="text-2xl font-bold text-green-600 mt-1">{gruposMonitorados.length}</p>
         </div>
         <div className="bg-white border border-zinc-200 rounded-lg p-4">
-          <p className="text-xs text-zinc-500">Msgs (7 dias)</p>
+          <p className="text-xs text-zinc-500">{labelMsgs}</p>
           <p className="text-2xl font-bold text-zinc-900 mt-1">
-            {gruposMonitorados.reduce((s, g) => s + (g.total_mensagens_7d ?? 0), 0).toLocaleString("pt-BR")}
+            {gruposMonitorados.reduce((s, g) => s + (g.total_mensagens ?? 0), 0).toLocaleString("pt-BR")}
           </p>
         </div>
       </div>
@@ -252,13 +410,18 @@ export default function GruposWhatsappPage() {
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-zinc-400">
                         <span>{g.total_membros} membros</span>
                         {g.instancia_nome && <span>{g.instancia_nome}</span>}
-                        {g.total_mensagens_7d !== undefined && (
-                          <span>{g.total_mensagens_7d.toLocaleString("pt-BR")} msgs / 7 dias</span>
+                        {g.total_mensagens !== undefined && (
+                          <span>{g.total_mensagens.toLocaleString("pt-BR")} msgs / {periodo === "hoje" ? "hoje" : "7 dias"}</span>
                         )}
-                        {g.ultimo_atendimento && (
+                        {g.ultimo_atendimento ? (
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
                             Atendido {tempoRelativo(g.ultimo_atendimento)}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-amber-500">
+                            <Clock className="h-3 w-3" />
+                            Sem atendimento
                           </span>
                         )}
                         {g.ultima_analise && (

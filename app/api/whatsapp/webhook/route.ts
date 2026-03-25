@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, transaction } from "@/lib/db";
+import type { PoolClient } from "pg";
 
 // Remove characters that cannot be represented in LATIN1 (code point > 255).
 // Necessary because the PostgreSQL instance uses LATIN1 encoding.
@@ -257,6 +258,7 @@ async function processarMensagemEntrada(
 // ------------------------------------------------------------
 // Processa mensagens de grupos WhatsApp (@g.us)
 // Só persiste se o grupo estiver com monitorado = TRUE.
+// Toda a lógica roda em uma única transação/conexão.
 // ------------------------------------------------------------
 async function processarMensagemGrupo(
   instancia: { id: string; empresa_id: string },
@@ -265,14 +267,41 @@ async function processarMensagemGrupo(
   const key = msg.key as Record<string, unknown> | undefined;
   if (!key || key.fromMe) return;
 
-  const groupJid = key.remoteJid as string; // ex: 120363xxxxx@g.us
-  const participantJid = key.participant as string | null; // ex: 5511999xxxxx@s.whatsapp.net
+  const groupJid = key.remoteJid as string;
+  const participantJid = key.participant as string | null;
   const messageId = key.id as string;
 
   if (!groupJid || !messageId) return;
 
+  await transaction(async (client) => {
+    await _processarMensagemGrupoTx(
+      client,
+      instancia,
+      msg,
+      groupJid,
+      participantJid,
+      messageId,
+    );
+  });
+}
+
+async function _processarMensagemGrupoTx(
+  client: PoolClient,
+  instancia: { id: string; empresa_id: string },
+  msg: Record<string, unknown>,
+  groupJid: string,
+  participantJid: string | null,
+  messageId: string,
+) {
+  const q = <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
+    client.query(sql, params).then((r) => r.rows as T[]);
+  const q1 = async <T = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[],
+  ) => (await q<T>(sql, params))[0] ?? null;
+
   // Busca ou cria o registro do grupo (auto-criado com monitorado=TRUE)
-  let grupo = await queryOne<{ id: string; monitorado: boolean }>(
+  let grupo = await q1<{ id: string; monitorado: boolean }>(
     `SELECT id, monitorado FROM whatsapp_grupos
      WHERE instancia_id = $1 AND group_jid = $2 AND ativo = TRUE`,
     [instancia.id, groupJid],
@@ -282,7 +311,7 @@ async function processarMensagemGrupo(
     const nomeGrupo =
       san((msg.pushName as string) ?? groupJid.replace("@g.us", "")) ??
       groupJid.replace("@g.us", "");
-    const [novo] = await query<{ id: string; monitorado: boolean }>(
+    const [novo] = await q<{ id: string; monitorado: boolean }>(
       `INSERT INTO whatsapp_grupos
          (empresa_id, instancia_id, group_jid, nome, monitorado, ativo)
        VALUES ($1, $2, $3, $4, TRUE, TRUE)
@@ -297,7 +326,7 @@ async function processarMensagemGrupo(
   if (!grupo?.monitorado) return;
 
   // Deduplicação por message_id
-  const existente = await queryOne(
+  const existente = await q1(
     `SELECT id FROM whatsapp_grupos_mensagens
      WHERE message_id = $1 AND grupo_id = $2`,
     [messageId, grupo.id],
@@ -321,7 +350,7 @@ async function processarMensagemGrupo(
     else if (message?.videoMessage) tipo = "video";
     else if (message?.documentMessage) tipo = "documento";
     else if (message?.stickerMessage) tipo = "sticker";
-    else return; // tipo desconhecido, ignora
+    else return;
   }
 
   const remetenteJid = participantJid ?? groupJid;
@@ -333,7 +362,7 @@ async function processarMensagemGrupo(
   const quotedMessageId = (contextInfo?.stanzaId as string) ?? null;
   const quotedRemetenteJid = (contextInfo?.participant as string) ?? null;
 
-  const [msgSalva] = await query<{ id: string }>(
+  const [msgSalva] = await q<{ id: string }>(
     `INSERT INTO whatsapp_grupos_mensagens
        (empresa_id, grupo_id, message_id, remetente_jid, remetente_nome,
         tipo, conteudo, quoted_message_id, quoted_remetente_jid)
@@ -357,8 +386,7 @@ async function processarMensagemGrupo(
   // ----------------------------------------------------------
   // Controle de interações de atendimento
   // ----------------------------------------------------------
-  // Verifica se o remetente é um operador interno (tem whatsapp_jid vinculado)
-  const operador = await queryOne<{ id: string }>(
+  const operador = await q1<{ id: string }>(
     `SELECT id FROM usuarios
      WHERE empresa_id = $1
        AND SPLIT_PART(whatsapp_jid, '@', 1) = SPLIT_PART($2, '@', 1)
@@ -369,18 +397,16 @@ async function processarMensagemGrupo(
   );
 
   if (operador) {
-    // Operador respondeu → fecha interações em aberto do grupo
-    // Prioridade: se citou uma mensagem específica, fecha só aquela interação
     if (quotedMessageId) {
-      await query(
+      await q(
         `UPDATE whatsapp_grupos_interacoes
-         SET msg_resposta_id   = $1,
-             operador_id       = $2,
-             respondido_em     = NOW(),
+         SET msg_resposta_id    = $1,
+             operador_id        = $2,
+             respondido_em      = NOW(),
              tempo_resposta_seg = EXTRACT(EPOCH FROM (NOW() - msg_criada_em))::int
-         WHERE grupo_id        = $3
-           AND respondido_em   IS NULL
-           AND msg_cliente_id  = (
+         WHERE grupo_id       = $3
+           AND respondido_em  IS NULL
+           AND msg_cliente_id = (
              SELECT id FROM whatsapp_grupos_mensagens
              WHERE message_id = $4 AND grupo_id = $3
              LIMIT 1
@@ -389,9 +415,7 @@ async function processarMensagemGrupo(
       );
     }
 
-    // Fecha também quaisquer outras interações abertas do grupo
-    // (mensagens sem resposta que aguardam qualquer operador)
-    await query(
+    await q(
       `UPDATE whatsapp_grupos_interacoes
        SET msg_resposta_id    = $1,
            operador_id        = $2,
@@ -402,9 +426,8 @@ async function processarMensagemGrupo(
       [msgSalva.id, operador.id, grupo.id],
     );
   } else {
-    // Não é operador → abre nova interação (apenas para mensagens de texto)
     if (tipo === "texto" && conteudo) {
-      await query(
+      await q(
         `INSERT INTO whatsapp_grupos_interacoes
            (empresa_id, grupo_id, msg_cliente_id, remetente_jid, remetente_nome, msg_criada_em)
          VALUES ($1, $2, $3, $4, $5, NOW())`,

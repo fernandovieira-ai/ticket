@@ -161,7 +161,6 @@ export function CategoriasClient() {
     setSelecionado(c);
     setAba("dados");
     setDepVinculos([]);
-    carregarDepVinculos(c.id);
     setForm({
       nome: c.nome,
       descricao: c.descricao ?? "",
@@ -250,7 +249,7 @@ export function CategoriasClient() {
     <div className="flex gap-0 h-full -mx-6 -mb-6">
       {/* ── Coluna esquerda: lista ── */}
       <div
-        className={`flex flex-col bg-white border-r border-gray-200 transition-all duration-300 ${
+        className={`flex flex-col bg-white border-r border-gray-200 transition-[width,flex] duration-200 ${
           painelAberto ? "w-72 min-w-[288px]" : "flex-1"
         }`}
       >
@@ -392,7 +391,7 @@ export function CategoriasClient() {
 
       {/* ── Painel direito: formulário ── */}
       <div
-        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-all duration-300 overflow-hidden ${
+        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-[width,flex] duration-200 overflow-hidden ${
           painelAberto ? "flex-1" : "w-0"
         }`}
       >
@@ -433,7 +432,7 @@ export function CategoriasClient() {
                     Dados
                   </button>
                   <button
-                    onClick={() => setAba("departamentos")}
+                    onClick={() => { setAba("departamentos"); if (selecionado && depVinculos.length === 0 && !loadingDeps) carregarDepVinculos(selecionado.id); }}
                     className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
                       aba === "departamentos"
                         ? "border-blue-500 text-blue-600"

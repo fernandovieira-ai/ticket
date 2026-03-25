@@ -232,7 +232,7 @@ export function SlaClient() {
         <div className="flex flex-1 overflow-hidden">
           {/* Lista */}
           <div
-            className={`flex flex-col bg-white border-r border-gray-200 transition-all duration-300 ${
+            className={`flex flex-col bg-white border-r border-gray-200 transition-[width,flex] duration-200 ${
               painelAberto ? 'w-72 min-w-[288px]' : 'flex-1'
             }`}
           >
@@ -309,7 +309,7 @@ export function SlaClient() {
 
           {/* Painel de edição */}
           <div
-            className={`flex flex-col bg-gray-50 transition-all duration-300 overflow-hidden ${
+            className={`flex flex-col bg-gray-50 transition-[width,flex] duration-200 overflow-hidden ${
               painelAberto ? 'flex-1' : 'w-0'
             }`}
           >

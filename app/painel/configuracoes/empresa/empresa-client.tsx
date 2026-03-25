@@ -227,7 +227,7 @@ export function EmpresaClient() {
       <div className="flex gap-0 h-full -mx-6 -mb-6">
         {/* â”€â”€ Coluna esquerda: lista â”€â”€ */}
         <div
-          className={`flex flex-col bg-white border-r border-gray-200 transition-all duration-300 ${
+          className={`flex flex-col bg-white border-r border-gray-200 transition-[width,flex] duration-200 ${
             painelAberto ? "w-72 min-w-[288px]" : "flex-1"
           }`}
         >
@@ -342,7 +342,7 @@ export function EmpresaClient() {
 
         {/* â”€â”€ Painel direito: formulÃ¡rio â”€â”€ */}
         <div
-          className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-all duration-300 overflow-hidden ${
+          className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-[width,flex] duration-200 overflow-hidden ${
             painelAberto ? "flex-1" : "w-0"
           }`}
         >

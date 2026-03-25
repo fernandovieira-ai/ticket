@@ -156,7 +156,6 @@ export function SubcategoriasClient() {
     setSelecionado(s);
     setAba("dados");
     setCatVinculos([]);
-    carregarCatVinculos(s.id);
     setForm({
       nome: s.nome,
       descricao: s.descricao ?? "",
@@ -235,7 +234,7 @@ export function SubcategoriasClient() {
     <div className="flex gap-0 h-full -mx-6 -mb-6">
       {/* ── Coluna esquerda: lista ── */}
       <div
-        className={`flex flex-col bg-white border-r border-gray-200 transition-all duration-300 ${
+        className={`flex flex-col bg-white border-r border-gray-200 transition-[width,flex] duration-200 ${
           painelAberto ? "w-72 min-w-[288px]" : "flex-1"
         }`}
       >
@@ -379,7 +378,7 @@ export function SubcategoriasClient() {
 
       {/* ── Painel direito: formulário ── */}
       <div
-        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-all duration-300 overflow-hidden ${
+        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-[width,flex] duration-200 overflow-hidden ${
           painelAberto ? "flex-1" : "w-0"
         }`}
       >
@@ -422,7 +421,7 @@ export function SubcategoriasClient() {
                     Dados
                   </button>
                   <button
-                    onClick={() => setAba("categorias")}
+                    onClick={() => { setAba("categorias"); if (selecionado && catVinculos.length === 0 && !loadingCats) carregarCatVinculos(selecionado.id); }}
                     className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
                       aba === "categorias"
                         ? "border-blue-500 text-blue-600"

@@ -42,15 +42,14 @@ export async function GET(req: NextRequest) {
     const rows = await query<Cliente & { total_count: number }>(
       `SELECT c.*, COUNT(*) OVER() AS total_count
        FROM clientes c
+       LEFT JOIN usuario_clientes uc
+         ON uc.cliente_id = c.id AND uc.usuario_id = NULLIF($3, '')::uuid
        WHERE c.empresa_id = $1
          AND ($2 = '' OR
               c.nome_razao ILIKE $2 OR
               c.documento ILIKE $2 OR
               c.email ILIKE $2)
-         AND ($3 = '' OR EXISTS (
-               SELECT 1 FROM usuario_clientes uc
-               WHERE uc.cliente_id = c.id AND uc.usuario_id = $3::uuid
-             ))
+         AND ($3 = '' OR uc.cliente_id IS NOT NULL)
        ORDER BY c.nome_razao
        LIMIT $4 OFFSET $5`,
       [

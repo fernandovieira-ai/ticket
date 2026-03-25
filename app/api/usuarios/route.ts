@@ -26,11 +26,12 @@ export async function GET(req: NextRequest) {
   const tamanho = Math.min(50, Math.max(5, Number(searchParams.get('pageSize') ?? 20)))
   const offset = (pagina - 1) * tamanho
 
-  const usuarios = await query<UsuarioSemSenha>(
+  const rows = await query<UsuarioSemSenha & { total_count: number }>(
     `SELECT
        u.id, u.empresa_id, u.departamento_id, u.nome, u.email, u.perfil,
        u.avatar_url, u.telefone, u.whatsapp_jid, u.ativo, u.ultimo_acesso, u.criado_em, u.atualizado_em,
-       d.nome AS departamento_nome
+       d.nome AS departamento_nome,
+       COUNT(*) OVER() AS total_count
      FROM usuarios u
      LEFT JOIN departamentos d ON d.id = u.departamento_id
      WHERE u.empresa_id = $1
@@ -41,17 +42,9 @@ export async function GET(req: NextRequest) {
     [session.empresaId, busca ? `%${busca}%` : '', perfilFiltro, tamanho, offset]
   )
 
-  const totalRow = await queryOne<{ total: number }>(
-    `SELECT COUNT(*)::int AS total FROM usuarios
-     WHERE empresa_id = $1
-       AND ($2 = '' OR nome ILIKE $2 OR email ILIKE $2)
-       AND ($3 = '' OR perfil = $3::perfil_usuario)`,
-    [session.empresaId, busca ? `%${busca}%` : '', perfilFiltro]
-  )
-
   return NextResponse.json({
-    data: usuarios,
-    total: totalRow?.total ?? 0,
+    data: rows,
+    total: rows[0]?.total_count ?? 0,
     page: pagina,
     pageSize: tamanho,
   })

@@ -16,6 +16,14 @@ interface EmpresaOpcao {
   documento: string | null;
 }
 
+/* Converte texto puro (com \n) para HTML compatível com o editor */
+function plainTextToHtml(text: string): string {
+  return text
+    .split(/\n\n+/)
+    .map((para) => `<p>${para.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 /* Select reutilizável com chevron customizado */
 function SelectCustom({
   value,
@@ -170,7 +178,7 @@ export default function NovoTicketPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           titulo: form.titulo,
-          descricao: form.descricao,
+          descricao: plainTextToHtml(form.descricao),
           departamento_id: form.departamento_id || null,
           categoria_id: form.categoria_id || null,
           subcategoria_id: form.subcategoria_id || null,

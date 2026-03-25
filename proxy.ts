@@ -3,6 +3,9 @@ import { jwtVerify } from "jose";
 import type { JWTPayload } from "@/types";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
+const JWT_REFRESH_SECRET = new TextEncoder().encode(
+  process.env.JWT_REFRESH_SECRET!,
+);
 
 // Rotas públicas (não exigem auth)
 const PUBLIC_PATHS = [
@@ -35,19 +38,42 @@ const ADMIN_PATHS = [
   "/painel/configuracoes/ia",
 ];
 
+/**
+ * Verifica se o access_token é válido e tem mais de 60s de vida restante.
+ */
+async function isAccessTokenFresh(token: string): Promise<boolean> {
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const exp = (payload.exp ?? 0) * 1000;
+    return Date.now() < exp - 60_000;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verifica assinatura e expiração do refresh_token.
+ */
+async function isRefreshTokenValid(token: string): Promise<boolean> {
+  try {
+    await jwtVerify(token, JWT_REFRESH_SECRET);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const hostname = req.headers.get("host") ?? "";
 
   // Detecta se o acesso é pelo domínio do portal do cliente
-  // Configurar PORTAL_DOMAIN no Railway, ex: portal.digitalrf.com.br
   const isPortalDomain =
     hostname.startsWith("portal.") ||
     (process.env.PORTAL_DOMAIN !== undefined &&
       hostname === process.env.PORTAL_DOMAIN);
 
   // Detecta se o acesso é pelo domínio do painel interno
-  // Configurar PAINEL_DOMAIN no Railway, ex: painel.digitalrf.com.br
   const isPainelDomain =
     hostname.startsWith("painel.") ||
     (process.env.PAINEL_DOMAIN !== undefined &&
@@ -56,22 +82,18 @@ export async function proxy(req: NextRequest) {
   // --- Roteamento por domínio ---
 
   if (isPortalDomain) {
-    // Bloquear acesso ao painel interno pelo domínio do portal
     if (pathname.startsWith("/painel")) {
       return NextResponse.redirect(new URL("/cliente/login", req.url));
     }
-    // Raiz do portal → login do cliente
     if (pathname === "/") {
       return NextResponse.redirect(new URL("/cliente/login", req.url));
     }
   }
 
   if (isPainelDomain) {
-    // Bloquear acesso ao portal pelo domínio do painel
     if (pathname.startsWith("/portal") || pathname.startsWith("/cliente")) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
-    // Raiz do painel → login interno
     if (pathname === "/") {
       return NextResponse.redirect(new URL("/login", req.url));
     }
@@ -85,9 +107,86 @@ export async function proxy(req: NextRequest) {
   );
   if (isPublic) return NextResponse.next();
 
-  // Verificar token
-  const token = req.cookies.get("access_token")?.value;
-  if (!token) return redirectToLogin(req, isPortalDomain);
+  // Desenvolvimento sem autenticação: passa tudo
+  if (process.env.BYPASS_AUTH === "true") return NextResponse.next();
+
+  const accessToken = req.cookies.get("access_token")?.value;
+  const refreshToken = req.cookies.get("refresh_token")?.value;
+  const isApiRoute = pathname.startsWith("/api/");
+
+  // 1. Access token válido e "fresco" — verifica roles e prossegue
+  if (accessToken && (await isAccessTokenFresh(accessToken))) {
+    return applyRoleChecks(req, accessToken, isPortalDomain);
+  }
+
+  // 2. Access token expirado/ausente — tenta renovar com o refresh token
+  if (refreshToken && (await isRefreshTokenValid(refreshToken))) {
+    try {
+      const refreshUrl = new URL("/api/auth/refresh", req.url);
+      const refreshRes = await fetch(refreshUrl.toString(), {
+        method: "POST",
+        headers: { cookie: req.headers.get("cookie") ?? "" },
+      });
+
+      if (refreshRes.ok) {
+        const setCookies = refreshRes.headers.getSetCookie();
+
+        let newAccessToken: string | undefined;
+        for (const cookie of setCookies) {
+          const match = cookie.match(/^access_token=([^;]+)/);
+          if (match) {
+            newAccessToken = match[1];
+            break;
+          }
+        }
+
+        const requestHeaders = new Headers(req.headers);
+        if (newAccessToken) {
+          const existing = (req.headers.get("cookie") ?? "")
+            .split("; ")
+            .filter((c) => !c.startsWith("access_token="));
+          existing.push(`access_token=${newAccessToken}`);
+          requestHeaders.set("cookie", existing.join("; "));
+        }
+
+        const roleResponse = newAccessToken
+          ? await applyRoleChecks(req, newAccessToken, isPortalDomain)
+          : NextResponse.next({ request: { headers: requestHeaders } });
+
+        // Se applyRoleChecks retornou um redirect, preserva mas ainda envia os cookies
+        const response =
+          roleResponse.status === 307 || roleResponse.status === 308
+            ? roleResponse
+            : NextResponse.next({ request: { headers: requestHeaders } });
+
+        for (const cookie of setCookies) {
+          response.headers.append("Set-Cookie", cookie);
+        }
+
+        return response;
+      }
+    } catch {
+      // Falha na chamada interna de refresh — cai para redirecionar/401
+    }
+  }
+
+  // 3. Nem access nem refresh válidos — nega o acesso
+  if (isApiRoute) {
+    return NextResponse.json(
+      { error: "Sessão expirada", code: "SESSION_EXPIRED" },
+      { status: 401 },
+    );
+  }
+
+  return redirectToLogin(req, isPortalDomain);
+}
+
+async function applyRoleChecks(
+  req: NextRequest,
+  token: string,
+  isPortalDomain: boolean,
+): Promise<NextResponse> {
+  const { pathname } = req.nextUrl;
 
   let payload: JWTPayload | null = null;
   try {
@@ -129,7 +228,11 @@ export async function proxy(req: NextRequest) {
 function redirectToLogin(req: NextRequest, isPortal = false) {
   const { pathname } = req.nextUrl;
 
-  if (isPortal || pathname.startsWith("/portal") || pathname.startsWith("/cliente")) {
+  if (
+    isPortal ||
+    pathname.startsWith("/portal") ||
+    pathname.startsWith("/cliente")
+  ) {
     return NextResponse.redirect(new URL("/cliente/login", req.url));
   }
   return NextResponse.redirect(new URL("/login", req.url));

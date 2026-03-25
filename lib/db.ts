@@ -3,7 +3,7 @@ import { Pool, PoolClient } from "pg";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 10,
-  idleTimeoutMillis: 10000,           // descarta conexões idle mais rápido, evita ficar com stale
+  idleTimeoutMillis: 10000, // descarta conexões idle mais rápido, evita ficar com stale
   connectionTimeoutMillis: 8000,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,

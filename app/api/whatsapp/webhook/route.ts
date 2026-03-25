@@ -77,7 +77,9 @@ export async function POST(req: NextRequest) {
             msg as Record<string, unknown>,
           );
         } else {
-          await processarMensagemEntrada(instancia, msg);
+          await transaction(async (client) => {
+            await processarMensagemEntrada(instancia, msg, client);
+          });
         }
       }
       return NextResponse.json({ ok: true });
@@ -93,7 +95,15 @@ export async function POST(req: NextRequest) {
 async function processarMensagemEntrada(
   instancia: { id: string; empresa_id: string },
   msg: Record<string, unknown>,
+  client: PoolClient,
 ) {
+  const q = <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
+    client.query(sql, params).then((r) => r.rows as T[]);
+  const q1 = async <T = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[],
+  ) => (await q<T>(sql, params))[0] ?? null;
+
   // Evolution message structure
   const key = msg.key as Record<string, unknown> | undefined;
   if (!key || key.fromMe) return; // Ignore messages sent by us
@@ -116,19 +126,19 @@ async function processarMensagemEntrada(
   if (!texto) return; // Only handle text messages for now
 
   // Find or create contato
-  let contato = await queryOne<{ id: string; usuario_id: string | null }>(
+  let contato = await q1<{ id: string; usuario_id: string | null }>(
     `SELECT id, usuario_id FROM whatsapp_contatos WHERE empresa_id = $1 AND numero = $2`,
     [instancia.empresa_id, numero],
   );
 
   if (!contato) {
-    const [novo] = await query<{ id: string; usuario_id: string | null }>(
+    const [novo] = await q<{ id: string; usuario_id: string | null }>(
       `INSERT INTO whatsapp_contatos (empresa_id, numero, nome) VALUES ($1, $2, $3) RETURNING id, usuario_id`,
       [instancia.empresa_id, numero, pushName],
     );
     contato = novo;
   } else if (pushName && !contato.usuario_id) {
-    await query(`UPDATE whatsapp_contatos SET nome = $1 WHERE id = $2`, [
+    await q(`UPDATE whatsapp_contatos SET nome = $1 WHERE id = $2`, [
       pushName,
       contato.id,
     ]);
@@ -136,7 +146,7 @@ async function processarMensagemEntrada(
 
   // Resolve cliente_id via usuario_clientes (tabela N:N entre usuarios e clientes)
   const clienteVinculado = contato.usuario_id
-    ? await queryOne<{ cliente_id: string }>(
+    ? await q1<{ cliente_id: string }>(
         `SELECT uc.cliente_id
          FROM usuario_clientes uc
          JOIN clientes c ON c.id = uc.cliente_id
@@ -148,14 +158,14 @@ async function processarMensagemEntrada(
   const clienteId = clienteVinculado?.cliente_id ?? null;
 
   // Avoid duplicate processing
-  const existing = await queryOne(
+  const existing = await q1(
     `SELECT id FROM whatsapp_mensagens WHERE message_id = $1 AND empresa_id = $2`,
     [messageId, instancia.empresa_id],
   );
   if (existing) return;
 
   // Get whatsapp_config to check if auto-ticket creation is enabled
-  const config = await queryOne<{
+  const config = await q1<{
     criar_ticket_auto: boolean;
     categoria_padrao_id: string | null;
     msg_ticket_criado: string;
@@ -168,7 +178,7 @@ async function processarMensagemEntrada(
   // Find open ticket for this contact to add message to, or create new one
   let ticketId: string | null = null;
 
-  const ticketAberto = await queryOne<{ id: string; numero: string }>(
+  const ticketAberto = await q1<{ id: string; numero: string }>(
     `SELECT t.id, t.numero
      FROM tickets t
      WHERE t.empresa_id = $1
@@ -186,7 +196,7 @@ async function processarMensagemEntrada(
   if (ticketAberto) {
     ticketId = ticketAberto.id;
     // Add message to existing ticket
-    await query(
+    await q(
       `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna, autor_id)
        SELECT $1, $2, $3, FALSE, u.id
        FROM usuarios u
@@ -196,23 +206,23 @@ async function processarMensagemEntrada(
     );
   } else if (config?.criar_ticket_auto) {
     // Create new ticket automatically
-    const statusAberto = await queryOne<{ id: string }>(
+    const statusAberto = await q1<{ id: string }>(
       `SELECT id FROM ticket_status WHERE empresa_id = $1 AND codigo = 'aberto' LIMIT 1`,
       [instancia.empresa_id],
     );
-    const prioridadeNormal = await queryOne<{ id: string }>(
+    const prioridadeNormal = await q1<{ id: string }>(
       `SELECT id FROM ticket_prioridades WHERE empresa_id = $1 AND codigo = 'normal' LIMIT 1`,
       [instancia.empresa_id],
     );
 
     if (statusAberto && prioridadeNormal) {
-      const count = await queryOne<{ c: string }>(
+      const count = await q1<{ c: string }>(
         `SELECT COUNT(*) AS c FROM tickets WHERE empresa_id = $1`,
         [instancia.empresa_id],
       );
       const numero_ticket = `#${String(Number(count?.c ?? 0) + 1).padStart(5, "0")}`;
 
-      const [novoTicket] = await query<{ id: string; numero: string }>(
+      const [novoTicket] = await q<{ id: string; numero: string }>(
         `INSERT INTO tickets
            (empresa_id, numero, titulo, descricao, canal, status_id, prioridade_id,
             cliente_id, aberto_por, categoria_id)
@@ -237,7 +247,7 @@ async function processarMensagemEntrada(
       if (novoTicket) {
         ticketId = novoTicket.id;
         // Initial message
-        await query(
+        await q(
           `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna)
            VALUES ($1, $2, $3, FALSE)`,
           [ticketId, instancia.empresa_id, texto],
@@ -247,7 +257,7 @@ async function processarMensagemEntrada(
   }
 
   // Record in whatsapp_mensagens
-  await query(
+  await q(
     `INSERT INTO whatsapp_mensagens
        (empresa_id, ticket_id, contato_id, message_id, direcao, tipo, corpo, status)
      VALUES ($1, $2, $3, $4, 'entrada', 'texto', $5, 'recebida')`,

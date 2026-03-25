@@ -19,7 +19,6 @@ export default function ClienteLoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [bgError, setBgError] = useState(false)
   const [logoError, setLogoError] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,12 +53,16 @@ export default function ClienteLoginPage() {
     <div className="h-screen flex">
 
       {/* ─── Painel esquerdo ─── */}
-      <div className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center bg-[#0f1923] overflow-hidden">
-
-        {/* Imagem de fundo */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {!bgError && <img src={LOGIN_BG} alt="" className="absolute inset-0 w-full h-full object-cover" onError={() => setBgError(true)} />}
-
+      <div
+        className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center overflow-hidden"
+        style={{
+          backgroundColor: "#0f1923",
+          backgroundImage: `url(${LOGIN_BG})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
         {/* Overlay escuro sobre a imagem */}
         <div className="absolute inset-0 bg-[#0f1923]/70" />
 

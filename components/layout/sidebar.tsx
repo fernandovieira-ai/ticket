@@ -220,6 +220,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState(false);
 
   // Persistir estado no localStorage
   useEffect(() => {
@@ -265,16 +266,14 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
             borderBottom: "0.5px solid var(--color-border)",
           }}
         >
-          {logoUrl ? (
+          {logoUrl && !logoError ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}
               alt="Logo"
               className="object-contain"
               style={{ width: 32, height: 32, borderRadius: 8 }}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
+              onError={() => setLogoError(true)}
             />
           ) : (
             <div

@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import Image from "next/image";
 import { getSession } from "@/lib/auth";
 import { queryOne } from "@/lib/db";
 import { PortalUserMenu } from "./_components/portal-user-menu";
+import { PortalLogoImage } from "./_components/portal-logo-image";
 
 export default async function PortalLayout({
   children,
@@ -27,28 +27,7 @@ export default async function PortalLayout({
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 flex-shrink-0">
         <div className="px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {logoUrl ? (
-              <Image
-                src={logoUrl}
-                alt="Logo"
-                width={32}
-                height={32}
-                className="object-contain rounded-lg"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#fff",
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  DR
-                </span>
-              </div>
-            )}
+            <PortalLogoImage logoUrl={logoUrl} />
             <span className="font-semibold text-gray-900 text-sm">
               DigitalRF Help
             </span>

@@ -133,14 +133,18 @@ async function processarMensagemEntrada(
     ]);
   }
 
-  // Resolve cliente_id via clientes.usuario_id (para vincular ao ticket)
+  // Resolve cliente_id via usuario_clientes (tabela N:N entre usuarios e clientes)
   const clienteVinculado = contato.usuario_id
-    ? await queryOne<{ id: string }>(
-        `SELECT id FROM clientes WHERE empresa_id = $1 AND usuario_id = $2 LIMIT 1`,
-        [instancia.empresa_id, contato.usuario_id],
+    ? await queryOne<{ cliente_id: string }>(
+        `SELECT uc.cliente_id
+         FROM usuario_clientes uc
+         JOIN clientes c ON c.id = uc.cliente_id
+         WHERE uc.usuario_id = $1 AND c.empresa_id = $2
+         LIMIT 1`,
+        [contato.usuario_id, instancia.empresa_id],
       )
     : null;
-  const clienteId = clienteVinculado?.id ?? null;
+  const clienteId = clienteVinculado?.cliente_id ?? null;
 
   // Avoid duplicate processing
   const existing = await queryOne(

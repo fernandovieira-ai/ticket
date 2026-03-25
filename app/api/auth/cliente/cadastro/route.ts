@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   const parsed = cadastroSchema.safeParse(body);
   if (!parsed.success) {
     // Retorna a primeira mensagem de erro em português
-    const firstError = parsed.error.errors[0];
+    const firstError = parsed.error.issues[0];
     const fieldLabels: Record<string, string> = {
       nome: "Nome",
       email: "E-mail",

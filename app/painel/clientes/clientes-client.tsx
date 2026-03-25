@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +62,7 @@ export function ClientesClient() {
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
+  const primeiroRender = useRef(true);
 
   const [painelAberto, setPainelAberto] = useState(false);
   const [modo, setModo] = useState<Modo>("criar");
@@ -97,6 +98,11 @@ export function ClientesClient() {
   }, [busca]);
 
   useEffect(() => {
+    if (primeiroRender.current) {
+      primeiroRender.current = false;
+      carregar();
+      return;
+    }
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
@@ -360,8 +366,16 @@ export function ClientesClient() {
         {/* Lista */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+            <div className="divide-y divide-gray-50">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-3">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse flex-shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3" />
+                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-1/2" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : clientes.length === 0 ? (
             <div className="text-center py-12 text-gray-400">

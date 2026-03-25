@@ -18,17 +18,18 @@ export default async function FichaClientePage({
 
   const { id } = await params
 
-  const cliente = await queryOne<Cliente>(
-    `SELECT * FROM clientes WHERE id = $1 AND empresa_id = $2`,
-    [id, session.empresaId]
-  )
+  const [cliente, contatos] = await Promise.all([
+    queryOne<Cliente>(
+      `SELECT * FROM clientes WHERE id = $1 AND empresa_id = $2`,
+      [id, session.empresaId]
+    ),
+    query<ContatoCliente>(
+      `SELECT * FROM contatos_cliente WHERE cliente_id = $1 ORDER BY principal DESC, nome`,
+      [id]
+    ),
+  ])
 
   if (!cliente) notFound()
-
-  const contatos = await query<ContatoCliente>(
-    `SELECT * FROM contatos_cliente WHERE cliente_id = $1 ORDER BY principal DESC, nome`,
-    [id]
-  )
 
   return <FichaClienteClient cliente={{ ...cliente, contatos }} />
 }

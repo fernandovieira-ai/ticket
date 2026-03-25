@@ -510,20 +510,6 @@ export default function TicketPainelPage() {
               <h1 className="text-sm font-semibold text-gray-900 truncate">
                 #{ticket.numero} — {ticket.titulo}
               </h1>
-              <span
-                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border flex-shrink-0"
-                style={{
-                  color: ticket.status_cor,
-                  borderColor: ticket.status_cor + "55",
-                  backgroundColor: ticket.status_cor + "15",
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: ticket.status_cor }}
-                />
-                {ticket.status_nome}
-              </span>
             </div>
             {/* Botões — estilos originais preservados */}
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
@@ -868,9 +854,30 @@ export default function TicketPainelPage() {
                 )}
               </div>
               <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Status</p>
+                <button
+                  type="button"
+                  onClick={() => setStatusAberto(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity"
+                  style={{
+                    color: ticket.status_cor,
+                    borderColor: ticket.status_cor + "55",
+                    backgroundColor: ticket.status_cor + "15",
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: ticket.status_cor }}
+                  />
+                  {ticket.status_nome}
+                </button>
+              </div>
+              <div>
                 <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
-                <span
-                  className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border"
+                <button
+                  type="button"
+                  onClick={() => setPrioridadeAberta(true)}
+                  className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity"
                   style={{
                     color: ticket.prioridade_cor,
                     borderColor: ticket.prioridade_cor + "55",
@@ -878,7 +885,7 @@ export default function TicketPainelPage() {
                   }}
                 >
                   {ticket.prioridade_nome}
-                </span>
+                </button>
               </div>
             </div>
           </div>
@@ -1215,6 +1222,79 @@ export default function TicketPainelPage() {
                 Fechar
               </button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal — Alterar Status */}
+      <Dialog open={statusAberto} onOpenChange={setStatusAberto}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Alterar Status</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 pt-2">
+            {statusOpcoes.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                disabled={salvandoStatus}
+                onClick={async () => {
+                  await atualizarStatus(s.id);
+                  setStatusAberto(false);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
+                style={{
+                  borderColor: s.id === ticket.status_id ? s.cor + "88" : undefined,
+                  backgroundColor: s.id === ticket.status_id ? s.cor + "12" : undefined,
+                  color: s.id === ticket.status_id ? s.cor : undefined,
+                }}
+              >
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: s.cor }}
+                />
+                {s.nome}
+                {s.id === ticket.status_id && (
+                  <span className="ml-auto text-[11px] opacity-60">atual</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal — Alterar Prioridade */}
+      <Dialog open={prioridadeAberta} onOpenChange={setPrioridadeAberta}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Alterar Prioridade</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 pt-2">
+            {prioridadeOpcoes.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={async () => {
+                  await atualizarPrioridade(p.id);
+                  setPrioridadeAberta(false);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-gray-50"
+                style={{
+                  borderColor: p.id === ticket.prioridade_id ? p.cor + "88" : undefined,
+                  backgroundColor: p.id === ticket.prioridade_id ? p.cor + "12" : undefined,
+                  color: p.id === ticket.prioridade_id ? p.cor : undefined,
+                }}
+              >
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: p.cor }}
+                />
+                {p.nome}
+                {p.id === ticket.prioridade_id && (
+                  <span className="ml-auto text-[11px] opacity-60">atual</span>
+                )}
+              </button>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

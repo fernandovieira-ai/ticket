@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     await mkdir(uploadDir, { recursive: true });
     await writeFile(join(uploadDir, filename), buffer);
 
-    const url = `/uploads/logos/${filename}`;
+    const url = `/api/uploads/logos/${filename}`;
     return NextResponse.json({ url });
   } catch (err) {
     console.error("[POST /api/upload/logo]", err);

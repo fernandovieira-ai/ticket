@@ -6,8 +6,8 @@
     "dev": "next dev",
     "dev:server": "next dev -H 131.100.231.199 -p 3000",
     "build": "next build",
-    "start": "next start",
-    "start:server": "next start -H 131.100.231.199 -p 3000"
+    "start": "node .next/standalone/server.js",
+    "start:server": "node .next/standalone/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -87,14 +87,14 @@ export async function proxy(req: NextRequest) {
 
   // Verificar token
   const token = req.cookies.get("access_token")?.value;
-  if (!token) return redirectToLogin(req);
+  if (!token) return redirectToLogin(req, isPortalDomain);
 
   let payload: JWTPayload | null = null;
   try {
     const { payload: p } = await jwtVerify(token, JWT_SECRET);
     payload = p as unknown as JWTPayload;
   } catch {
-    return redirectToLogin(req);
+    return redirectToLogin(req, isPortalDomain);
   }
 
   // Redirecionar raiz conforme perfil
@@ -126,10 +126,10 @@ export async function proxy(req: NextRequest) {
   return NextResponse.next();
 }
 
-function redirectToLogin(req: NextRequest) {
+function redirectToLogin(req: NextRequest, isPortal = false) {
   const { pathname } = req.nextUrl;
 
-  if (pathname.startsWith("/portal") || pathname.startsWith("/cliente")) {
+  if (isPortal || pathname.startsWith("/portal") || pathname.startsWith("/cliente")) {
     return NextResponse.redirect(new URL("/cliente/login", req.url));
   }
   return NextResponse.redirect(new URL("/login", req.url));

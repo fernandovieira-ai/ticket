@@ -92,7 +92,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="h-screen flex">
+    <div className="h-screen flex overflow-hidden">
       {/* ─── Painel esquerdo ─── */}
       <div
         className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center overflow-hidden"

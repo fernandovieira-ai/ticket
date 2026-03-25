@@ -50,7 +50,7 @@ export default function ClienteLoginPage() {
   }
 
   return (
-    <div className="h-screen flex">
+    <div className="h-screen flex overflow-hidden">
 
       {/* ─── Painel esquerdo ─── */}
       <div

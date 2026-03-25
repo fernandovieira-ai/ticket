@@ -1,0 +1,61 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { queryOne } from "@/lib/db";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Header } from "@/components/layout/header";
+
+export default async function PainelLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // BYPASS_AUTH: remover antes do deploy em produção
+  const bypassAuth = process.env.BYPASS_AUTH === "true";
+
+  const session = bypassAuth ? null : await getSession();
+
+  if (!bypassAuth) {
+    if (!session) redirect("/login");
+    if (session!.perfil === "cliente") redirect("/portal/meus-tickets");
+  }
+
+  const perfil = session?.perfil ?? "admin";
+  const nome = session?.nome ?? "Dev";
+  const email = session?.email ?? "dev@local";
+  const empresaId = session?.empresaId;
+
+  const empresa = empresaId
+    ? await queryOne<{ logo_url: string | null }>(
+        "SELECT logo_url FROM empresas WHERE id = $1",
+        [empresaId],
+      )
+    : bypassAuth
+      ? await queryOne<{ logo_url: string | null }>(
+          "SELECT logo_url FROM empresas LIMIT 1",
+        )
+      : null;
+  const logoUrl = empresa?.logo_url ?? null;
+
+  return (
+    <div
+      className="flex h-screen overflow-hidden"
+      style={{ backgroundColor: "var(--color-bg-root)" }}
+    >
+      {/* Sidebar */}
+      <aside className="flex-shrink-0 h-full">
+        <Sidebar perfil={perfil} logoUrl={logoUrl} />
+      </aside>
+
+      {/* Conteúdo */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Header nome={nome} email={email} titulo="DigitalRF Help" />
+        <main
+          className="flex-1 overflow-y-auto p-6"
+          style={{ backgroundColor: "var(--color-bg-root)" }}
+        >
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

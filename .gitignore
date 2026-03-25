@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE / tools
+.claude/
+
+# binaries / archives
+*.rar
+*.zip
+
+# uploads (gerados em runtime)
+/public/uploads/logos/*
+/public/uploads/tickets/*
+!public/uploads/logos/.gitkeep
+!public/uploads/tickets/.gitkeep

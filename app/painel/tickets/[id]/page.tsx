@@ -1,0 +1,952 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  ArrowLeft,
+  Loader2,
+  Send,
+  Lock,
+  User,
+  Building2,
+  Tag,
+  ChevronDown,
+  Paperclip,
+  CornerUpLeft,
+  X,
+  Trash2,
+  Mail,
+  Phone,
+  Calendar,
+  CreditCard,
+  CheckCircle2,
+  ArrowRightLeft,
+  Smartphone,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  RichTextEditor,
+  type RichTextEditorRef,
+} from "@/components/ui/rich-text-editor";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import Link from "next/link";
+
+interface TicketDetalhe {
+  id: string;
+  numero: string;
+  titulo: string;
+  descricao: string;
+  canal: string;
+  status_id: string;
+  status_nome: string;
+  status_cor: string;
+  status_encerra: boolean;
+  prioridade_id: string;
+  prioridade_nome: string;
+  prioridade_cor: string;
+  cliente_id: string | null;
+  cliente_nome: string | null;
+  atribuido_a: string | null;
+  atribuido_nome: string | null;
+  aberto_por: string;
+  aberto_por_nome: string;
+  departamento_id: string | null;
+  departamento_nome: string | null;
+  categoria_id: string | null;
+  categoria_nome: string | null;
+  subcategoria_id: string | null;
+  subcategoria_nome: string | null;
+  criado_em: string;
+  atualizado_em: string;
+  sla_primeira_resp_deadline: string | null;
+  sla_resolucao_deadline: string | null;
+  sla_alerta_pct: number;
+}
+
+interface Anexo {
+  id: string;
+  nome: string;
+  url: string;
+  tamanho: number | null;
+  mime_type: string | null;
+}
+
+interface Mensagem {
+  id: string;
+  corpo: string;
+  interna: boolean;
+  criado_em: string;
+  autor_id: string;
+  autor_nome: string;
+  autor_perfil: string;
+  autor_avatar: string | null;
+  anexos: Anexo[];
+}
+
+interface StatusOpcao {
+  id: string;
+  codigo: string;
+  nome: string;
+  cor: string;
+  encerra: boolean;
+}
+interface PrioridadeOpcao {
+  id: string;
+  nome: string;
+  cor: string;
+}
+interface UsuarioOpcao {
+  id: string;
+  nome: string;
+  perfil: string;
+}
+interface DepartamentoOpcao {
+  id: string;
+  nome: string;
+}
+interface ClienteDetalhe {
+  email: string | null;
+  telefone: string | null;
+  documento: string | null;
+  segmento: string | null;
+}
+
+export default function TicketPainelPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+
+  const [ticket, setTicket] = useState<TicketDetalhe | null>(null);
+  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+  const [statusOpcoes, setStatusOpcoes] = useState<StatusOpcao[]>([]);
+  const [prioridadeOpcoes, setPrioridadeOpcoes] = useState<PrioridadeOpcao[]>(
+    [],
+  );
+  const [loading, setLoading] = useState(true);
+  const [resposta, setResposta] = useState("");
+  const [interna, setInterna] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [salvandoStatus, setSalvandoStatus] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [respostaMsgId, setRespostaMsgId] = useState<string | null>(null);
+  const [perfilUsuario, setPerfilUsuario] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [finalizarAberto, setFinalizarAberto] = useState(false);
+  const [finalizarMotivo, setFinalizarMotivo] = useState("");
+  const [finalizarHH, setFinalizarHH] = useState("");
+  const [finalizarMM, setFinalizarMM] = useState("");
+  const [finalizando, setFinalizando] = useState(false);
+  const [cancelarAberto, setCancelarAberto] = useState(false);
+  const [cancelarMotivo, setCancelarMotivo] = useState("");
+  const [cancelando, setCancelando] = useState(false);
+  const [reabrindo, setReabrindo] = useState(false);
+  const [enviarViaWhatsapp, setEnviarViaWhatsapp] = useState(false);
+  const [transferirAberto, setTransferirAberto] = useState(false);
+  const [transferirTipo, setTransferirTipo] = useState<"atendente" | "departamento">("atendente");
+  const [transferirAtendente, setTransferirAtendente] = useState("");
+  const [transferirDepartamento, setTransferirDepartamento] = useState("");
+  const [transferindo, setTransferindo] = useState(false);
+  const [usuarios, setUsuarios] = useState<UsuarioOpcao[]>([]);
+  const [departamentos, setDepartamentos] = useState<DepartamentoOpcao[]>([]);
+  const finalizarEditorRef = useRef<RichTextEditorRef>(null);
+  const cancelarEditorRef = useRef<RichTextEditorRef>(null);
+  const [statusAberto, setStatusAberto] = useState(false);
+  const [prioridadeAberta, setPrioridadeAberta] = useState(false);
+  const [clienteExpandido, setClienteExpandido] = useState(false);
+  const [chamadoExpandido, setChamadoExpandido] = useState(false);
+  const [clienteDetalhe, setClienteDetalhe] = useState<ClienteDetalhe | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const carregar = useCallback(async () => {
+    const [resT, resM] = await Promise.all([
+      fetch(`/api/tickets/${id}`),
+      fetch(`/api/tickets/${id}/mensagens`),
+    ]);
+    if (!resT.ok) {
+      router.push("/painel/tickets");
+      return;
+    }
+    setTicket(await resT.json());
+    setMensagens(await resM.json());
+    setLoading(false);
+  }, [id, router]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  useEffect(() => {
+    async function carregarOpcoes() {
+      const [resS, resP] = await Promise.all([
+        fetch("/api/ticket-status"),
+        fetch("/api/ticket-prioridades"),
+      ]);
+      if (resS.ok) setStatusOpcoes(await resS.json());
+      if (resP.ok) setPrioridadeOpcoes(await resP.json());
+    }
+    carregarOpcoes();
+  }, []);
+
+  async function enviarResposta(e: React.FormEvent) {
+    e.preventDefault();
+    const textoLimpo = resposta.replace(/<[^>]*>/g, "").trim();
+    if (!textoLimpo) return;
+    setEnviando(true);
+    try {
+      let res: Response;
+      if (attachments.length > 0) {
+        const fd = new FormData();
+        fd.append("corpo", resposta);
+        fd.append("interna", String(interna));
+        for (const f of attachments) fd.append("arquivos", f);
+        res = await fetch(`/api/tickets/${id}/mensagens`, {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        res = await fetch(`/api/tickets/${id}/mensagens`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ corpo: resposta, interna }),
+        });
+      }
+      if (res.ok) {
+        // If ticket is via WhatsApp and option is checked, also send via WhatsApp
+        if (!interna && enviarViaWhatsapp && clienteDetalhe?.telefone) {
+          const wpRes = await fetch("/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ticket_id: id,
+              numero: clienteDetalhe.telefone,
+              mensagem: resposta,
+            }),
+          });
+          if (!wpRes.ok) {
+            const err = await wpRes.json().catch(() => ({}));
+            console.warn("[WhatsApp send]", err.error);
+          }
+        }
+        setResposta("");
+        setAttachments([]);
+        editorRef.current?.clear();
+        await carregar();
+      }
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  // Auto-enable WhatsApp send when ticket comes from WhatsApp
+  useEffect(() => {
+    if (ticket?.canal === "whatsapp") setEnviarViaWhatsapp(true);
+  }, [ticket?.canal]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setPerfilUsuario(d.perfil ?? null))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!ticket?.cliente_id) return;
+    fetch(`/api/clientes/${ticket.cliente_id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setClienteDetalhe({ email: d.email, telefone: d.telefone, documento: d.documento, segmento: d.segmento });
+      })
+      .catch(() => {});
+  }, [ticket?.cliente_id]);
+
+  useEffect(() => {
+    async function carregarTransferencia() {
+      const [resU, resD] = await Promise.all([
+        fetch("/api/usuarios?pageSize=50"),
+        fetch("/api/departamentos?pageSize=50"),
+      ]);
+      if (resU.ok) {
+        const data = await resU.json();
+        setUsuarios((data.data ?? []).filter((u: UsuarioOpcao) => u.perfil !== "cliente"));
+      }
+      if (resD.ok) {
+        const data = await resD.json();
+        setDepartamentos(data.data ?? []);
+      }
+    }
+    carregarTransferencia();
+  }, []);
+
+  async function transferirTicket() {
+    setTransferindo(true);
+    try {
+      const body: Record<string, string | null> = {};
+      if (transferirTipo === "atendente") {
+        body.atribuido_a = transferirAtendente || null;
+      } else {
+        body.departamento_id = transferirDepartamento || null;
+        body.atribuido_a = transferirAtendente || null;
+      }
+      await fetch(`/api/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setTransferirAberto(false);
+      await carregar();
+    } finally {
+      setTransferindo(false);
+    }
+  }
+
+  async function excluirTicket() {
+    if (
+      !window.confirm(
+        `Tem certeza que deseja excluir o chamado #${ticket?.numero}?\n\nEsta ação não pode ser desfeita.`,
+      )
+    )
+      return;
+    setExcluindo(true);
+    try {
+      const res = await fetch(`/api/tickets/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        router.push("/painel/tickets");
+      }
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  async function finalizarTicket() {
+    const textoLimpo = finalizarMotivo.replace(/<[^>]*>/g, "").trim();
+    if (!textoLimpo) return;
+    setFinalizando(true);
+    try {
+      // Envia a mensagem de finalização
+      await fetch(`/api/tickets/${id}/mensagens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ corpo: finalizarMotivo, interna: false }),
+      });
+      // Fecha o ticket com o status de encerramento e salva tempo de trabalho
+      const statusEncerra = statusOpcoes.find((s) => s.encerra === true);
+      if (statusEncerra) {
+        const hh = parseInt(finalizarHH || "0", 10);
+        const mm = parseInt(finalizarMM || "0", 10);
+        const tempoMinutos = hh * 60 + mm;
+        await fetch(`/api/tickets/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status_id: statusEncerra.id,
+            ...(tempoMinutos > 0 && { tempo_trabalho_minutos: tempoMinutos }),
+          }),
+        });
+      }
+      setFinalizarAberto(false);
+      setFinalizarMotivo("");
+      setFinalizarHH("");
+      setFinalizarMM("");
+      finalizarEditorRef.current?.clear();
+      await carregar();
+    } finally {
+      setFinalizando(false);
+    }
+  }
+
+  async function cancelarTicket() {
+    const textoLimpo = cancelarMotivo.replace(/<[^>]*>/g, "").trim();
+    if (!textoLimpo) return;
+    setCancelando(true);
+    try {
+      await fetch(`/api/tickets/${id}/mensagens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ corpo: cancelarMotivo, interna: false }),
+      });
+      const statusCancelado = statusOpcoes.find((s) => s.codigo === "cancelado");
+      if (statusCancelado) {
+        await fetch(`/api/tickets/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status_id: statusCancelado.id }),
+        });
+      }
+      setCancelarAberto(false);
+      setCancelarMotivo("");
+      cancelarEditorRef.current?.clear();
+      await carregar();
+    } finally {
+      setCancelando(false);
+    }
+  }
+
+  async function reabrirTicket() {
+    setReabrindo(true);
+    try {
+      const statusAberto = statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
+      if (statusAberto) {
+        await fetch(`/api/tickets/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status_id: statusAberto.id }),
+        });
+        await carregar();
+      }
+    } finally {
+      setReabrindo(false);
+    }
+  }
+
+  async function atualizarStatus(statusId: string) {
+    setSalvandoStatus(true);
+    await fetch(`/api/tickets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status_id: statusId }),
+    });
+    await carregar();
+    setSalvandoStatus(false);
+  }
+
+  async function atualizarPrioridade(prioridadeId: string) {
+    await fetch(`/api/tickets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prioridade_id: prioridadeId }),
+    });
+    await carregar();
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (!ticket) return null;
+
+  // Mapa de cores por autor
+  const USER_COLORS = ["#6366f1","#8b5cf6","#0d9488","#f43f5e","#f97316","#0891b2","#10b981","#ec4899","#84cc16","#eab308"];
+  const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
+  const autorColorMap: Record<string, string> = Object.fromEntries(autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]));
+
+  // Computações SLA
+  const agora = new Date();
+  const criadoEm = new Date(ticket.criado_em);
+  const slaDeadline = ticket.sla_resolucao_deadline ? new Date(ticket.sla_resolucao_deadline) : null;
+  const slaTotalMs = slaDeadline ? slaDeadline.getTime() - criadoEm.getTime() : null;
+  const slaDecorridoMs = slaTotalMs ? Math.min(agora.getTime() - criadoEm.getTime(), slaTotalMs) : null;
+  const slaPct = slaTotalMs && slaDecorridoMs ? Math.min(Math.round((slaDecorridoMs / slaTotalMs) * 100), 100) : 0;
+  const slaDentroSla = slaDeadline ? agora < slaDeadline : null;
+  const slaEmAlerta = slaTotalMs ? slaPct >= (ticket.sla_alerta_pct ?? 70) : false;
+  const slaTotalHoras = slaTotalMs ? Math.round(slaTotalMs / (1000 * 60 * 60)) : 0;
+  const slaDecorridoHoras = slaDecorridoMs ? Math.floor(slaDecorridoMs / (1000 * 60 * 60)) : 0;
+  const slaDecorridoMinutos = slaDecorridoMs ? Math.floor((slaDecorridoMs % (1000 * 60 * 60)) / (1000 * 60)) : 0;
+
+  return (
+    <>
+      {/* ═══ LAYOUT PRINCIPAL ═══ */}
+      <div className="flex h-full overflow-hidden">
+        {/* ── Coluna central ── */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Cabeçalho */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 flex-wrap">
+            <Link
+              href="/painel/tickets"
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0"
+            >
+              <ArrowLeft size={14} />
+              Tickets
+            </Link>
+            <span className="text-gray-200 select-none">|</span>
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <h1 className="text-sm font-semibold text-gray-900 truncate">
+                #{ticket.numero} — {ticket.titulo}
+              </h1>
+              <span
+                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border flex-shrink-0"
+                style={{
+                  color: ticket.status_cor,
+                  borderColor: ticket.status_cor + "55",
+                  backgroundColor: ticket.status_cor + "15",
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ticket.status_cor }} />
+                {ticket.status_nome}
+              </span>
+            </div>
+            {/* Botões — estilos originais preservados */}
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {ticket.status_encerra ? (
+                <button
+                  type="button"
+                  onClick={reabrirTicket}
+                  disabled={reabrindo}
+                  title="Reabrir chamado"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {reabrindo ? <Loader2 size={13} className="animate-spin" /> : <CornerUpLeft size={13} />}
+                  Reabrir Chamado
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFinalizarAberto(true)}
+                  title="Finalizar chamado"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 border border-green-300 bg-white hover:bg-green-50 hover:border-green-500 rounded-md px-2.5 py-1.5 transition-colors"
+                >
+                  <CheckCircle2 size={13} />
+                  Finalizar
+                </button>
+              )}
+              {!ticket.status_encerra && (
+                <button
+                  type="button"
+                  onClick={() => setCancelarAberto(true)}
+                  title="Cancelar chamado"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-orange-600 border border-orange-200 bg-white hover:bg-orange-50 hover:border-orange-400 rounded-md px-2.5 py-1.5 transition-colors"
+                >
+                  <X size={13} />
+                  Cancelar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setTransferirTipo("atendente");
+                  setTransferirAtendente(ticket.atribuido_a ?? "");
+                  setTransferirDepartamento(ticket.departamento_id ?? "");
+                  setTransferirAberto(true);
+                }}
+                title="Transferir chamado"
+                className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 border border-purple-200 bg-white hover:bg-purple-50 hover:border-purple-400 rounded-md px-2.5 py-1.5 transition-colors"
+              >
+                <ArrowRightLeft size={13} />
+                Transferir
+              </button>
+              {perfilUsuario === "admin" && (
+                <button
+                  type="button"
+                  onClick={excluirTicket}
+                  disabled={excluindo}
+                  title="Excluir chamado"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-red-600 border border-red-200 bg-white hover:bg-red-50 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {excluindo ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  Excluir
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Mensagens (área scrollável) ── */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="space-y-1 max-w-3xl">
+              {[...mensagens].reverse().map((m) => {
+                const isOperador = m.autor_perfil !== "cliente";
+                const isSistema = m.autor_perfil === "sistema";
+                const inicial = m.autor_nome?.charAt(0).toUpperCase() ?? "?";
+                const avatarColor = autorColorMap[m.autor_id] ?? "#9ca3af";
+
+                if (isSistema) {
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 py-2">
+                      <div className="flex-1 h-px bg-gray-100" />
+                      <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                        <span dangerouslySetInnerHTML={{ __html: m.corpo }} />
+                        {" · "}
+                        {format(new Date(m.criado_em), "HH:mm", { locale: ptBR })}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-100" />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={m.id} className="flex items-start gap-3 py-2.5">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white select-none mt-0.5"
+                      style={{ backgroundColor: avatarColor }}
+                    >
+                      {inicial}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 mb-1.5">
+                        <span className="text-sm font-semibold text-gray-900">{m.autor_nome}</span>
+                        <span className="text-xs text-gray-400">
+                          {format(new Date(m.criado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          {isOperador && " · Atendente"}
+                        </span>
+                        {m.interna && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium">
+                            <Lock size={9} /> Nota interna
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className={`rounded-lg px-4 py-3 text-sm leading-relaxed ${
+                          m.interna
+                            ? "bg-amber-50 border border-amber-200"
+                            : isOperador
+                              ? "bg-white border border-gray-200 border-l-[3px] border-l-blue-400"
+                              : "bg-gray-50 border border-gray-100"
+                        }`}
+                      >
+                        <div
+                          className="prose prose-sm max-w-none text-gray-800 [&_p]:my-0.5 [&_ul]:my-1 [&_ol]:my-1"
+                          dangerouslySetInnerHTML={{ __html: m.corpo }}
+                        />
+                      </div>
+                      {m.anexos?.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {m.anexos.map((a) => (
+                            <a
+                              key={a.id}
+                              href={a.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs bg-gray-100 text-blue-600 hover:bg-gray-200 rounded px-2.5 py-1 transition-colors"
+                            >
+                              <Paperclip size={10} className="text-gray-400 flex-shrink-0" />
+                              <span className="max-w-[200px] truncate">{a.nome}</span>
+                              {a.tamanho && (
+                                <span className="text-gray-400 flex-shrink-0">
+                                  ({a.tamanho < 1024 ? `${a.tamanho} B` : a.tamanho < 1024 * 1024 ? `${Math.round(a.tamanho / 1024)} KB` : `${(a.tamanho / (1024 * 1024)).toFixed(1)} MB`})
+                                </span>
+                              )}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+          </div>
+
+          {/* ── Formulário de resposta (fixo no rodapé) ── */}
+          <div className="flex-shrink-0 border-t border-gray-200 bg-white">
+            <div className="flex border-b border-gray-100 px-1">
+              <button
+                type="button"
+                onClick={() => setInterna(false)}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  !interna ? "border-gray-800 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                Responder
+              </button>
+              <button
+                type="button"
+                onClick={() => setInterna(true)}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  interna ? "border-amber-500 text-amber-600" : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Lock size={11} className="inline mr-1 opacity-70" />
+                Nota interna
+              </button>
+            </div>
+            <form ref={formRef} onSubmit={enviarResposta} className={interna ? "bg-amber-50" : "bg-white"}>
+              <div className="px-4 pt-3 pb-2">
+                <RichTextEditor
+                  ref={editorRef}
+                  value={resposta}
+                  onChange={setResposta}
+                  onAttach={setAttachments}
+                  placeholder={interna ? "Nota interna (não visível ao cliente)..." : "Escreva a resposta para o cliente..."}
+                  disabled={enviando}
+                />
+              </div>
+              {ticket.canal === "whatsapp" && !interna && (
+                <div className="px-4 pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={enviarViaWhatsapp}
+                        onChange={(e) => setEnviarViaWhatsapp(e.target.checked)}
+                      />
+                      <div className="w-8 h-4 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-500" />
+                    </div>
+                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                      <Smartphone className="w-3 h-3 text-green-600" />
+                      Enviar também via WhatsApp
+                      {!clienteDetalhe?.telefone && <span className="text-amber-500">(sem telefone cadastrado)</span>}
+                    </span>
+                  </label>
+                </div>
+              )}
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100">
+                <p className="text-xs text-gray-400">Ctrl+Enter para enviar</p>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={enviando || !resposta.replace(/<[^>]*>/g, "").trim()}
+                >
+                  {enviando ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                  {interna ? "Adicionar nota" : "Enviar"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* ═══ PAINEL LATERAL ═══ */}
+        <aside className="w-72 border-l border-gray-200 flex-shrink-0 overflow-y-auto bg-white">
+          {/* INFORMAÇÕES */}
+          <div className="px-5 py-4 border-b border-gray-100">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">Informações</p>
+            <div className="space-y-3.5">
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Protocolo</p>
+                <p className="text-sm font-mono font-medium text-gray-800">#{ticket.numero}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Cliente</p>
+                {ticket.cliente_id ? (
+                  <Link href={`/painel/clientes/${ticket.cliente_id}`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                    {ticket.cliente_nome ?? "—"}
+                  </Link>
+                ) : (
+                  <p className="text-sm text-gray-800">{ticket.cliente_nome ?? "—"}</p>
+                )}
+              </div>
+              {ticket.departamento_nome && (
+                <div>
+                  <p className="text-[11px] text-gray-400 mb-0.5">Departamento</p>
+                  <p className="text-sm text-gray-800">{ticket.departamento_nome}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Categoria</p>
+                <p className="text-sm text-gray-800">{ticket.categoria_nome ?? "—"}</p>
+              </div>
+              {ticket.subcategoria_nome && (
+                <div>
+                  <p className="text-[11px] text-gray-400 mb-0.5">Subcategoria</p>
+                  <p className="text-sm text-gray-800">{ticket.subcategoria_nome}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Atendente</p>
+                {ticket.atribuido_nome ? (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                      style={{ backgroundColor: "#3b82f6" }}
+                    >
+                      {ticket.atribuido_nome.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm text-gray-800">{ticket.atribuido_nome}</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Não atribuído</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
+                <span
+                  className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border"
+                  style={{ color: ticket.prioridade_cor, borderColor: ticket.prioridade_cor + "55", backgroundColor: ticket.prioridade_cor + "15" }}
+                >
+                  {ticket.prioridade_nome}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* SLA */}
+          {slaDeadline && (
+            <div className="px-5 py-4 border-b border-gray-100">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">SLA</p>
+              <p className="text-[11px] text-gray-500 mb-1">Prazo de resposta</p>
+              <p className={`text-sm font-medium mb-3 ${slaDentroSla ? (slaEmAlerta ? "text-yellow-600" : "text-green-600") : "text-red-500"}`}>
+                {slaDentroSla ? (slaEmAlerta ? "⚠ Atenção — prazo próximo" : "✓ Dentro do prazo") : "✗ Fora do prazo"}
+              </p>
+              <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+                <span>{slaDecorridoHoras}h {slaDecorridoMinutos}min</span>
+                <span>{slaTotalHoras}h limite</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${slaDentroSla ? (slaEmAlerta ? "bg-yellow-400" : "bg-green-500") : "bg-red-500"}`}
+                  style={{ width: `${slaPct}%` }}
+                />
+              </div>
+              <div className="mt-3.5">
+                <p className="text-[11px] text-gray-400 mb-0.5">Aberto em</p>
+                <p className="text-sm text-gray-800">
+                  {format(new Date(ticket.criado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* HISTÓRICO */}
+          <div className="px-5 py-4">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">Histórico</p>
+            <div className="space-y-3">
+              {ticket.atribuido_nome && (
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 mt-1 flex-shrink-0" />
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Ticket atribuído a <span className="font-medium">{ticket.atribuido_nome}</span>
+                  </p>
+                </div>
+              )}
+              <div className="flex items-start gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-green-400 mt-1 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Ticket aberto por <span className="font-medium">{ticket.aberto_por_nome}</span>
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {format(new Date(ticket.criado_em), "HH:mm", { locale: ptBR })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* ═══ DIALOGS ═══ */}
+
+      {/* Modal Transferir */}
+      <Dialog open={transferirAberto} onOpenChange={setTransferirAberto}>
+        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
+              Transferir Chamado: #{ticket.numero} - {ticket.titulo}
+            </DialogTitle>
+            <button type="button" onClick={() => setTransferirAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0">
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 w-28">Transferir para:</span>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="transferirTipo" value="atendente" checked={transferirTipo === "atendente"} onChange={() => setTransferirTipo("atendente")} className="accent-blue-600" />
+                  <span className="text-sm text-gray-700">Atendente</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="transferirTipo" value="departamento" checked={transferirTipo === "departamento"} onChange={() => setTransferirTipo("departamento")} className="accent-blue-600" />
+                  <span className="text-sm text-gray-700">Departamento</span>
+                </label>
+              </div>
+            </div>
+            {transferirTipo === "departamento" && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 w-28">Departamento:</span>
+                <select value={transferirDepartamento} onChange={(e) => setTransferirDepartamento(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  <option value="">Selecione um departamento</option>
+                  {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 w-28">Atendente:</span>
+              <select value={transferirAtendente} onChange={(e) => setTransferirAtendente(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="">Selecione um atendente</option>
+                {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+            <button type="button" onClick={transferirTicket} disabled={transferindo || (transferirTipo === "departamento" && !transferirDepartamento)} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {transferindo && <Loader2 size={14} className="animate-spin" />}
+              Transferir
+            </button>
+            <button type="button" onClick={() => setTransferirAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Finalizar */}
+      <Dialog open={finalizarAberto} onOpenChange={setFinalizarAberto}>
+        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900">Finalizar Chamado</DialogTitle>
+            <button type="button" onClick={() => setFinalizarAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Motivo:</p>
+              <RichTextEditor ref={finalizarEditorRef} value={finalizarMotivo} onChange={setFinalizarMotivo} placeholder="Insira aqui a resposta do seu chamado" disabled={finalizando} />
+            </div>
+            <button type="button" className="text-xs text-blue-600 hover:text-blue-800 hover:underline">Exibir respostas padrões</button>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Tempo de trabalho:</span>
+              <input type="number" min={0} max={99} placeholder="HH" value={finalizarHH} onChange={(e) => setFinalizarHH(e.target.value)} className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input type="number" min={0} max={59} placeholder="MM" value={finalizarMM} onChange={(e) => setFinalizarMM(e.target.value)} className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+            <button type="button" title="Anexar arquivo" className="p-2 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300 transition-colors">
+              <Paperclip size={15} />
+            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={finalizarTicket} disabled={finalizando || !finalizarMotivo.replace(/<[^>]*>/g, "").trim()} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {finalizando && <Loader2 size={14} className="animate-spin" />}
+                Finalizar
+              </button>
+              <button type="button" onClick={() => setFinalizarAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Cancelar */}
+      <Dialog open={cancelarAberto} onOpenChange={setCancelarAberto}>
+        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900">Cancelar Chamado</DialogTitle>
+            <button type="button" onClick={() => setCancelarAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Motivo do cancelamento:</p>
+              <RichTextEditor ref={cancelarEditorRef} value={cancelarMotivo} onChange={setCancelarMotivo} placeholder="Descreva o motivo do cancelamento..." disabled={cancelando} />
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={cancelarTicket} disabled={cancelando || !cancelarMotivo.replace(/<[^>]*>/g, "").trim()} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {cancelando && <Loader2 size={14} className="animate-spin" />}
+                Cancelar Chamado
+              </button>
+              <button type="button" onClick={() => setCancelarAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

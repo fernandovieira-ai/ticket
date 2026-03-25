@@ -66,9 +66,12 @@ const SENTIMENTO_LABEL: Record<string, string> = {
 type OrdemCampo = "nome" | "mensagens" | "membros" | "sem_resposta";
 type Periodo = "hoje" | "7d";
 
-function buildStatsParams(periodo: Periodo): string {
-  if (periodo === "7d") return "";
-  const ate   = new Date();
+function buildResumoParams(periodo: Periodo): string {
+  const ate = new Date();
+  if (periodo === "7d") {
+    const desde = new Date(ate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return `?desde=${desde.toISOString()}&ate=${ate.toISOString()}`;
+  }
   const desde = new Date(ate);
   desde.setHours(0, 0, 0, 0);
   return `?desde=${desde.toISOString()}&ate=${ate.toISOString()}`;
@@ -94,30 +97,33 @@ export default function GruposWhatsappPage() {
       const usarFiltro  = filtroMensagens !== undefined ? filtroMensagens : soComMensagens;
       const usarPeriodo = periodoOverride ?? periodo;
       const params = usarFiltro ? "?com_mensagens=true" : "";
-      const res = await fetch(`/api/whatsapp/grupos${params}`);
-      if (!res.ok) throw new Error("Falha ao carregar grupos");
-      const data: Grupo[] = await res.json();
+      const resumoParams = buildResumoParams(usarPeriodo);
 
-      const statsParams = buildStatsParams(usarPeriodo);
+      // Busca grupos e resumo de stats em paralelo (2 requests no total, antes eram N+1)
+      const [resGrupos, resResumo] = await Promise.all([
+        fetch(`/api/whatsapp/grupos${params}`),
+        fetch(`/api/whatsapp/grupos/resumo-stats${resumoParams}`),
+      ]);
 
-      const comStats: GrupoComStats[] = await Promise.all(
-        data.map(async (g) => {
-          if (!g.monitorado) return g;
-          try {
-            const statsRes = await fetch(`/api/whatsapp/grupos/${g.id}/stats${statsParams}`);
-            if (!statsRes.ok) return g;
-            const stats = await statsRes.json();
-            return {
-              ...g,
-              total_mensagens:  stats.totais.mensagens,
-              ultimo_sentimento: stats.ultima_analise?.sentimento,
-              ultima_analise:    stats.ultima_analise?.criado_em,
-            };
-          } catch {
-            return g;
-          }
-        })
-      );
+      if (!resGrupos.ok) throw new Error("Falha ao carregar grupos");
+
+      const data: Grupo[] = await resGrupos.json();
+      const resumo: Record<string, {
+        total_mensagens: number;
+        ultimo_sentimento: string | null;
+        ultima_analise: string | null;
+      }> = resResumo.ok ? await resResumo.json() : {};
+
+      const comStats: GrupoComStats[] = data.map((g) => {
+        const s = resumo[g.id];
+        if (!s) return g;
+        return {
+          ...g,
+          total_mensagens:   s.total_mensagens,
+          ultimo_sentimento: s.ultimo_sentimento ?? undefined,
+          ultima_analise:    s.ultima_analise ?? undefined,
+        };
+      });
 
       setGrupos(comStats);
     } catch (err) {

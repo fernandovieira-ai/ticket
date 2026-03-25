@@ -2,12 +2,12 @@ import { Pool, PoolClient } from "pg";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10, // Railway hobby suporta ~25 conexões; 10 deixa margem
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 15000, // aguarda mais em cold-starts do Railway
+  max: 10,
+  idleTimeoutMillis: 10000,           // descarta conexões idle mais rápido, evita ficar com stale
+  connectionTimeoutMillis: 8000,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10000,
-  allowExitOnIdle: false, // mantém pool vivo entre requests em serverless
+  keepAliveInitialDelayMillis: 5000,
+  allowExitOnIdle: false,
 });
 
 // Previne crash do processo em erros de pool (conexão perdida em background)
@@ -34,6 +34,9 @@ function isRetryable(err: unknown): boolean {
 /**
  * Executa um callback que recebe um PoolClient.
  * Em caso de erro transitório, retenta até 3 vezes com backoff exponencial.
+ *
+ * IMPORTANTE: ao chamar client.release(err), o pg *destrói* a conexão
+ * em vez de devolvê-la ao pool — evita reutilizar conexões mortas.
  */
 async function withConnection<T>(
   fn: (client: PoolClient) => Promise<T>,
@@ -41,15 +44,17 @@ async function withConnection<T>(
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    return await fn(client);
+    const result = await fn(client);
+    client.release(); // conexão boa → devolve ao pool
+    return result;
   } catch (err) {
+    // Destrói a conexão problemática em vez de reciclá-la
+    client.release(err instanceof Error ? err : new Error(String(err)));
     if (isRetryable(err) && attempt <= 3) {
       await new Promise((r) => setTimeout(r, 300 * attempt));
       return withConnection(fn, attempt + 1);
     }
     throw err;
-  } finally {
-    client.release();
   }
 }
 

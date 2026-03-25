@@ -196,6 +196,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
+  const primeiroRender = useRef(true);
 
   const [painelAberto, setPainelAberto] = useState(novo);
   const [salvando, setSalvando] = useState(false);
@@ -305,6 +306,11 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   }, [busca, statusCodigo, meus, fila]);
 
   useEffect(() => {
+    if (primeiroRender.current) {
+      primeiroRender.current = false;
+      carregar();
+      return;
+    }
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
@@ -649,11 +655,18 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
 
         <div className="flex-1 overflow-y-auto overflow-x-auto">
           {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2
-                className="w-4 h-4 animate-spin"
-                style={{ color: "var(--color-text-muted)" }}
-              />
+            <div className="divide-y" style={{ borderColor: "var(--color-border)" }}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-16 h-3 bg-gray-100 rounded animate-pulse flex-shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 bg-gray-100 rounded animate-pulse w-3/4" />
+                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-1/3" />
+                  </div>
+                  <div className="w-14 h-5 bg-gray-100 rounded-full animate-pulse flex-shrink-0" />
+                  <div className="w-20 h-3 bg-gray-100 rounded animate-pulse flex-shrink-0" />
+                </div>
+              ))}
             </div>
           ) : tickets.length === 0 ? (
             <div

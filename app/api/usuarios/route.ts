@@ -42,12 +42,19 @@ export async function GET(req: NextRequest) {
     [session.empresaId, busca ? `%${busca}%` : '', perfilFiltro, tamanho, offset]
   )
 
-  return NextResponse.json({
-    data: rows,
-    total: rows[0]?.total_count ?? 0,
-    page: pagina,
-    pageSize: tamanho,
-  })
+  return NextResponse.json(
+    {
+      data: rows,
+      total: rows[0]?.total_count ?? 0,
+      page: pagina,
+      pageSize: tamanho,
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=120',
+      },
+    },
+  )
 }
 
 // POST /api/usuarios — criar usuário

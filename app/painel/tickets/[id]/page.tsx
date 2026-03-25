@@ -148,7 +148,9 @@ export default function TicketPainelPage() {
   const [reabrindo, setReabrindo] = useState(false);
   const [enviarViaWhatsapp, setEnviarViaWhatsapp] = useState(false);
   const [transferirAberto, setTransferirAberto] = useState(false);
-  const [transferirTipo, setTransferirTipo] = useState<"atendente" | "departamento">("atendente");
+  const [transferirTipo, setTransferirTipo] = useState<
+    "atendente" | "departamento"
+  >("atendente");
   const [transferirAtendente, setTransferirAtendente] = useState("");
   const [transferirDepartamento, setTransferirDepartamento] = useState("");
   const [transferindo, setTransferindo] = useState(false);
@@ -160,7 +162,9 @@ export default function TicketPainelPage() {
   const [prioridadeAberta, setPrioridadeAberta] = useState(false);
   const [clienteExpandido, setClienteExpandido] = useState(false);
   const [chamadoExpandido, setChamadoExpandido] = useState(false);
-  const [clienteDetalhe, setClienteDetalhe] = useState<ClienteDetalhe | null>(null);
+  const [clienteDetalhe, setClienteDetalhe] = useState<ClienteDetalhe | null>(
+    null,
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichTextEditorRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -183,14 +187,32 @@ export default function TicketPainelPage() {
     carregar();
   }, [carregar]);
 
+  // Carrega todas as opções estáticas em paralelo — um único useEffect elimina a cascata
   useEffect(() => {
     async function carregarOpcoes() {
-      const [resS, resP] = await Promise.all([
+      const [resS, resP, resMe, resU, resD] = await Promise.all([
         fetch("/api/ticket-status"),
         fetch("/api/ticket-prioridades"),
+        fetch("/api/auth/me"),
+        fetch("/api/usuarios?pageSize=50"),
+        fetch("/api/departamentos?pageSize=50"),
       ]);
       if (resS.ok) setStatusOpcoes(await resS.json());
       if (resP.ok) setPrioridadeOpcoes(await resP.json());
+      if (resMe.ok) {
+        const d = await resMe.json();
+        setPerfilUsuario(d.perfil ?? null);
+      }
+      if (resU.ok) {
+        const data = await resU.json();
+        setUsuarios(
+          (data.data ?? []).filter((u: UsuarioOpcao) => u.perfil !== "cliente"),
+        );
+      }
+      if (resD.ok) {
+        const data = await resD.json();
+        setDepartamentos(data.data ?? []);
+      }
     }
     carregarOpcoes();
   }, []);
@@ -251,39 +273,20 @@ export default function TicketPainelPage() {
   }, [ticket?.canal]);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => setPerfilUsuario(d.perfil ?? null))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (!ticket?.cliente_id) return;
     fetch(`/api/clientes/${ticket.cliente_id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) setClienteDetalhe({ email: d.email, telefone: d.telefone, documento: d.documento, segmento: d.segmento });
+        if (d)
+          setClienteDetalhe({
+            email: d.email,
+            telefone: d.telefone,
+            documento: d.documento,
+            segmento: d.segmento,
+          });
       })
       .catch(() => {});
   }, [ticket?.cliente_id]);
-
-  useEffect(() => {
-    async function carregarTransferencia() {
-      const [resU, resD] = await Promise.all([
-        fetch("/api/usuarios?pageSize=50"),
-        fetch("/api/departamentos?pageSize=50"),
-      ]);
-      if (resU.ok) {
-        const data = await resU.json();
-        setUsuarios((data.data ?? []).filter((u: UsuarioOpcao) => u.perfil !== "cliente"));
-      }
-      if (resD.ok) {
-        const data = await resD.json();
-        setDepartamentos(data.data ?? []);
-      }
-    }
-    carregarTransferencia();
-  }, []);
 
   async function transferirTicket() {
     setTransferindo(true);
@@ -372,7 +375,9 @@ export default function TicketPainelPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ corpo: cancelarMotivo, interna: false }),
       });
-      const statusCancelado = statusOpcoes.find((s) => s.codigo === "cancelado");
+      const statusCancelado = statusOpcoes.find(
+        (s) => s.codigo === "cancelado",
+      );
       if (statusCancelado) {
         await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
@@ -392,7 +397,8 @@ export default function TicketPainelPage() {
   async function reabrirTicket() {
     setReabrindo(true);
     try {
-      const statusAberto = statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
+      const statusAberto =
+        statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
       if (statusAberto) {
         await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
@@ -437,22 +443,52 @@ export default function TicketPainelPage() {
   if (!ticket) return null;
 
   // Mapa de cores por autor
-  const USER_COLORS = ["#6366f1","#8b5cf6","#0d9488","#f43f5e","#f97316","#0891b2","#10b981","#ec4899","#84cc16","#eab308"];
+  const USER_COLORS = [
+    "#6366f1",
+    "#8b5cf6",
+    "#0d9488",
+    "#f43f5e",
+    "#f97316",
+    "#0891b2",
+    "#10b981",
+    "#ec4899",
+    "#84cc16",
+    "#eab308",
+  ];
   const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
-  const autorColorMap: Record<string, string> = Object.fromEntries(autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]));
+  const autorColorMap: Record<string, string> = Object.fromEntries(
+    autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]),
+  );
 
   // Computações SLA
   const agora = new Date();
   const criadoEm = new Date(ticket.criado_em);
-  const slaDeadline = ticket.sla_resolucao_deadline ? new Date(ticket.sla_resolucao_deadline) : null;
-  const slaTotalMs = slaDeadline ? slaDeadline.getTime() - criadoEm.getTime() : null;
-  const slaDecorridoMs = slaTotalMs ? Math.min(agora.getTime() - criadoEm.getTime(), slaTotalMs) : null;
-  const slaPct = slaTotalMs && slaDecorridoMs ? Math.min(Math.round((slaDecorridoMs / slaTotalMs) * 100), 100) : 0;
+  const slaDeadline = ticket.sla_resolucao_deadline
+    ? new Date(ticket.sla_resolucao_deadline)
+    : null;
+  const slaTotalMs = slaDeadline
+    ? slaDeadline.getTime() - criadoEm.getTime()
+    : null;
+  const slaDecorridoMs = slaTotalMs
+    ? Math.min(agora.getTime() - criadoEm.getTime(), slaTotalMs)
+    : null;
+  const slaPct =
+    slaTotalMs && slaDecorridoMs
+      ? Math.min(Math.round((slaDecorridoMs / slaTotalMs) * 100), 100)
+      : 0;
   const slaDentroSla = slaDeadline ? agora < slaDeadline : null;
-  const slaEmAlerta = slaTotalMs ? slaPct >= (ticket.sla_alerta_pct ?? 70) : false;
-  const slaTotalHoras = slaTotalMs ? Math.round(slaTotalMs / (1000 * 60 * 60)) : 0;
-  const slaDecorridoHoras = slaDecorridoMs ? Math.floor(slaDecorridoMs / (1000 * 60 * 60)) : 0;
-  const slaDecorridoMinutos = slaDecorridoMs ? Math.floor((slaDecorridoMs % (1000 * 60 * 60)) / (1000 * 60)) : 0;
+  const slaEmAlerta = slaTotalMs
+    ? slaPct >= (ticket.sla_alerta_pct ?? 70)
+    : false;
+  const slaTotalHoras = slaTotalMs
+    ? Math.round(slaTotalMs / (1000 * 60 * 60))
+    : 0;
+  const slaDecorridoHoras = slaDecorridoMs
+    ? Math.floor(slaDecorridoMs / (1000 * 60 * 60))
+    : 0;
+  const slaDecorridoMinutos = slaDecorridoMs
+    ? Math.floor((slaDecorridoMs % (1000 * 60 * 60)) / (1000 * 60))
+    : 0;
 
   return (
     <>
@@ -482,7 +518,10 @@ export default function TicketPainelPage() {
                   backgroundColor: ticket.status_cor + "15",
                 }}
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ticket.status_cor }} />
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: ticket.status_cor }}
+                />
                 {ticket.status_nome}
               </span>
             </div>
@@ -496,7 +535,11 @@ export default function TicketPainelPage() {
                   title="Reabrir chamado"
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {reabrindo ? <Loader2 size={13} className="animate-spin" /> : <CornerUpLeft size={13} />}
+                  {reabrindo ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <CornerUpLeft size={13} />
+                  )}
                   Reabrir Chamado
                 </button>
               ) : (
@@ -543,7 +586,11 @@ export default function TicketPainelPage() {
                   title="Excluir chamado"
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-red-600 border border-red-200 bg-white hover:bg-red-50 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {excluindo ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {excluindo ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={13} />
+                  )}
                   Excluir
                 </button>
               )}
@@ -566,7 +613,9 @@ export default function TicketPainelPage() {
                       <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
                         <span dangerouslySetInnerHTML={{ __html: m.corpo }} />
                         {" · "}
-                        {format(new Date(m.criado_em), "HH:mm", { locale: ptBR })}
+                        {format(new Date(m.criado_em), "HH:mm", {
+                          locale: ptBR,
+                        })}
                       </span>
                       <div className="flex-1 h-px bg-gray-100" />
                     </div>
@@ -583,9 +632,15 @@ export default function TicketPainelPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-2 mb-1.5">
-                        <span className="text-sm font-semibold text-gray-900">{m.autor_nome}</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {m.autor_nome}
+                        </span>
                         <span className="text-xs text-gray-400">
-                          {format(new Date(m.criado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          {format(
+                            new Date(m.criado_em),
+                            "dd/MM/yyyy 'às' HH:mm",
+                            { locale: ptBR },
+                          )}
                           {isOperador && " · Atendente"}
                         </span>
                         {m.interna && (
@@ -618,11 +673,22 @@ export default function TicketPainelPage() {
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 text-xs bg-gray-100 text-blue-600 hover:bg-gray-200 rounded px-2.5 py-1 transition-colors"
                             >
-                              <Paperclip size={10} className="text-gray-400 flex-shrink-0" />
-                              <span className="max-w-[200px] truncate">{a.nome}</span>
+                              <Paperclip
+                                size={10}
+                                className="text-gray-400 flex-shrink-0"
+                              />
+                              <span className="max-w-[200px] truncate">
+                                {a.nome}
+                              </span>
                               {a.tamanho && (
                                 <span className="text-gray-400 flex-shrink-0">
-                                  ({a.tamanho < 1024 ? `${a.tamanho} B` : a.tamanho < 1024 * 1024 ? `${Math.round(a.tamanho / 1024)} KB` : `${(a.tamanho / (1024 * 1024)).toFixed(1)} MB`})
+                                  (
+                                  {a.tamanho < 1024
+                                    ? `${a.tamanho} B`
+                                    : a.tamanho < 1024 * 1024
+                                      ? `${Math.round(a.tamanho / 1024)} KB`
+                                      : `${(a.tamanho / (1024 * 1024)).toFixed(1)} MB`}
+                                  )
                                 </span>
                               )}
                             </a>
@@ -644,7 +710,9 @@ export default function TicketPainelPage() {
                 type="button"
                 onClick={() => setInterna(false)}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                  !interna ? "border-gray-800 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"
+                  !interna
+                    ? "border-gray-800 text-gray-900"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
                 }`}
               >
                 Responder
@@ -653,21 +721,31 @@ export default function TicketPainelPage() {
                 type="button"
                 onClick={() => setInterna(true)}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                  interna ? "border-amber-500 text-amber-600" : "border-transparent text-gray-400 hover:text-gray-600"
+                  interna
+                    ? "border-amber-500 text-amber-600"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
                 }`}
               >
                 <Lock size={11} className="inline mr-1 opacity-70" />
                 Nota interna
               </button>
             </div>
-            <form ref={formRef} onSubmit={enviarResposta} className={interna ? "bg-amber-50" : "bg-white"}>
+            <form
+              ref={formRef}
+              onSubmit={enviarResposta}
+              className={interna ? "bg-amber-50" : "bg-white"}
+            >
               <div className="px-4 pt-3 pb-2">
                 <RichTextEditor
                   ref={editorRef}
                   value={resposta}
                   onChange={setResposta}
                   onAttach={setAttachments}
-                  placeholder={interna ? "Nota interna (não visível ao cliente)..." : "Escreva a resposta para o cliente..."}
+                  placeholder={
+                    interna
+                      ? "Nota interna (não visível ao cliente)..."
+                      : "Escreva a resposta para o cliente..."
+                  }
                   disabled={enviando}
                 />
               </div>
@@ -686,7 +764,11 @@ export default function TicketPainelPage() {
                     <span className="flex items-center gap-1 text-xs text-gray-500">
                       <Smartphone className="w-3 h-3 text-green-600" />
                       Enviar também via WhatsApp
-                      {!clienteDetalhe?.telefone && <span className="text-amber-500">(sem telefone cadastrado)</span>}
+                      {!clienteDetalhe?.telefone && (
+                        <span className="text-amber-500">
+                          (sem telefone cadastrado)
+                        </span>
+                      )}
                     </span>
                   </label>
                 </div>
@@ -696,9 +778,15 @@ export default function TicketPainelPage() {
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={enviando || !resposta.replace(/<[^>]*>/g, "").trim()}
+                  disabled={
+                    enviando || !resposta.replace(/<[^>]*>/g, "").trim()
+                  }
                 >
-                  {enviando ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                  {enviando ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 mr-1.5" />
+                  )}
                   {interna ? "Adicionar nota" : "Enviar"}
                 </Button>
               </div>
@@ -710,36 +798,55 @@ export default function TicketPainelPage() {
         <aside className="w-72 border-l border-gray-200 flex-shrink-0 overflow-y-auto bg-white">
           {/* INFORMAÇÕES */}
           <div className="px-5 py-4 border-b border-gray-100">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">Informações</p>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+              Informações
+            </p>
             <div className="space-y-3.5">
               <div>
                 <p className="text-[11px] text-gray-400 mb-0.5">Protocolo</p>
-                <p className="text-sm font-mono font-medium text-gray-800">#{ticket.numero}</p>
+                <p className="text-sm font-mono font-medium text-gray-800">
+                  #{ticket.numero}
+                </p>
               </div>
               <div>
                 <p className="text-[11px] text-gray-400 mb-0.5">Cliente</p>
                 {ticket.cliente_id ? (
-                  <Link href={`/painel/clientes/${ticket.cliente_id}`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                  <Link
+                    href={`/painel/clientes/${ticket.cliente_id}`}
+                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
                     {ticket.cliente_nome ?? "—"}
                   </Link>
                 ) : (
-                  <p className="text-sm text-gray-800">{ticket.cliente_nome ?? "—"}</p>
+                  <p className="text-sm text-gray-800">
+                    {ticket.cliente_nome ?? "—"}
+                  </p>
                 )}
               </div>
               {ticket.departamento_nome && (
                 <div>
-                  <p className="text-[11px] text-gray-400 mb-0.5">Departamento</p>
-                  <p className="text-sm text-gray-800">{ticket.departamento_nome}</p>
+                  <p className="text-[11px] text-gray-400 mb-0.5">
+                    Departamento
+                  </p>
+                  <p className="text-sm text-gray-800">
+                    {ticket.departamento_nome}
+                  </p>
                 </div>
               )}
               <div>
                 <p className="text-[11px] text-gray-400 mb-0.5">Categoria</p>
-                <p className="text-sm text-gray-800">{ticket.categoria_nome ?? "—"}</p>
+                <p className="text-sm text-gray-800">
+                  {ticket.categoria_nome ?? "—"}
+                </p>
               </div>
               {ticket.subcategoria_nome && (
                 <div>
-                  <p className="text-[11px] text-gray-400 mb-0.5">Subcategoria</p>
-                  <p className="text-sm text-gray-800">{ticket.subcategoria_nome}</p>
+                  <p className="text-[11px] text-gray-400 mb-0.5">
+                    Subcategoria
+                  </p>
+                  <p className="text-sm text-gray-800">
+                    {ticket.subcategoria_nome}
+                  </p>
                 </div>
               )}
               <div>
@@ -752,7 +859,9 @@ export default function TicketPainelPage() {
                     >
                       {ticket.atribuido_nome.charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm text-gray-800">{ticket.atribuido_nome}</span>
+                    <span className="text-sm text-gray-800">
+                      {ticket.atribuido_nome}
+                    </span>
                   </div>
                 ) : (
                   <p className="text-sm text-gray-400">Não atribuído</p>
@@ -762,7 +871,11 @@ export default function TicketPainelPage() {
                 <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
                 <span
                   className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border"
-                  style={{ color: ticket.prioridade_cor, borderColor: ticket.prioridade_cor + "55", backgroundColor: ticket.prioridade_cor + "15" }}
+                  style={{
+                    color: ticket.prioridade_cor,
+                    borderColor: ticket.prioridade_cor + "55",
+                    backgroundColor: ticket.prioridade_cor + "15",
+                  }}
                 >
                   {ticket.prioridade_nome}
                 </span>
@@ -773,13 +886,25 @@ export default function TicketPainelPage() {
           {/* SLA */}
           {slaDeadline && (
             <div className="px-5 py-4 border-b border-gray-100">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">SLA</p>
-              <p className="text-[11px] text-gray-500 mb-1">Prazo de resposta</p>
-              <p className={`text-sm font-medium mb-3 ${slaDentroSla ? (slaEmAlerta ? "text-yellow-600" : "text-green-600") : "text-red-500"}`}>
-                {slaDentroSla ? (slaEmAlerta ? "⚠ Atenção — prazo próximo" : "✓ Dentro do prazo") : "✗ Fora do prazo"}
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+                SLA
+              </p>
+              <p className="text-[11px] text-gray-500 mb-1">
+                Prazo de resposta
+              </p>
+              <p
+                className={`text-sm font-medium mb-3 ${slaDentroSla ? (slaEmAlerta ? "text-yellow-600" : "text-green-600") : "text-red-500"}`}
+              >
+                {slaDentroSla
+                  ? slaEmAlerta
+                    ? "⚠ Atenção — prazo próximo"
+                    : "✓ Dentro do prazo"
+                  : "✗ Fora do prazo"}
               </p>
               <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
-                <span>{slaDecorridoHoras}h {slaDecorridoMinutos}min</span>
+                <span>
+                  {slaDecorridoHoras}h {slaDecorridoMinutos}min
+                </span>
                 <span>{slaTotalHoras}h limite</span>
               </div>
               <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
@@ -791,7 +916,9 @@ export default function TicketPainelPage() {
               <div className="mt-3.5">
                 <p className="text-[11px] text-gray-400 mb-0.5">Aberto em</p>
                 <p className="text-sm text-gray-800">
-                  {format(new Date(ticket.criado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  {format(new Date(ticket.criado_em), "dd/MM/yyyy 'às' HH:mm", {
+                    locale: ptBR,
+                  })}
                 </p>
               </div>
             </div>
@@ -799,13 +926,16 @@ export default function TicketPainelPage() {
 
           {/* HISTÓRICO */}
           <div className="px-5 py-4">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">Histórico</p>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+              Histórico
+            </p>
             <div className="space-y-3">
               {ticket.atribuido_nome && (
                 <div className="flex items-start gap-2.5">
                   <span className="w-2 h-2 rounded-full bg-blue-400 mt-1 flex-shrink-0" />
                   <p className="text-xs text-gray-600 leading-relaxed">
-                    Ticket atribuído a <span className="font-medium">{ticket.atribuido_nome}</span>
+                    Ticket atribuído a{" "}
+                    <span className="font-medium">{ticket.atribuido_nome}</span>
                   </p>
                 </div>
               )}
@@ -813,10 +943,15 @@ export default function TicketPainelPage() {
                 <span className="w-2 h-2 rounded-full bg-green-400 mt-1 flex-shrink-0" />
                 <div>
                   <p className="text-xs text-gray-600 leading-relaxed">
-                    Ticket aberto por <span className="font-medium">{ticket.aberto_por_nome}</span>
+                    Ticket aberto por{" "}
+                    <span className="font-medium">
+                      {ticket.aberto_por_nome}
+                    </span>
                   </p>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    {format(new Date(ticket.criado_em), "HH:mm", { locale: ptBR })}
+                    {format(new Date(ticket.criado_em), "HH:mm", {
+                      locale: ptBR,
+                    })}
                   </p>
                 </div>
               </div>
@@ -829,52 +964,107 @@ export default function TicketPainelPage() {
 
       {/* Modal Transferir */}
       <Dialog open={transferirAberto} onOpenChange={setTransferirAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-lg p-0 gap-0"
+        >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
               Transferir Chamado: #{ticket.numero} - {ticket.titulo}
             </DialogTitle>
-            <button type="button" onClick={() => setTransferirAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setTransferirAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+            >
               <X size={16} />
             </button>
           </DialogHeader>
           <div className="px-5 py-4 space-y-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 w-28">Transferir para:</span>
+              <span className="text-sm font-medium text-gray-700 w-28">
+                Transferir para:
+              </span>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="transferirTipo" value="atendente" checked={transferirTipo === "atendente"} onChange={() => setTransferirTipo("atendente")} className="accent-blue-600" />
+                  <input
+                    type="radio"
+                    name="transferirTipo"
+                    value="atendente"
+                    checked={transferirTipo === "atendente"}
+                    onChange={() => setTransferirTipo("atendente")}
+                    className="accent-blue-600"
+                  />
                   <span className="text-sm text-gray-700">Atendente</span>
                 </label>
                 <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="transferirTipo" value="departamento" checked={transferirTipo === "departamento"} onChange={() => setTransferirTipo("departamento")} className="accent-blue-600" />
+                  <input
+                    type="radio"
+                    name="transferirTipo"
+                    value="departamento"
+                    checked={transferirTipo === "departamento"}
+                    onChange={() => setTransferirTipo("departamento")}
+                    className="accent-blue-600"
+                  />
                   <span className="text-sm text-gray-700">Departamento</span>
                 </label>
               </div>
             </div>
             {transferirTipo === "departamento" && (
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-700 w-28">Departamento:</span>
-                <select value={transferirDepartamento} onChange={(e) => setTransferirDepartamento(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <span className="text-sm font-medium text-gray-700 w-28">
+                  Departamento:
+                </span>
+                <select
+                  value={transferirDepartamento}
+                  onChange={(e) => setTransferirDepartamento(e.target.value)}
+                  className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
                   <option value="">Selecione um departamento</option>
-                  {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+                  {departamentos.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nome}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 w-28">Atendente:</span>
-              <select value={transferirAtendente} onChange={(e) => setTransferirAtendente(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              <span className="text-sm font-medium text-gray-700 w-28">
+                Atendente:
+              </span>
+              <select
+                value={transferirAtendente}
+                onChange={(e) => setTransferirAtendente(e.target.value)}
+                className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
                 <option value="">Selecione um atendente</option>
-                {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                {usuarios.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
-            <button type="button" onClick={transferirTicket} disabled={transferindo || (transferirTipo === "departamento" && !transferirDepartamento)} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <button
+              type="button"
+              onClick={transferirTicket}
+              disabled={
+                transferindo ||
+                (transferirTipo === "departamento" && !transferirDepartamento)
+              }
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               {transferindo && <Loader2 size={14} className="animate-spin" />}
               Transferir
             </button>
-            <button type="button" onClick={() => setTransferirAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+            <button
+              type="button"
+              onClick={() => setTransferirAberto(false)}
+              className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+            >
               Cancelar
             </button>
           </div>
@@ -883,35 +1073,88 @@ export default function TicketPainelPage() {
 
       {/* Modal Finalizar */}
       <Dialog open={finalizarAberto} onOpenChange={setFinalizarAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-lg p-0 gap-0"
+        >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
-            <DialogTitle className="text-base font-semibold text-gray-900">Finalizar Chamado</DialogTitle>
-            <button type="button" onClick={() => setFinalizarAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+            <DialogTitle className="text-base font-semibold text-gray-900">
+              Finalizar Chamado
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setFinalizarAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
               <X size={16} />
             </button>
           </DialogHeader>
           <div className="px-5 py-4 space-y-4">
             <div>
               <p className="text-sm font-medium text-gray-700 mb-2">Motivo:</p>
-              <RichTextEditor ref={finalizarEditorRef} value={finalizarMotivo} onChange={setFinalizarMotivo} placeholder="Insira aqui a resposta do seu chamado" disabled={finalizando} />
+              <RichTextEditor
+                ref={finalizarEditorRef}
+                value={finalizarMotivo}
+                onChange={setFinalizarMotivo}
+                placeholder="Insira aqui a resposta do seu chamado"
+                disabled={finalizando}
+              />
             </div>
-            <button type="button" className="text-xs text-blue-600 hover:text-blue-800 hover:underline">Exibir respostas padrões</button>
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              Exibir respostas padrões
+            </button>
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Tempo de trabalho:</span>
-              <input type="number" min={0} max={99} placeholder="HH" value={finalizarHH} onChange={(e) => setFinalizarHH(e.target.value)} className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <input type="number" min={0} max={59} placeholder="MM" value={finalizarMM} onChange={(e) => setFinalizarMM(e.target.value)} className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Tempo de trabalho:
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={99}
+                placeholder="HH"
+                value={finalizarHH}
+                onChange={(e) => setFinalizarHH(e.target.value)}
+                className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="number"
+                min={0}
+                max={59}
+                placeholder="MM"
+                value={finalizarMM}
+                onChange={(e) => setFinalizarMM(e.target.value)}
+                className="w-20 text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           </div>
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
-            <button type="button" title="Anexar arquivo" className="p-2 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300 transition-colors">
+            <button
+              type="button"
+              title="Anexar arquivo"
+              className="p-2 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
               <Paperclip size={15} />
             </button>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={finalizarTicket} disabled={finalizando || !finalizarMotivo.replace(/<[^>]*>/g, "").trim()} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <button
+                type="button"
+                onClick={finalizarTicket}
+                disabled={
+                  finalizando || !finalizarMotivo.replace(/<[^>]*>/g, "").trim()
+                }
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 {finalizando && <Loader2 size={14} className="animate-spin" />}
                 Finalizar
               </button>
-              <button type="button" onClick={() => setFinalizarAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+              <button
+                type="button"
+                onClick={() => setFinalizarAberto(false)}
+                className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+              >
                 Fechar
               </button>
             </div>
@@ -921,26 +1164,54 @@ export default function TicketPainelPage() {
 
       {/* Modal Cancelar */}
       <Dialog open={cancelarAberto} onOpenChange={setCancelarAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-lg p-0 gap-0"
+        >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
-            <DialogTitle className="text-base font-semibold text-gray-900">Cancelar Chamado</DialogTitle>
-            <button type="button" onClick={() => setCancelarAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+            <DialogTitle className="text-base font-semibold text-gray-900">
+              Cancelar Chamado
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setCancelarAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
               <X size={16} />
             </button>
           </DialogHeader>
           <div className="px-5 py-4 space-y-4">
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Motivo do cancelamento:</p>
-              <RichTextEditor ref={cancelarEditorRef} value={cancelarMotivo} onChange={setCancelarMotivo} placeholder="Descreva o motivo do cancelamento..." disabled={cancelando} />
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Motivo do cancelamento:
+              </p>
+              <RichTextEditor
+                ref={cancelarEditorRef}
+                value={cancelarMotivo}
+                onChange={setCancelarMotivo}
+                placeholder="Descreva o motivo do cancelamento..."
+                disabled={cancelando}
+              />
             </div>
           </div>
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
             <div className="flex items-center gap-2">
-              <button type="button" onClick={cancelarTicket} disabled={cancelando || !cancelarMotivo.replace(/<[^>]*>/g, "").trim()} className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <button
+                type="button"
+                onClick={cancelarTicket}
+                disabled={
+                  cancelando || !cancelarMotivo.replace(/<[^>]*>/g, "").trim()
+                }
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 {cancelando && <Loader2 size={14} className="animate-spin" />}
                 Cancelar Chamado
               </button>
-              <button type="button" onClick={() => setCancelarAberto(false)} className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors">
+              <button
+                type="button"
+                onClick={() => setCancelarAberto(false)}
+                className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+              >
                 Fechar
               </button>
             </div>

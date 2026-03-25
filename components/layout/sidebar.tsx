@@ -310,16 +310,9 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
               localStorage.removeItem("sidebar_active");
             }}
             className={cn(
-              "w-full flex flex-col items-center justify-center py-2 rounded-lg transition-all",
-              pathname === "/painel/dashboard"
-                ? "text-white"
-                : "hover:bg-[#F0F4F8]",
+              "sidebar-menu-btn w-full flex flex-col items-center justify-center py-2 rounded-lg",
+              pathname === "/painel/dashboard" && "active",
             )}
-            style={
-              pathname === "/painel/dashboard"
-                ? { backgroundColor: "var(--color-brand)", color: "#FFFFFF" }
-                : { color: "var(--color-text-muted)" }
-            }
           >
             <LayoutDashboard size={16} strokeWidth={1.5} />
             <span
@@ -347,41 +340,10 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                 onClick={() => toggleMenu(item.id)}
                 title={item.label}
                 className={cn(
-                  "w-full flex flex-col items-center justify-center py-2 rounded-lg transition-all cursor-pointer",
-                  isActive ? "text-white" : hasActivePath ? "" : "",
+                  "sidebar-menu-btn w-full flex flex-col items-center justify-center py-2 rounded-lg cursor-pointer",
+                  isActive && "active",
+                  !isActive && hasActivePath && "has-active-path",
                 )}
-                style={
-                  isActive
-                    ? {
-                        backgroundColor: "var(--color-brand)",
-                        color: "#FFFFFF",
-                      }
-                    : hasActivePath
-                      ? {
-                          backgroundColor: "var(--color-brand-light)",
-                          color: "var(--color-brand)",
-                        }
-                      : {
-                          color: "var(--color-text-muted)",
-                          backgroundColor: "transparent",
-                        }
-                }
-                onMouseEnter={(e) => {
-                  if (!isActive && !hasActivePath) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor =
-                      "var(--color-bg-root)";
-                    (e.currentTarget as HTMLElement).style.color =
-                      "var(--color-text-secondary)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive && !hasActivePath) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor =
-                      "transparent";
-                    (e.currentTarget as HTMLElement).style.color =
-                      "var(--color-text-muted)";
-                  }
-                }}
               >
                 {item.icon}
                 <span
@@ -403,18 +365,8 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
         <button
           onClick={handleLogout}
           title="Sair"
-          className="flex items-center justify-center rounded-lg transition-colors mb-2"
-          style={{ width: 36, height: 36, color: "var(--color-text-muted)" }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.backgroundColor = "#FEE2E2";
-            (e.currentTarget as HTMLElement).style.color = "#B91C1C";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.backgroundColor =
-              "transparent";
-            (e.currentTarget as HTMLElement).style.color =
-              "var(--color-text-muted)";
-          }}
+          className="sidebar-logout-btn flex items-center justify-center rounded-lg mb-2"
+          style={{ width: 36, height: 36 }}
         >
           <LogOut size={16} strokeWidth={1.5} />
         </button>
@@ -423,7 +375,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
       {/* Painel lateral retrátil (210px) */}
       <div
         className={cn(
-          "h-full overflow-hidden transition-all duration-200",
+          "h-full overflow-hidden transition-[width] duration-200",
           activeMenu ? "w-[210px]" : "w-0",
         )}
         style={{
@@ -511,35 +463,16 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                   <Link
                     key={sub.href}
                     href={sub.href}
-                    className="flex items-center gap-2 transition-colors"
+                    className={cn(
+                      "sidebar-submenu-link flex items-center gap-2 transition-colors",
+                      isActive && "active",
+                    )}
                     style={{
                       padding: "6px 12px",
                       fontSize: 12.5,
                       fontWeight: isActive ? 600 : 400,
-                      color: isActive
-                        ? "var(--color-brand)"
-                        : "var(--color-text-secondary)",
-                      backgroundColor: isActive
-                        ? "var(--color-brand-light)"
-                        : "transparent",
                       borderRadius: 6,
                       margin: "1px 8px",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        (e.currentTarget as HTMLElement).style.backgroundColor =
-                          "var(--color-bg-secondary)";
-                        (e.currentTarget as HTMLElement).style.color =
-                          "var(--color-text-primary)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        (e.currentTarget as HTMLElement).style.backgroundColor =
-                          "transparent";
-                        (e.currentTarget as HTMLElement).style.color =
-                          "var(--color-text-secondary)";
-                      }
                     }}
                   >
                     <span

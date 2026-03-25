@@ -72,6 +72,27 @@ function tempoGasto(mins: number): string {
 
 type SlaStatus = "ok" | "warning" | "exceeded" | "none";
 
+// Constantes de estilo para SLA — declaradas fora do componente para evitar
+// recriação de objetos a cada render
+const SLA_COLORS: Record<SlaStatus, string> = {
+  ok: "#15803D",
+  warning: "#EAB308",
+  exceeded: "#EF4444",
+  none: "var(--color-text-muted)",
+};
+const SLA_LABELS: Record<SlaStatus, string> = {
+  ok: "SLA OK",
+  warning: "SLA próximo",
+  exceeded: "SLA excedido",
+  none: "",
+};
+const SLA_BG: Record<SlaStatus, string> = {
+  ok: "#DCFCE7",
+  warning: "#FEF9C3",
+  exceeded: "#FEE2E2",
+  none: "transparent",
+};
+
 function slaAtendimento(t: TicketRow): SlaStatus {
   if (!t.sla_primeira_resp_deadline) return "none";
   if (t.respondido_em !== null) {
@@ -88,7 +109,11 @@ function slaAtendimento(t: TicketRow): SlaStatus {
 }
 
 function slaTempoBadge(t: TicketRow, sla: SlaStatus): string {
-  if (sla === "none" || !t.sla_primeira_resp_deadline || t.respondido_em !== null)
+  if (
+    sla === "none" ||
+    !t.sla_primeira_resp_deadline ||
+    t.respondido_em !== null
+  )
     return tempoAberto(t.criado_em);
   const deadline = new Date(t.sla_primeira_resp_deadline).getTime();
   const now = Date.now();
@@ -317,7 +342,9 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
       return;
     }
     setCarregandoCats(true);
-    fetch(`/api/categorias?departamento_id=${form.departamento_id}&pageSize=100`)
+    fetch(
+      `/api/categorias?departamento_id=${form.departamento_id}&pageSize=100`,
+    )
       .then((r) => r.json())
       .then((d) => {
         setCategorias(d.data ?? d);
@@ -531,7 +558,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
     <div className="flex h-full -mx-6 -mb-6">
       {/* ── Coluna esquerda: lista ── */}
       <div
-        className={`flex flex-col transition-all duration-300 ${painelAberto ? "w-72 min-w-[288px]" : "flex-1"}`}
+        className={`flex flex-col transition-[width] duration-300 ${painelAberto ? "w-72 min-w-[288px]" : "flex-1"}`}
         style={{
           backgroundColor: "var(--color-bg-primary)",
           borderRight: "0.5px solid var(--color-border)",
@@ -780,16 +807,8 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                   <tr
                     key={t.id}
                     onClick={() => router.push(`/painel/tickets/${t.id}`)}
-                    className="cursor-pointer transition-colors group"
+                    className="tickets-table-row"
                     style={{ borderBottom: "0.5px solid var(--color-border)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor =
-                        "var(--color-bg-secondary)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor =
-                        "transparent";
-                    }}
                   >
                     {/* Protocolo */}
                     <td
@@ -977,24 +996,6 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       ) : (
                         (() => {
                           const sla = slaAtendimento(t);
-                          const slaColors: Record<SlaStatus, string> = {
-                            ok: "#15803D",
-                            warning: "#EAB308",
-                            exceeded: "#EF4444",
-                            none: "var(--color-text-muted)",
-                          };
-                          const slaLabels: Record<SlaStatus, string> = {
-                            ok: "SLA OK",
-                            warning: "SLA próximo",
-                            exceeded: "SLA excedido",
-                            none: "",
-                          };
-                          const slaBg: Record<SlaStatus, string> = {
-                            ok: "#DCFCE7",
-                            warning: "#FEF9C3",
-                            exceeded: "#FEE2E2",
-                            none: "transparent",
-                          };
                           return (
                             <div className="flex flex-col gap-0.5">
                               {sla !== "none" && (
@@ -1003,8 +1004,8 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                                   style={{
                                     fontSize: 10,
                                     fontWeight: 600,
-                                    color: slaColors[sla],
-                                    backgroundColor: slaBg[sla],
+                                    color: SLA_COLORS[sla],
+                                    backgroundColor: SLA_BG[sla],
                                     padding: "1px 6px",
                                     borderRadius: 12,
                                     display: "inline-flex",
@@ -1015,7 +1016,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                                       : ""
                                   }
                                 >
-                                  {slaLabels[sla]}
+                                  {SLA_LABELS[sla]}
                                 </span>
                               )}
                               <span
@@ -1058,7 +1059,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
 
       {/* ── Painel direito: formulário ── */}
       <div
-        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-all duration-300 overflow-hidden ${
+        className={`flex flex-col bg-gray-50 border-l border-gray-200 transition-[width] duration-300 overflow-hidden ${
           painelAberto ? "flex-1" : "w-0"
         }`}
       >
@@ -1275,9 +1276,13 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                         <SelectTrigger className="h-8 text-sm border-gray-200 w-full">
                           <span className="flex flex-1 text-left text-sm truncate">
                             {form.departamento_id ? (
-                              (departamentos.find((d) => d.id === form.departamento_id)?.nome ?? "")
+                              (departamentos.find(
+                                (d) => d.id === form.departamento_id,
+                              )?.nome ?? "")
                             ) : (
-                              <span className="text-gray-400">Escolher departamento...</span>
+                              <span className="text-gray-400">
+                                Escolher departamento...
+                              </span>
                             )}
                           </span>
                         </SelectTrigger>
@@ -1301,7 +1306,8 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <div className="flex-1">
                         {carregandoCats ? (
                           <div className="h-8 flex items-center text-sm text-gray-400 gap-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />{" "}
+                            Carregando...
                           </div>
                         ) : categorias.length === 0 ? (
                           <div className="h-8 flex items-center text-sm text-gray-400">
@@ -1311,15 +1317,22 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                           <Select
                             value={form.categoria_id ?? ""}
                             onValueChange={(v) =>
-                              setForm((f) => ({ ...f, categoria_id: v || null }))
+                              setForm((f) => ({
+                                ...f,
+                                categoria_id: v || null,
+                              }))
                             }
                           >
                             <SelectTrigger className="h-8 text-sm border-gray-200 w-full">
                               <span className="flex flex-1 text-left text-sm truncate">
                                 {form.categoria_id ? (
-                                  (categorias.find((c) => c.id === form.categoria_id)?.nome ?? "")
+                                  (categorias.find(
+                                    (c) => c.id === form.categoria_id,
+                                  )?.nome ?? "")
                                 ) : (
-                                  <span className="text-gray-400">Escolher categoria...</span>
+                                  <span className="text-gray-400">
+                                    Escolher categoria...
+                                  </span>
                                 )}
                               </span>
                             </SelectTrigger>
@@ -1345,7 +1358,8 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <div className="flex-1">
                         {carregandoSubs ? (
                           <div className="h-8 flex items-center text-sm text-gray-400 gap-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />{" "}
+                            Carregando...
                           </div>
                         ) : subcategorias.length === 0 ? (
                           <div className="h-8 flex items-center text-sm text-gray-400">
@@ -1355,15 +1369,22 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                           <Select
                             value={form.subcategoria_id ?? ""}
                             onValueChange={(v) =>
-                              setForm((f) => ({ ...f, subcategoria_id: v || null }))
+                              setForm((f) => ({
+                                ...f,
+                                subcategoria_id: v || null,
+                              }))
                             }
                           >
                             <SelectTrigger className="h-8 text-sm border-gray-200 w-full">
                               <span className="flex flex-1 text-left text-sm truncate">
                                 {form.subcategoria_id ? (
-                                  (subcategorias.find((s) => s.id === form.subcategoria_id)?.nome ?? "")
+                                  (subcategorias.find(
+                                    (s) => s.id === form.subcategoria_id,
+                                  )?.nome ?? "")
                                 ) : (
-                                  <span className="text-gray-400">Escolher subcategoria...</span>
+                                  <span className="text-gray-400">
+                                    Escolher subcategoria...
+                                  </span>
                                 )}
                               </span>
                             </SelectTrigger>
@@ -1544,41 +1565,40 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                                 Sem atendente
                               </span>
                             </li>
-                            {atendentesFiltrados
-                              .map((u) => (
-                                <li
-                                  key={u.id}
-                                  onMouseDown={() => {
-                                    setForm((f) => ({
-                                      ...f,
-                                      atribuido_a: u.id,
-                                    }));
-                                    setAtendenteAberto(false);
-                                  }}
-                                  className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 ${
-                                    form.atribuido_a === u.id
-                                      ? "bg-blue-50 text-blue-700"
-                                      : "text-gray-900"
-                                  }`}
-                                >
-                                  <span>{u.nome}</span>
-                                  {form.atribuido_a === u.id && (
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="12"
-                                      height="12"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <polyline points="20 6 9 17 4 12" />
-                                    </svg>
-                                  )}
-                                </li>
-                              ))}
+                            {atendentesFiltrados.map((u) => (
+                              <li
+                                key={u.id}
+                                onMouseDown={() => {
+                                  setForm((f) => ({
+                                    ...f,
+                                    atribuido_a: u.id,
+                                  }));
+                                  setAtendenteAberto(false);
+                                }}
+                                className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 ${
+                                  form.atribuido_a === u.id
+                                    ? "bg-blue-50 text-blue-700"
+                                    : "text-gray-900"
+                                }`}
+                              >
+                                <span>{u.nome}</span>
+                                {form.atribuido_a === u.id && (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </li>
+                            ))}
                             {atendenteBusca &&
                               atendentesFiltrados.length === 0 && (
                                 <li className="px-3 py-1.5 text-sm text-gray-400">

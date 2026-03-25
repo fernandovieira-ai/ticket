@@ -235,3 +235,60 @@
 .tickets-row-compact:hover {
   background-color: var(--color-bg-secondary);
 }
+
+/* ── Hover states para linhas da tabela de tickets ── */
+.tickets-table-row {
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+.tickets-table-row:hover {
+  background-color: var(--color-bg-secondary);
+}
+
+/* ── Sidebar: menu items e logout (substitui onMouseEnter/onMouseLeave) ── */
+.sidebar-menu-btn {
+  color: var(--color-text-muted);
+  background-color: transparent;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+.sidebar-menu-btn:hover {
+  background-color: var(--color-bg-root);
+  color: var(--color-text-secondary);
+}
+.sidebar-menu-btn.active {
+  background-color: var(--color-brand);
+  color: #ffffff;
+}
+.sidebar-menu-btn.has-active-path {
+  background-color: var(--color-brand-light);
+  color: var(--color-brand);
+}
+.sidebar-logout-btn {
+  color: var(--color-text-muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+.sidebar-logout-btn:hover {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ── Sidebar: sub-itens do painel retrátil ── */
+.sidebar-submenu-link {
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  transition:
+    background-color 0.1s,
+    color 0.1s;
+}
+.sidebar-submenu-link:hover {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+.sidebar-submenu-link.active {
+  background-color: var(--color-brand-light);
+  color: var(--color-brand);
+}

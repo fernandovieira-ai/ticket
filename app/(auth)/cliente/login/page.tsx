@@ -55,17 +55,18 @@ export default function ClienteLoginPage() {
       {/* ─── Painel esquerdo ─── */}
       <div
         className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center overflow-hidden"
-        style={{
-          backgroundColor: "#0f1923",
-          backgroundImage: `url(${LOGIN_BG})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center center",
-          backgroundRepeat: "no-repeat",
-        }}
+        style={{ backgroundColor: "#0f1923" }}
       >
+        {/* Imagem de fundo */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={LOGIN_BG}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-contain"
+        />
         {/* Overlay escuro sobre a imagem */}
         <div className="absolute inset-0 bg-[#0f1923]/70" />
-
       </div>
 
       {/* ─── Painel direito ─── */}

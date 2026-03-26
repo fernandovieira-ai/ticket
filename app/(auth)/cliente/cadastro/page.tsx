@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Headphones, Loader2 } from 'lucide-react'
 
-// Para trocar a imagem do painel esquerdo do cadastro, substitua: /public/cadastro-bg.jpg
-const CADASTRO_BG = '/api/assets/cadastro-bg.jpg'
+// Para trocar a imagem do painel esquerdo do cadastro, substitua: /public/publiclogin-bg-portal.jpg
+const CADASTRO_BG = '/api/assets/publiclogin-bg-portal.jpg'
 const LOGO = '/api/assets/logo.png'
 
 export default function ClienteCadastroPage() {
@@ -87,13 +87,13 @@ export default function ClienteCadastroPage() {
     <div className="min-h-screen flex">
 
       {/* ─── Painel esquerdo ─── */}
-      <div className="hidden lg:flex lg:w-[40%] relative overflow-hidden bg-gray-100">
+      <div className="hidden lg:flex lg:w-[40%] relative overflow-hidden bg-white">
         {!bgError && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={CADASTRO_BG}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain"
             onError={() => setBgError(true)}
           />
         )}
@@ -286,7 +286,7 @@ export default function ClienteCadastroPage() {
         </div>
 
         {/* Rodapé */}
-        <div className="flex items-center justify-center gap-4 px-8 pb-6 text-xs text-gray-400">
+        <div className="flex items-center justify-center gap-4 px-8 pt-4 pb-10 text-xs text-gray-400">
           <span>Privacidade</span>
           <span>·</span>
           <span>Termos</span>

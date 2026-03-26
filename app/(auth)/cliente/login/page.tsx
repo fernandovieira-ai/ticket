@@ -19,6 +19,7 @@ export default function ClienteLoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [bgError, setBgError] = useState(false)
   const [logoError, setLogoError] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -50,27 +51,17 @@ export default function ClienteLoginPage() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="min-h-screen flex">
 
       {/* ─── Painel esquerdo ─── */}
-      <div
-        className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center overflow-hidden"
-        style={{ backgroundColor: "#0f1923" }}
-      >
+      <div className="hidden lg:flex lg:w-[55%] relative flex-col items-center justify-center bg-white overflow-hidden">
         {/* Imagem de fundo */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={LOGIN_BG}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover object-center"
-        />
-        {/* Overlay escuro sobre a imagem */}
-        <div className="absolute inset-0 bg-[#0f1923]/70" />
+        {!bgError && <img src={LOGIN_BG} alt="" className="absolute inset-0 w-full h-full object-contain" onError={() => setBgError(true)} />}
       </div>
 
       {/* ─── Painel direito ─── */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white overflow-y-auto">
 
         {/* Logo mobile */}
         <div className="lg:hidden flex items-center gap-2.5 px-8 pt-8">

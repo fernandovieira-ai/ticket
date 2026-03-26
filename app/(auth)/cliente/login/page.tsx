@@ -63,7 +63,7 @@ export default function ClienteLoginPage() {
           src={LOGIN_BG}
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-contain"
+          className="absolute inset-0 w-full h-full object-cover object-top"
         />
         {/* Overlay escuro sobre a imagem */}
         <div className="absolute inset-0 bg-[#0f1923]/70" />

@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Headphones, Loader2 } from 'lucide-react'
 
-// Para trocar a imagem do painel esquerdo do cadastro, substitua: /public/publiclogin-bg-portal.jpg
-const CADASTRO_BG = '/api/assets/publiclogin-bg-portal.jpg'
+// Para trocar a imagem do painel esquerdo do cadastro, substitua: /public/cadastro-bg.jpg
+const CADASTRO_BG = '/api/assets/cadastro-bg.jpg'
 const LOGO = '/api/assets/logo.png'
 
 export default function ClienteCadastroPage() {

@@ -55,7 +55,7 @@ export default function RecuperarSenhaPage() {
       </div>
 
       {/* ─── Painel direito ─── */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white overflow-y-auto">
 
         {/* Logo mobile */}
         <div className="lg:hidden flex items-center gap-2.5 px-8 pt-8">

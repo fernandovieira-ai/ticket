@@ -10,6 +10,8 @@ const ALLOWED: Record<string, string> = {
   'login-bg-portal.png': 'image/png',
   'cadastro-bg.jpg': 'image/jpeg',
   'cadastro-bg.png': 'image/png',
+  'publiclogin-bg-portal.jpg': 'image/jpeg',
+  'publiclogin-bg-portal.png': 'image/png',
 }
 
 export async function GET(

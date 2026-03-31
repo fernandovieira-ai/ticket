@@ -697,6 +697,101 @@ ${contexto}`;
 }
 
 // ============================================================
+// VERIFICAÇÃO DE RESOLUÇÃO EM GRUPOS (MONITORAMENTO)
+// ============================================================
+
+export interface VerificacaoResolucao {
+  resolvido: boolean;
+  confianca: number;   // 0.0 a 1.0
+  motivo: string;
+}
+
+/**
+ * Analisa as mensagens posteriores à mensagem de um cliente em um grupo e
+ * determina se o problema foi resolvido sem intervenção de um atendente.
+ *
+ * Usado pelo monitoramento automático antes de disparar alertas,
+ * evitando notificações desnecessárias quando o próprio cliente se resolveu.
+ */
+export async function verificarSeProblemaResolvido(params: {
+  config: IAConfig;
+  empresaId: string;
+  grupoNome: string;
+  mensagens: Array<{
+    remetente_nome: string | null;
+    remetente_jid: string;
+    conteudo: string;
+    criado_em: Date;
+    eh_operador: boolean;
+  }>;
+}): Promise<VerificacaoResolucao> {
+  const contexto = params.mensagens
+    .map((m) => {
+      const papel = m.eh_operador ? "[ATENDENTE]" : "[CLIENTE]";
+      const nome = m.remetente_nome ?? m.remetente_jid.split("@")[0];
+      return `${papel} ${nome}: ${m.conteudo}`;
+    })
+    .join("\n");
+
+  const prompt = `Analise as mensagens abaixo de um grupo de suporte chamado "${params.grupoNome}".
+Determine se o problema ou dúvida do cliente foi resolvido ou encerrado, mesmo sem resposta oficial de um atendente.
+
+Considere como RESOLVIDO quando:
+- O cliente disse que resolveu, agradeceu ou confirmou que está ok
+- O cliente indicou que não precisa mais de ajuda
+- O assunto foi encerrado naturalmente pelo próprio cliente
+- Mensagens posteriores indicam que o problema foi abandonado ou superado
+
+Considere como PENDENTE quando:
+- O cliente ainda está aguardando resposta
+- O cliente fez uma pergunta sem obter resposta
+- O cliente demonstrou frustração ou urgência sem resolução
+- Não há mensagens posteriores indicando resolução
+
+Retorne APENAS este JSON (sem texto adicional):
+{
+  "resolvido": true ou false,
+  "confianca": número de 0.0 a 1.0,
+  "motivo": "explicação curta em português"
+}
+
+Mensagens (da mais antiga para a mais recente):
+${contexto}`;
+
+  try {
+    const { text: textoRaw, tokensEntrada, tokensSaida, latenciaMs } = await callIA({
+      config: params.config,
+      userMessage: prompt,
+      maxTokens: 256,
+    });
+
+    await salvarLog({
+      empresaId: params.empresaId,
+      tipo: "verificacao_resolucao_grupo",
+      promptResumido: `Grupo ${params.grupoNome} — ${params.mensagens.length} msgs`,
+      resposta: textoRaw,
+      tokensEntrada,
+      tokensSaida,
+      latenciaMs,
+    });
+
+    const match = textoRaw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        resolvido: parsed.resolvido === true,
+        confianca: Math.min(1, Math.max(0, Number(parsed.confianca ?? 0.5))),
+        motivo: parsed.motivo ?? "Sem motivo retornado",
+      };
+    }
+  } catch {
+    // Em caso de falha, assume pendente para não suprimir alertas indevidamente
+  }
+
+  return { resolvido: false, confianca: 0, motivo: "Falha na análise IA" };
+}
+
+// ============================================================
 // BOT WHATSAPP
 // ============================================================
 

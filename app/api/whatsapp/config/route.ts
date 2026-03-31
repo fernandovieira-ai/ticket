@@ -37,6 +37,10 @@ export async function PUT(req: NextRequest) {
     ia_prompt_sistema,
     criar_ticket_auto,
     categoria_padrao_id,
+    alerta_grupos_ativo,
+    alerta_grupos_min,
+    alerta_grupos_jid,
+    alerta_grupos_usar_ia,
   } = body;
 
   await query(
@@ -44,8 +48,9 @@ export async function PUT(req: NextRequest) {
        empresa_id, horario_bot_inicio, horario_bot_fim,
        msg_boas_vindas, msg_fora_horario, msg_ticket_criado, msg_ticket_respondido,
        ia_ativa, ia_modo, ia_confianca_min, ia_prompt_sistema,
-       criar_ticket_auto, categoria_padrao_id
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       criar_ticket_auto, categoria_padrao_id,
+       alerta_grupos_ativo, alerta_grupos_min, alerta_grupos_jid, alerta_grupos_usar_ia
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT (empresa_id) DO UPDATE SET
        horario_bot_inicio    = EXCLUDED.horario_bot_inicio,
        horario_bot_fim       = EXCLUDED.horario_bot_fim,
@@ -58,7 +63,11 @@ export async function PUT(req: NextRequest) {
        ia_confianca_min      = EXCLUDED.ia_confianca_min,
        ia_prompt_sistema     = EXCLUDED.ia_prompt_sistema,
        criar_ticket_auto     = EXCLUDED.criar_ticket_auto,
-       categoria_padrao_id   = EXCLUDED.categoria_padrao_id`,
+       categoria_padrao_id   = EXCLUDED.categoria_padrao_id,
+       alerta_grupos_ativo   = EXCLUDED.alerta_grupos_ativo,
+       alerta_grupos_min     = EXCLUDED.alerta_grupos_min,
+       alerta_grupos_jid     = EXCLUDED.alerta_grupos_jid,
+       alerta_grupos_usar_ia = EXCLUDED.alerta_grupos_usar_ia`,
     [
       session.empresaId,
       horario_bot_inicio ?? "08:00",
@@ -73,6 +82,10 @@ export async function PUT(req: NextRequest) {
       ia_prompt_sistema ?? null,
       criar_ticket_auto ?? true,
       categoria_padrao_id ?? null,
+      alerta_grupos_ativo ?? false,
+      alerta_grupos_min ?? 30,
+      alerta_grupos_jid ?? null,
+      alerta_grupos_usar_ia ?? true,
     ]
   );
 

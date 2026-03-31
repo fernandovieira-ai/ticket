@@ -51,6 +51,10 @@ interface WhatsappConfig {
   criar_ticket_auto: boolean;
   ia_ativa: boolean;
   ia_modo: string;
+  alerta_grupos_ativo: boolean;
+  alerta_grupos_min: number;
+  alerta_grupos_jid: string;
+  alerta_grupos_usar_ia: boolean;
 }
 
 type Tab = "instancias" | "configuracoes" | "api";
@@ -104,6 +108,10 @@ export default function WhatsappConfigPage() {
     criar_ticket_auto: true,
     ia_ativa: false,
     ia_modo: "sugestao",
+    alerta_grupos_ativo: false,
+    alerta_grupos_min: 30,
+    alerta_grupos_jid: "",
+    alerta_grupos_usar_ia: true,
   });
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [salvandoConfig, setSalvandoConfig] = useState(false);
@@ -817,6 +825,88 @@ export default function WhatsappConfigPage() {
                 )}
               </div>
 
+              {/* MONITORAMENTO DE GRUPOS */}
+              <div className="border-t border-zinc-100 pt-4 space-y-3">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                  Monitoramento de grupos
+                </p>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={config.alerta_grupos_ativo}
+                      onChange={(e) =>
+                        setConfig((c) => ({ ...c, alerta_grupos_ativo: e.target.checked }))
+                      }
+                    />
+                    <div className="w-10 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800">Ativar alertas de grupos sem resposta</p>
+                    <p className="text-xs text-zinc-400">
+                      Envia mensagem no grupo de suporte quando um cliente aguarda além do tempo configurado
+                    </p>
+                  </div>
+                </label>
+
+                {config.alerta_grupos_ativo && (
+                  <div className="space-y-3 pl-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Tempo sem resposta (minutos)</Label>
+                        <Input
+                          type="number"
+                          min={5}
+                          max={1440}
+                          value={config.alerta_grupos_min}
+                          onChange={(e) =>
+                            setConfig((c) => ({ ...c, alerta_grupos_min: Number(e.target.value) }))
+                          }
+                          className="mt-1 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">JID do grupo de suporte</Label>
+                        <Input
+                          type="text"
+                          placeholder="120363xxxxx@g.us"
+                          value={config.alerta_grupos_jid}
+                          onChange={(e) =>
+                            setConfig((c) => ({ ...c, alerta_grupos_jid: e.target.value }))
+                          }
+                          className="mt-1 text-sm font-mono"
+                        />
+                        <p className="text-xs text-zinc-400 mt-1">
+                          Grupo WhatsApp que receberá os alertas. Encontre o JID na lista de grupos monitorados.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={config.alerta_grupos_usar_ia}
+                          onChange={(e) =>
+                            setConfig((c) => ({ ...c, alerta_grupos_usar_ia: e.target.checked }))
+                          }
+                        />
+                        <div className="w-10 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-zinc-800">Verificar resolução com IA antes de alertar</p>
+                        <p className="text-xs text-zinc-400">
+                          A IA analisa as mensagens do grupo para verificar se o cliente já resolveu o problema sozinho antes de enviar o alerta
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end">
                 <Button
                   onClick={salvarConfig}
@@ -1044,7 +1134,20 @@ export default function WhatsappConfigPage() {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-zinc-800 truncate">{g.nome}</p>
-                      <p className="text-xs text-zinc-400">{g.membros} membros</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-xs text-zinc-400">{g.membros} membros</p>
+                        <span className="text-zinc-200">·</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(g.jid);
+                            toast.success("JID copiado!");
+                          }}
+                          className="text-xs text-zinc-400 hover:text-green-600 font-mono truncate max-w-[140px] transition-colors"
+                          title="Clique para copiar o JID"
+                        >
+                          {g.jid}
+                        </button>
+                      </div>
                     </div>
 
                     {/* Ações */}

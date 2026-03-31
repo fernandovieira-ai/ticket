@@ -93,6 +93,7 @@ export async function buscarInteracoesPendentes(
        AND i.auto_resolvido = FALSE
        AND g.monitorado    = TRUE
        AND g.ativo         = TRUE
+       AND i.msg_criada_em >= CURRENT_DATE
        AND EXTRACT(EPOCH FROM (NOW() - i.msg_criada_em)) > (COALESCE(g.sla_resposta_min, $2) * 60)
      ORDER BY i.msg_criada_em ASC`,
     [empresaId, thresholdMin],
@@ -115,6 +116,7 @@ async function buscarMensagensApos(
      FROM whatsapp_grupos_mensagens
      WHERE grupo_id    = $1
        AND criado_em   > $2
+       AND criado_em   >= CURRENT_DATE
        AND tipo        = 'texto'
        AND conteudo    IS NOT NULL
        AND LENGTH(conteudo) > 2

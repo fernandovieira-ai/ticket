@@ -12,8 +12,8 @@ import { query } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { TicketsSemAtribuir } from "./tickets-sem-atribuir";
 
-// Revalida a cada 30 segundos no cache do servidor
-export const revalidate = 30;
+// Sempre renderiza no servidor a cada request (DB não acessível no build do Railway)
+export const dynamic = "force-dynamic";
 
 interface StatRow {
   total: number;

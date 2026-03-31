@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
            COUNT(*)::int                                                          AS total,
            COUNT(*) FILTER (WHERE ts.codigo = 'aberto')::int                     AS abertos,
            COUNT(*) FILTER (WHERE ts.codigo = 'em_andamento')::int               AS em_andamento,
-           COUNT(*) FILTER (WHERE ts.encerra = true
-                              AND t.atualizado_em >= CURRENT_DATE)::int          AS resolvidos_hoje,
+           COUNT(*) FILTER (WHERE ts.codigo IN ('finalizado', 'cancelado')
+                              AND t.atualizado_em >= (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo'))::int AS resolvidos_hoje,
            COUNT(*) FILTER (WHERE t.sla_resolucao_deadline < NOW()
                               AND ts.encerra = false)::int                       AS violacoes_sla,
            ROUND(

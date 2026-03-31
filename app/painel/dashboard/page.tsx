@@ -78,8 +78,8 @@ async function DashboardContent({
          FROM tickets t
          JOIN ticket_status ts ON ts.id = t.status_id
          WHERE t.empresa_id = $1
-           AND ts.encerra = true
-           AND t.atualizado_em >= CURRENT_DATE`,
+           AND ts.codigo IN ('finalizado', 'cancelado')
+           AND t.atualizado_em >= (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')`,
       [empresaId],
     ),
     // Clientes ativos
@@ -154,7 +154,7 @@ async function DashboardContent({
       value: resolvidosHoje[0]?.total ?? 0,
       icon: <CheckCircle className="w-5 h-5 text-green-500" />,
       color: "text-green-600",
-      href: "/painel/tickets/status/resolvido",
+      href: "/painel/tickets/status/finalizado",
     },
     {
       title: "Clientes Ativos",

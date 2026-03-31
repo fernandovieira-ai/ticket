@@ -759,11 +759,15 @@ Mensagens (da mais antiga para a mais recente):
 ${contexto}`;
 
   try {
-    const { text: textoRaw, tokensEntrada, tokensSaida, latenciaMs } = await callIA({
+    const iaPromise = callIA({
       config: params.config,
       userMessage: prompt,
       maxTokens: 256,
     });
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("IA timeout (15s)")), 15_000),
+    );
+    const { text: textoRaw, tokensEntrada, tokensSaida, latenciaMs } = await Promise.race([iaPromise, timeout]);
 
     await salvarLog({
       empresaId: params.empresaId,

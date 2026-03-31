@@ -118,12 +118,12 @@ async function buscarMensagensApos(
        AND tipo        = 'texto'
        AND conteudo    IS NOT NULL
        AND LENGTH(conteudo) > 2
-     ORDER BY criado_em ASC
-     LIMIT 50`,
+     ORDER BY criado_em DESC
+     LIMIT 15`,
     [grupoId, desde],
   );
 
-  return rows.map((m) => ({
+  return rows.reverse().map((m) => ({
     ...m,
     eh_operador: operadoresJids.includes(m.remetente_jid),
   }));

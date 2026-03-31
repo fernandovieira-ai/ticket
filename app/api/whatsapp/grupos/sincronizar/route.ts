@@ -97,10 +97,38 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Busca fotos dos grupos que não têm foto_url (até 50 por vez, best-effort)
+  const semFoto = await query<{ id: string; group_jid: string }>(
+    `SELECT id, group_jid FROM whatsapp_grupos
+     WHERE instancia_id = $1 AND foto_url IS NULL
+     LIMIT 50`,
+    [instancia_id]
+  );
+  let fotosCarregadas = 0;
+  for (const g of semFoto) {
+    try {
+      const r = await fetch(
+        `${evo.url}/chat/fetchProfilePictureUrl/${instancia.nome_instancia}?number=${encodeURIComponent(g.group_jid)}`,
+        { headers: { apikey: evo.key }, signal: AbortSignal.timeout(5_000) }
+      );
+      if (r.ok) {
+        const data = await r.json();
+        const fotoUrl: string | null = data?.profilePictureUrl ?? data?.wuid ?? null;
+        if (fotoUrl) {
+          await query(`UPDATE whatsapp_grupos SET foto_url = $1 WHERE id = $2`, [fotoUrl, g.id]);
+          fotosCarregadas++;
+        }
+      }
+    } catch {
+      // ignora falha individual — foto fica null e será tentada novamente no próximo sync
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     total: grupos.length,
     inseridos,
     atualizados,
+    fotos_carregadas: fotosCarregadas,
   });
 }

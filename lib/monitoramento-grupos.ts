@@ -189,6 +189,7 @@ async function enviarAlertaNoGrupo(
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: config.key },
     body: JSON.stringify({ number: suporteGroupJid, text: texto }),
+    signal: AbortSignal.timeout(10_000),
   });
 }
 
@@ -218,14 +219,16 @@ export async function monitorarGruposDaEmpresa(
 
   try {
     // 1. Busca configuração de monitoramento
+    console.log("[Monitoramento] iniciando empresa=%s", empresaId);
     const config = await buscarConfigMonitoramento(empresaId);
-    if (!config?.alerta_grupos_ativo) return resultado;
+    if (!config?.alerta_grupos_ativo) { console.log("[Monitoramento] monitoramento inativo empresa=%s", empresaId); return resultado; }
     if (!config.alerta_grupos_jid) {
       console.warn("[Monitoramento] alerta_grupos_jid não configurado. empresa=%s", empresaId);
       return resultado;
     }
 
     // 2. Busca config Evolution API
+    console.log("[Monitoramento] buscando Evolution config empresa=%s", empresaId);
     const evolutionConfig = await getEvolutionConfig(empresaId);
     if (!evolutionConfig) {
       console.warn("[Monitoramento] Evolution API não configurada. empresa=%s", empresaId);
@@ -233,8 +236,10 @@ export async function monitorarGruposDaEmpresa(
     }
 
     // 3. Busca interações pendentes além do threshold
+    console.log("[Monitoramento] buscando interações pendentes empresa=%s threshold=%dmin", empresaId, config.alerta_grupos_min);
     const pendentes = await buscarInteracoesPendentes(empresaId, config.alerta_grupos_min);
     resultado.total_pendentes = pendentes.length;
+    console.log("[Monitoramento] pendentes=%d empresa=%s", pendentes.length, empresaId);
 
     if (pendentes.length === 0) return resultado;
 
@@ -242,6 +247,7 @@ export async function monitorarGruposDaEmpresa(
     const operadoresJids = await buscarOperadoresJids(empresaId);
 
     // 5. Busca config de IA (apenas se usar_ia estiver ativo)
+    console.log("[Monitoramento] buscando IA config usar_ia=%s empresa=%s", config.alerta_grupos_usar_ia, empresaId);
     const iaConfig = config.alerta_grupos_usar_ia
       ? await getIAConfig(empresaId)
       : null;

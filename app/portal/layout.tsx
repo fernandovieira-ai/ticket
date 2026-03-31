@@ -4,6 +4,9 @@ import { queryOne } from "@/lib/db";
 import { PortalUserMenu } from "./_components/portal-user-menu";
 import { PortalLogoImage } from "./_components/portal-logo-image";
 
+// Sempre renderiza no servidor a cada request (DB não acessível no build do Railway)
+export const dynamic = "force-dynamic";
+
 export default async function PortalLayout({
   children,
 }: {

@@ -660,10 +660,11 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
               value={situacaoMeus}
               onChange={(e) => setSituacaoMeus(e.target.value)}
               style={{
-                marginTop: 8,
+                marginTop: 6,
                 width: "100%",
-                fontSize: 12,
-                padding: "5px 8px",
+                fontSize: 11,
+                padding: "2px 6px",
+                height: 26,
                 borderRadius: 6,
                 border: "1px solid var(--color-border)",
                 backgroundColor: "var(--color-bg-primary)",
@@ -746,7 +747,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                   <p
                     className="truncate"
                     style={{
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: 500,
                       color: "var(--color-text-primary)",
                       lineHeight: 1.4,
@@ -900,7 +901,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <span
                         className="truncate block"
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           color: "var(--color-text-secondary)",
                         }}
                         title={t.departamento_nome ?? ""}
@@ -917,7 +918,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <span
                         className="truncate block"
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           color: "var(--color-text-secondary)",
                         }}
                         title={t.cliente_nome ?? ""}
@@ -934,7 +935,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <span
                         className="truncate block"
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           color: "var(--color-text-secondary)",
                         }}
                         title={t.categoria_nome ?? ""}
@@ -1027,7 +1028,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                           </span>
                           <span
                             style={{
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: 500,
                               color: "var(--color-text-secondary)",
                             }}
@@ -1079,7 +1080,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                       <span
                         className="truncate block"
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           color: "var(--color-text-secondary)",
                         }}
                         title={t.atribuido_nome ?? ""}

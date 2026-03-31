@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
      JOIN whatsapp_instancias wi ON wi.id = g.instancia_id
      LEFT JOIN LATERAL (
        SELECT MAX(respondido_em)   AS ultimo_atendimento,
-              COUNT(*) FILTER (WHERE respondido_em IS NULL) AS interacoes_abertas
+              COUNT(*) FILTER (WHERE respondido_em IS NULL AND auto_resolvido = FALSE) AS interacoes_abertas
        FROM whatsapp_grupos_interacoes
        WHERE grupo_id = g.id
      ) ia ON true

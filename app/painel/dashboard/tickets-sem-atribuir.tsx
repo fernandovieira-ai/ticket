@@ -22,7 +22,11 @@ interface Usuario {
   nome: string;
 }
 
-export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] }) {
+export function TicketsSemAtribuir({
+  tickets: inicial,
+}: {
+  tickets: TicketRow[];
+}) {
   const [lista, setLista] = useState<TicketRow[]>(inicial);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [atribuindo, setAtribuindo] = useState<string | null>(null); // ticket id com dropdown aberto
@@ -33,7 +37,12 @@ export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] 
       .then((r) => r.json())
       .then((d) => {
         const lista: Usuario[] = d.data ?? d;
-        setUsuarios(lista.filter((u: Usuario & { perfil?: string }) => u.perfil !== "cliente"));
+        setUsuarios(
+          lista.filter(
+            (u: Usuario & { perfil?: string; ativo?: boolean }) =>
+              u.perfil !== "cliente" && u.ativo !== false,
+          ),
+        );
       })
       .catch(() => {});
   }, []);
@@ -63,7 +72,13 @@ export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] 
 
   if (lista.length === 0) {
     return (
-      <p style={{ fontSize: 13, color: "var(--color-text-muted)", padding: "16px" }}>
+      <p
+        style={{
+          fontSize: 13,
+          color: "var(--color-text-muted)",
+          padding: "16px",
+        }}
+      >
         Nenhum chamado sem atendente.
       </p>
     );
@@ -96,12 +111,19 @@ export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] 
                 </span>
                 <span
                   className="truncate group-hover:underline"
-                  style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
                 >
                   {t.titulo}
                 </span>
               </div>
-              <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
+              <div
+                className="flex items-center gap-2 flex-wrap"
+                style={{ marginTop: 4 }}
+              >
                 <span
                   className="inline-flex items-center"
                   style={{
@@ -129,7 +151,9 @@ export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] 
                   {t.prioridade_nome}
                 </span>
                 {t.cliente_nome && (
-                  <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+                  <span
+                    style={{ fontSize: 11, color: "var(--color-text-muted)" }}
+                  >
                     {t.cliente_nome}
                   </span>
                 )}
@@ -138,7 +162,10 @@ export function TicketsSemAtribuir({ tickets: inicial }: { tickets: TicketRow[] 
           </div>
 
           {/* Ação de atribuir */}
-          <div className="flex-shrink-0 flex items-center gap-1" style={{ marginTop: 2 }}>
+          <div
+            className="flex-shrink-0 flex items-center gap-1"
+            style={{ marginTop: 2 }}
+          >
             {atribuindo === t.id ? (
               <>
                 <select

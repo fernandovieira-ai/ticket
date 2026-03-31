@@ -7,12 +7,15 @@ import { emailMudancaStatus, emailTransferenciaTicket } from "@/lib/email/send";
 
 const atualizarTicketSchema = z.object({
   titulo: z.string().min(3).max(300).optional(),
+  descricao: z.string().min(1).optional(),
   status_id: z.string().uuid().optional(),
   prioridade_id: z.string().uuid().optional(),
   atribuido_a: z.string().uuid().nullable().optional(),
   departamento_id: z.string().uuid().nullable().optional(),
   categoria_id: z.string().uuid().nullable().optional(),
+  subcategoria_id: z.string().uuid().nullable().optional(),
   tempo_trabalho_minutos: z.number().int().min(0).optional(),
+  log_edicao: z.boolean().optional(),
 });
 
 // GET /api/tickets/[id]
@@ -134,6 +137,53 @@ export async function PATCH(
       { status: 404 },
     );
 
+  // Busca estado atual para log de auditoria (quando log_edicao = true)
+  let ticketAntes: {
+    titulo: string;
+    descricao: string;
+    departamento_id: string | null;
+    departamento_nome: string | null;
+    categoria_id: string | null;
+    categoria_nome: string | null;
+    subcategoria_id: string | null;
+    subcategoria_nome: string | null;
+    prioridade_id: string;
+    prioridade_nome: string;
+    atribuido_a: string | null;
+    atribuido_nome: string | null;
+  } | null = null;
+
+  if (parsed.data.log_edicao) {
+    ticketAntes = await queryOne<{
+      titulo: string;
+      descricao: string;
+      departamento_id: string | null;
+      departamento_nome: string | null;
+      categoria_id: string | null;
+      categoria_nome: string | null;
+      subcategoria_id: string | null;
+      subcategoria_nome: string | null;
+      prioridade_id: string;
+      prioridade_nome: string;
+      atribuido_a: string | null;
+      atribuido_nome: string | null;
+    }>(
+      `SELECT t.titulo, t.descricao, t.departamento_id, d.nome AS departamento_nome,
+              t.categoria_id, cat.nome AS categoria_nome,
+              t.subcategoria_id, sub.nome AS subcategoria_nome,
+              t.prioridade_id, tp.nome AS prioridade_nome,
+              t.atribuido_a, ua.nome AS atribuido_nome
+       FROM tickets t
+       LEFT JOIN departamentos d ON d.id = t.departamento_id
+       LEFT JOIN categorias cat ON cat.id = t.categoria_id
+       LEFT JOIN subcategorias sub ON sub.id = t.subcategoria_id
+       JOIN ticket_prioridades tp ON tp.id = t.prioridade_id
+       LEFT JOIN usuarios ua ON ua.id = t.atribuido_a
+       WHERE t.id = $1`,
+      [id],
+    );
+  }
+
   const campos: string[] = [];
   const valores: unknown[] = [];
   let idx = 1;
@@ -142,13 +192,18 @@ export async function PATCH(
     campos.push(`titulo = $${idx++}`);
     valores.push(parsed.data.titulo);
   }
+  if (parsed.data.descricao !== undefined) {
+    campos.push(`descricao = $${idx++}`);
+    valores.push(parsed.data.descricao);
+  }
   // Captura dados para email de status (antes do UPDATE)
   let emailStatusDados: {
     statusAnteriorNome: string;
     statusNovoNome: string;
     statusNovoEncerra: boolean;
   } | null = null;
-  let novoStatus: { nome: string; codigo: string; encerra: boolean } | null = null;
+  let novoStatus: { nome: string; codigo: string; encerra: boolean } | null =
+    null;
   let ticketAtual: {
     status_encerra: boolean;
     status_nome: string;
@@ -214,6 +269,10 @@ export async function PATCH(
     campos.push(`categoria_id = $${idx++}`);
     valores.push(parsed.data.categoria_id ?? null);
   }
+  if ("subcategoria_id" in parsed.data) {
+    campos.push(`subcategoria_id = $${idx++}`);
+    valores.push(parsed.data.subcategoria_id ?? null);
+  }
   if (parsed.data.tempo_trabalho_minutos !== undefined) {
     campos.push(`tempo_trabalho_minutos = $${idx++}`);
     valores.push(parsed.data.tempo_trabalho_minutos);
@@ -246,6 +305,123 @@ export async function PATCH(
     `UPDATE tickets SET ${campos.join(", ")} WHERE id = $${idx}`,
     valores,
   );
+
+  // Atualiza primeira mensagem se descrição foi alterada
+  if (parsed.data.descricao !== undefined) {
+    await query(
+      `UPDATE mensagens SET corpo = $1
+       WHERE ticket_id = $2
+         AND id = (SELECT id FROM mensagens WHERE ticket_id = $2 ORDER BY criado_em ASC LIMIT 1)`,
+      [parsed.data.descricao, id],
+    );
+  }
+
+  // Log de auditoria de edição (nota interna automática)
+  if (parsed.data.log_edicao && ticketAntes) {
+    const mudancas: string[] = [];
+    if (
+      parsed.data.titulo !== undefined &&
+      parsed.data.titulo !== ticketAntes.titulo
+    ) {
+      mudancas.push(
+        `<strong>Título:</strong> "${ticketAntes.titulo}" → "${parsed.data.titulo}"`,
+      );
+    }
+    if (
+      parsed.data.descricao !== undefined &&
+      parsed.data.descricao !== ticketAntes.descricao
+    ) {
+      mudancas.push(`<strong>Descrição</strong> foi alterada`);
+    }
+    if (
+      parsed.data.prioridade_id !== undefined &&
+      parsed.data.prioridade_id !== ticketAntes.prioridade_id
+    ) {
+      const novaNome =
+        (
+          await queryOne<{ nome: string }>(
+            `SELECT nome FROM ticket_prioridades WHERE id = $1`,
+            [parsed.data.prioridade_id],
+          )
+        )?.nome ?? "—";
+      mudancas.push(
+        `<strong>Prioridade:</strong> "${ticketAntes.prioridade_nome}" → "${novaNome}"`,
+      );
+    }
+    if (
+      "departamento_id" in parsed.data &&
+      (parsed.data.departamento_id ?? null) !==
+        (ticketAntes.departamento_id ?? null)
+    ) {
+      const novaNome = parsed.data.departamento_id
+        ? ((
+            await queryOne<{ nome: string }>(
+              `SELECT nome FROM departamentos WHERE id = $1`,
+              [parsed.data.departamento_id],
+            )
+          )?.nome ?? "—")
+        : "—";
+      mudancas.push(
+        `<strong>Departamento:</strong> "${ticketAntes.departamento_nome ?? "—"}" → "${novaNome}"`,
+      );
+    }
+    if (
+      "categoria_id" in parsed.data &&
+      (parsed.data.categoria_id ?? null) !== (ticketAntes.categoria_id ?? null)
+    ) {
+      const novaNome = parsed.data.categoria_id
+        ? ((
+            await queryOne<{ nome: string }>(
+              `SELECT nome FROM categorias WHERE id = $1`,
+              [parsed.data.categoria_id],
+            )
+          )?.nome ?? "—")
+        : "—";
+      mudancas.push(
+        `<strong>Categoria:</strong> "${ticketAntes.categoria_nome ?? "—"}" → "${novaNome}"`,
+      );
+    }
+    if (
+      "subcategoria_id" in parsed.data &&
+      (parsed.data.subcategoria_id ?? null) !==
+        (ticketAntes.subcategoria_id ?? null)
+    ) {
+      const novaNome = parsed.data.subcategoria_id
+        ? ((
+            await queryOne<{ nome: string }>(
+              `SELECT nome FROM subcategorias WHERE id = $1`,
+              [parsed.data.subcategoria_id],
+            )
+          )?.nome ?? "—")
+        : "—";
+      mudancas.push(
+        `<strong>Subcategoria:</strong> "${ticketAntes.subcategoria_nome ?? "—"}" → "${novaNome}"`,
+      );
+    }
+    if (
+      "atribuido_a" in parsed.data &&
+      (parsed.data.atribuido_a ?? null) !== (ticketAntes.atribuido_a ?? null)
+    ) {
+      const novaNome = parsed.data.atribuido_a
+        ? ((
+            await queryOne<{ nome: string }>(
+              `SELECT nome FROM usuarios WHERE id = $1`,
+              [parsed.data.atribuido_a],
+            )
+          )?.nome ?? "—")
+        : "Não atribuído";
+      mudancas.push(
+        `<strong>Atendente:</strong> "${ticketAntes.atribuido_nome ?? "Não atribuído"}" → "${novaNome}"`,
+      );
+    }
+    if (mudancas.length > 0) {
+      const corpo = `<p><em>Chamado editado por ${session.nome ?? "Atendente"}</em></p><ul>${mudancas.map((m) => `<li>${m}</li>`).join("")}</ul>`;
+      await query(
+        `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna) VALUES ($1, $2, $3, true)`,
+        [id, session.sub, corpo],
+      );
+    }
+  }
 
   // Registrar eventos de SLA quando status muda
   if (novoStatus) {

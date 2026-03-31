@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   ArrowRightLeft,
   Smartphone,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,6 +118,14 @@ interface ClienteDetalhe {
   documento: string | null;
   segmento: string | null;
 }
+interface CategoriaOpcao {
+  id: string;
+  nome: string;
+}
+interface SubcategoriaOpcao {
+  id: string;
+  nome: string;
+}
 
 export default function TicketPainelPage() {
   const { id } = useParams<{ id: string }>();
@@ -156,6 +165,50 @@ export default function TicketPainelPage() {
   const [transferindo, setTransferindo] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioOpcao[]>([]);
   const [departamentos, setDepartamentos] = useState<DepartamentoOpcao[]>([]);
+  const [categorias, setCategorias] = useState<CategoriaOpcao[]>([]);
+  const [subcategorias, setSubcategorias] = useState<SubcategoriaOpcao[]>([]);
+  function htmlToTexto(html: string): string {
+    return html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function textoToHtml(texto: string): string {
+    const linhas = texto.split(/\n/);
+    const paragrafos: string[] = [];
+    let bloco = "";
+    for (const linha of linhas) {
+      if (linha.trim() === "") {
+        if (bloco) {
+          paragrafos.push(`<p>${bloco}</p>`);
+          bloco = "";
+        }
+        paragrafos.push("<p><br></p>");
+      } else {
+        bloco = bloco ? `${bloco}<br>${linha}` : linha;
+      }
+    }
+    if (bloco) paragrafos.push(`<p>${bloco}</p>`);
+    return paragrafos.join("");
+  }
+
+  const [editarAberto, setEditarAberto] = useState(false);
+  const [editarTitulo, setEditarTitulo] = useState("");
+  const [editarDepartamentoId, setEditarDepartamentoId] = useState("");
+  const [editarCategoriaId, setEditarCategoriaId] = useState("");
+  const [editarSubcategoriaId, setEditarSubcategoriaId] = useState("");
+  const [editarPrioridadeId, setEditarPrioridadeId] = useState("");
+  const [editarAtribuidoA, setEditarAtribuidoA] = useState("");
+  const [editarDescricao, setEditarDescricao] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const finalizarEditorRef = useRef<RichTextEditorRef>(null);
   const cancelarEditorRef = useRef<RichTextEditorRef>(null);
   const [statusAberto, setStatusAberto] = useState(false);
@@ -190,12 +243,13 @@ export default function TicketPainelPage() {
   // Carrega todas as opções estáticas em paralelo — um único useEffect elimina a cascata
   useEffect(() => {
     async function carregarOpcoes() {
-      const [resS, resP, resMe, resU, resD] = await Promise.all([
+      const [resS, resP, resMe, resU, resD, resC] = await Promise.all([
         fetch("/api/ticket-status"),
         fetch("/api/ticket-prioridades"),
         fetch("/api/auth/me"),
-        fetch("/api/usuarios?pageSize=50"),
-        fetch("/api/departamentos?pageSize=50"),
+        fetch("/api/usuarios?pageSize=100"),
+        fetch("/api/departamentos?pageSize=100"),
+        fetch("/api/categorias?pageSize=100"),
       ]);
       if (resS.ok) setStatusOpcoes(await resS.json());
       if (resP.ok) setPrioridadeOpcoes(await resP.json());
@@ -206,16 +260,71 @@ export default function TicketPainelPage() {
       if (resU.ok) {
         const data = await resU.json();
         setUsuarios(
-          (data.data ?? []).filter((u: UsuarioOpcao) => u.perfil !== "cliente"),
+          (data.data ?? []).filter(
+            (u: UsuarioOpcao) => u.perfil !== "cliente" && u.ativo !== false,
+          ),
         );
       }
       if (resD.ok) {
         const data = await resD.json();
         setDepartamentos(data.data ?? []);
       }
+      if (resC.ok) {
+        const data = await resC.json();
+        setCategorias(data.data ?? []);
+      }
     }
     carregarOpcoes();
   }, []);
+
+  // Carrega subcategorias ao mudar categoria no modal de edição
+  useEffect(() => {
+    if (!editarAberto || !editarCategoriaId) {
+      setSubcategorias([]);
+      return;
+    }
+    fetch(`/api/subcategorias?categoria_id=${editarCategoriaId}&pageSize=100`)
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((d) => setSubcategorias(d.data ?? []))
+      .catch(() => {});
+  }, [editarAberto, editarCategoriaId]);
+
+  function abrirModalEditar() {
+    if (!ticket) return;
+    setEditarTitulo(ticket.titulo);
+    setEditarDepartamentoId(ticket.departamento_id ?? "");
+    setEditarCategoriaId(ticket.categoria_id ?? "");
+    setEditarSubcategoriaId(ticket.subcategoria_id ?? "");
+    setEditarPrioridadeId(ticket.prioridade_id);
+    setEditarAtribuidoA(ticket.atribuido_a ?? "");
+    setEditarDescricao(htmlToTexto(ticket.descricao ?? ""));
+    setEditarAberto(true);
+  }
+
+  async function salvarEdicao() {
+    if (!editarTitulo.trim()) return;
+    setSalvandoEdicao(true);
+    try {
+      await fetch(`/api/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: editarTitulo.trim(),
+          descricao: textoToHtml(editarDescricao.trim()),
+          departamento_id: editarDepartamentoId || null,
+          categoria_id: editarCategoriaId || null,
+          subcategoria_id: editarSubcategoriaId || null,
+          prioridade_id: editarPrioridadeId || null,
+          atribuido_a: editarAtribuidoA || null,
+          log_edicao: true,
+        }),
+      });
+      setEditarAberto(false);
+      await carregar();
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  }
 
   async function enviarResposta(e: React.FormEvent) {
     e.preventDefault();
@@ -513,6 +622,15 @@ export default function TicketPainelPage() {
             </div>
             {/* Botões — estilos originais preservados */}
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={abrirModalEditar}
+                title="Editar chamado"
+                className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-400 rounded-md px-2.5 py-1.5 transition-colors"
+              >
+                <Pencil size={13} />
+                Editar
+              </button>
               {ticket.status_encerra ? (
                 <button
                   type="button"
@@ -559,7 +677,11 @@ export default function TicketPainelPage() {
                   setTransferirAberto(true);
                 }}
                 disabled={ticket.status_encerra}
-                title={ticket.status_encerra ? "Não é possível transferir um chamado finalizado" : "Transferir chamado"}
+                title={
+                  ticket.status_encerra
+                    ? "Não é possível transferir um chamado finalizado"
+                    : "Transferir chamado"
+                }
                 className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 border border-purple-200 bg-white hover:bg-purple-50 hover:border-purple-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ArrowRightLeft size={13} />
@@ -570,7 +692,11 @@ export default function TicketPainelPage() {
                   type="button"
                   onClick={excluirTicket}
                   disabled={excluindo || ticket.status_encerra}
-                  title={ticket.status_encerra ? "Não é possível excluir um chamado finalizado" : "Excluir chamado"}
+                  title={
+                    ticket.status_encerra
+                      ? "Não é possível excluir um chamado finalizado"
+                      : "Excluir chamado"
+                  }
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-red-600 border border-red-200 bg-white hover:bg-red-50 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {excluindo ? (
@@ -972,10 +1098,7 @@ export default function TicketPainelPage() {
 
       {/* Modal Transferir */}
       <Dialog open={transferirAberto} onOpenChange={setTransferirAberto}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-lg p-0 gap-0"
-        >
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
               Transferir Chamado: #{ticket.numero} - {ticket.titulo}
@@ -1081,10 +1204,7 @@ export default function TicketPainelPage() {
 
       {/* Modal Finalizar */}
       <Dialog open={finalizarAberto} onOpenChange={setFinalizarAberto}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-lg p-0 gap-0"
-        >
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">
               Finalizar Chamado
@@ -1172,10 +1292,7 @@ export default function TicketPainelPage() {
 
       {/* Modal Cancelar */}
       <Dialog open={cancelarAberto} onOpenChange={setCancelarAberto}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-lg p-0 gap-0"
-        >
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">
               Cancelar Chamado
@@ -1245,8 +1362,10 @@ export default function TicketPainelPage() {
                 }}
                 className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
                 style={{
-                  borderColor: s.id === ticket.status_id ? s.cor + "88" : undefined,
-                  backgroundColor: s.id === ticket.status_id ? s.cor + "12" : undefined,
+                  borderColor:
+                    s.id === ticket.status_id ? s.cor + "88" : undefined,
+                  backgroundColor:
+                    s.id === ticket.status_id ? s.cor + "12" : undefined,
                   color: s.id === ticket.status_id ? s.cor : undefined,
                 }}
               >
@@ -1260,6 +1379,163 @@ export default function TicketPainelPage() {
                 )}
               </button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal — Editar Chamado */}
+      <Dialog open={editarAberto} onOpenChange={setEditarAberto}>
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
+              Editar Chamado: #{ticket.numero}
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setEditarAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Título */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Título
+              </label>
+              <input
+                type="text"
+                value={editarTitulo}
+                onChange={(e) => setEditarTitulo(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {/* Descrição */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Descrição
+              </label>
+              <textarea
+                value={editarDescricao}
+                onChange={(e) => setEditarDescricao(e.target.value)}
+                rows={5}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+            {/* Departamento */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Departamento
+              </label>
+              <select
+                value={editarDepartamentoId}
+                onChange={(e) => setEditarDepartamentoId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Sem departamento</option>
+                {departamentos.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Categoria */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Categoria
+              </label>
+              <select
+                value={editarCategoriaId}
+                onChange={(e) => {
+                  setEditarCategoriaId(e.target.value);
+                  setEditarSubcategoriaId("");
+                }}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Sem categoria</option>
+                {categorias.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Subcategoria */}
+            {subcategorias.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subcategoria
+                </label>
+                <select
+                  value={editarSubcategoriaId}
+                  onChange={(e) => setEditarSubcategoriaId(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Sem subcategoria</option>
+                  {subcategorias.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {/* Prioridade */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Prioridade
+              </label>
+              <select
+                value={editarPrioridadeId}
+                onChange={(e) => setEditarPrioridadeId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Sem prioridade</option>
+                {prioridadeOpcoes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Atendente */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Atendente
+              </label>
+              <select
+                value={editarAtribuidoA}
+                onChange={(e) => setEditarAtribuidoA(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Não atribuído</option>
+                {usuarios.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={salvarEdicao}
+              disabled={salvandoEdicao || !editarTitulo.trim()}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {salvandoEdicao && <Loader2 size={14} className="animate-spin" />}
+              Salvar alterações
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditarAberto(false)}
+              className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+            >
+              Cancelar
+            </button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1281,8 +1557,10 @@ export default function TicketPainelPage() {
                 }}
                 className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-gray-50"
                 style={{
-                  borderColor: p.id === ticket.prioridade_id ? p.cor + "88" : undefined,
-                  backgroundColor: p.id === ticket.prioridade_id ? p.cor + "12" : undefined,
+                  borderColor:
+                    p.id === ticket.prioridade_id ? p.cor + "88" : undefined,
+                  backgroundColor:
+                    p.id === ticket.prioridade_id ? p.cor + "12" : undefined,
                   color: p.id === ticket.prioridade_id ? p.cor : undefined,
                 }}
               >

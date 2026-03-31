@@ -256,6 +256,7 @@ export async function monitorarGruposDaEmpresa(
 
     // 6. Para cada interação, decide se alerta ou suprime
     const paraAlertar: Array<{
+      interacao_id: string;
       grupo_nome: string;
       remetente_nome: string | null;
       aguardando_min: number;
@@ -275,6 +276,7 @@ export async function monitorarGruposDaEmpresa(
         if (mensagens.length === 0) {
           // Sem nenhuma mensagem posterior → definitivamente pendente
           paraAlertar.push({
+            interacao_id: interacao.interacao_id,
             grupo_nome: interacao.grupo_nome,
             remetente_nome: interacao.remetente_nome,
             aguardando_min: interacao.aguardando_min,
@@ -299,6 +301,7 @@ export async function monitorarGruposDaEmpresa(
 
         // IA disse pendente → alerta com o motivo como contexto
         paraAlertar.push({
+          interacao_id: interacao.interacao_id,
           grupo_nome: interacao.grupo_nome,
           remetente_nome: interacao.remetente_nome,
           aguardando_min: interacao.aguardando_min,
@@ -308,6 +311,7 @@ export async function monitorarGruposDaEmpresa(
       // --- SEM IA ---
       } else {
         paraAlertar.push({
+          interacao_id: interacao.interacao_id,
           grupo_nome: interacao.grupo_nome,
           remetente_nome: interacao.remetente_nome,
           aguardando_min: interacao.aguardando_min,
@@ -315,10 +319,16 @@ export async function monitorarGruposDaEmpresa(
       }
     }
 
-    // 7. Envia alerta consolidado no grupo de suporte
+    // 7. Envia alerta consolidado no grupo de suporte e fecha as interações
     if (paraAlertar.length > 0) {
       await enviarAlertaNoGrupo(evolutionConfig, config.alerta_grupos_jid, paraAlertar);
       resultado.alertas_enviados = paraAlertar.length;
+
+      // Fecha todas as interações alertadas para não reenviar no próximo ciclo
+      for (const item of paraAlertar) {
+        await marcarAutoResolvida(item.interacao_id, item.motivo_ia ?? "Alerta enviado para grupo de suporte");
+        resultado.auto_resolvidos++;
+      }
     }
   } catch (err) {
     resultado.erro = err instanceof Error ? err.message : String(err);

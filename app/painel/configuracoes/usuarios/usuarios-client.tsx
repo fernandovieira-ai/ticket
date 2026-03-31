@@ -101,7 +101,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const mountedRef = useRef(false);
-  const [modoVisu, setModoVisu] = useState<ModoVisu>("lista");
+  const [modoVisu, setModoVisu] = useState<ModoVisu>("grade");
   const [colunasVisiveis, setColunasVisiveis] = useState<Set<ColunaKey>>(
     new Set(COLUNAS_PADRAO),
   );

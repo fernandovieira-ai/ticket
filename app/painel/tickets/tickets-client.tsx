@@ -195,7 +195,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
-  const [situacaoMeus, setSituacaoMeus] = useState<"aberto" | "fechado" | "todos">("aberto");
+  const [situacaoMeus, setSituacaoMeus] = useState("aberto");
   const [loading, setLoading] = useState(true);
   const primeiroRender = useRef(true);
 
@@ -297,8 +297,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
       if (statusCodigo) params.set("status_codigo", statusCodigo);
       if (meus) {
         params.set("meus", "1");
-        if (situacaoMeus === "aberto") params.set("encerra", "false");
-        else if (situacaoMeus === "fechado") params.set("encerra", "true");
+        if (situacaoMeus) params.set("status_codigo", situacaoMeus);
       }
       if (fila) params.set("fila", "1");
       const res = await fetch(`/api/tickets?${params}`);
@@ -657,31 +656,29 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
             {total} ticket(s)
           </p>
           {meus && (
-            <div className="flex gap-1 mt-2">
-              {(["aberto", "fechado", "todos"] as const).map((s) => {
-                const label = s === "aberto" ? "Abertos" : s === "fechado" ? "Fechados" : "Todos";
-                const ativo = situacaoMeus === s;
-                return (
-                  <button
-                    key={s}
-                    onClick={() => setSituacaoMeus(s)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: ativo ? 600 : 400,
-                      padding: "3px 10px",
-                      borderRadius: 6,
-                      border: ativo ? "1.5px solid var(--color-primary, #2563EB)" : "1px solid var(--color-border)",
-                      backgroundColor: ativo ? "var(--color-primary, #2563EB)" : "transparent",
-                      color: ativo ? "#fff" : "var(--color-text-muted)",
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <select
+              value={situacaoMeus}
+              onChange={(e) => setSituacaoMeus(e.target.value)}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                fontSize: 12,
+                padding: "5px 8px",
+                borderRadius: 6,
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg-primary)",
+                color: "var(--color-text)",
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              <option value="">Todos</option>
+              <option value="aberto">Aberto</option>
+              <option value="em_andamento">Em Andamento</option>
+              <option value="aguardando">Aguardando</option>
+              <option value="cancelado">Cancelado</option>
+              <option value="finalizado">Finalizado</option>
+            </select>
           )}
         </div>
 

@@ -76,7 +76,7 @@ export async function buscarInteracoesPendentes(
     aguardando_min: number;
     sla_min: number;
   }>(
-    `SELECT
+    `SELECT DISTINCT ON (g.id)
        i.id                                                         AS interacao_id,
        g.id                                                         AS grupo_id,
        g.nome                                                       AS grupo_nome,
@@ -95,7 +95,7 @@ export async function buscarInteracoesPendentes(
        AND g.ativo         = TRUE
        AND i.msg_criada_em >= CURRENT_DATE
        AND EXTRACT(EPOCH FROM (NOW() - i.msg_criada_em)) > (COALESCE(g.sla_resposta_min, $2) * 60)
-     ORDER BY i.msg_criada_em ASC`,
+     ORDER BY g.id, i.msg_criada_em DESC`,
     [empresaId, thresholdMin],
   );
 

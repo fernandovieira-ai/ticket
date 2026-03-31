@@ -55,6 +55,7 @@ interface WhatsappConfig {
   alerta_grupos_min: number;
   alerta_grupos_jid: string;
   alerta_grupos_usar_ia: boolean;
+  alerta_grupos_instancia: string;
 }
 
 type Tab = "instancias" | "configuracoes" | "api";
@@ -112,6 +113,7 @@ export default function WhatsappConfigPage() {
     alerta_grupos_min: 30,
     alerta_grupos_jid: "",
     alerta_grupos_usar_ia: true,
+    alerta_grupos_instancia: "",
   });
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [salvandoConfig, setSalvandoConfig] = useState(false);
@@ -868,20 +870,40 @@ export default function WhatsappConfigPage() {
                         />
                       </div>
                       <div>
-                        <Label className="text-xs">JID do grupo de suporte</Label>
-                        <Input
-                          type="text"
-                          placeholder="120363xxxxx@g.us"
-                          value={config.alerta_grupos_jid}
+                        <Label className="text-xs">Instância para envio do alerta</Label>
+                        <select
+                          value={config.alerta_grupos_instancia}
                           onChange={(e) =>
-                            setConfig((c) => ({ ...c, alerta_grupos_jid: e.target.value }))
+                            setConfig((c) => ({ ...c, alerta_grupos_instancia: e.target.value }))
                           }
-                          className="mt-1 text-sm font-mono"
-                        />
+                          className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                        >
+                          <option value="">Usar instância padrão</option>
+                          {instancias.map((inst) => (
+                            <option key={inst.id} value={inst.nome_instancia}>
+                              {inst.nome_instancia}{inst.numero ? ` (${inst.numero})` : ""}
+                            </option>
+                          ))}
+                        </select>
                         <p className="text-xs text-zinc-400 mt-1">
-                          Grupo WhatsApp que receberá os alertas. Encontre o JID na lista de grupos monitorados.
+                          O número selecionado precisa estar no grupo de suporte.
                         </p>
                       </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">JID do grupo de suporte</Label>
+                      <Input
+                        type="text"
+                        placeholder="120363xxxxx@g.us"
+                        value={config.alerta_grupos_jid}
+                        onChange={(e) =>
+                          setConfig((c) => ({ ...c, alerta_grupos_jid: e.target.value }))
+                        }
+                        className="mt-1 text-sm font-mono"
+                      />
+                      <p className="text-xs text-zinc-400 mt-1">
+                        Grupo WhatsApp que receberá os alertas. Encontre o JID na lista de grupos monitorados.
+                      </p>
                     </div>
 
                     <label className="flex items-center gap-3 cursor-pointer">

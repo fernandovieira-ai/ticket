@@ -12,6 +12,7 @@ interface ConfigMonitoramento {
   alerta_grupos_min: number;
   alerta_grupos_jid: string | null;
   alerta_grupos_usar_ia: boolean;
+  alerta_grupos_instancia: string | null;
 }
 
 interface InteracaoPendente {
@@ -46,7 +47,8 @@ export async function buscarConfigMonitoramento(
               alerta_grupos_ativo,
               alerta_grupos_min,
               alerta_grupos_jid,
-              alerta_grupos_usar_ia
+              alerta_grupos_usar_ia,
+              alerta_grupos_instancia
        FROM whatsapp_config
        WHERE empresa_id = $1`,
       [empresaId],
@@ -229,12 +231,15 @@ export async function monitorarGruposDaEmpresa(
       return resultado;
     }
 
-    // 2. Busca config Evolution API
+    // 2. Busca config Evolution API — usa instância específica do monitoramento se configurada
     console.log("[Monitoramento] buscando Evolution config empresa=%s", empresaId);
     const evolutionConfig = await getEvolutionConfig(empresaId);
     if (!evolutionConfig) {
       console.warn("[Monitoramento] Evolution API não configurada. empresa=%s", empresaId);
       return resultado;
+    }
+    if (config.alerta_grupos_instancia) {
+      evolutionConfig.instance = config.alerta_grupos_instancia;
     }
 
     // 3. Busca interações pendentes além do threshold

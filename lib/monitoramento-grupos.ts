@@ -155,7 +155,7 @@ async function buscarOperadoresJids(empresaId: string): Promise<string[]> {
 // ============================================================
 
 async function marcarAutoResolvida(
-  interacaoId: string,
+  grupoId: string,
   motivo: string,
 ): Promise<void> {
   await query(
@@ -163,8 +163,10 @@ async function marcarAutoResolvida(
      SET auto_resolvido        = TRUE,
          auto_resolvido_motivo = $2,
          auto_resolvido_em     = NOW()
-     WHERE id = $1`,
-    [interacaoId, motivo],
+     WHERE grupo_id        = $1
+       AND respondido_em   IS NULL
+       AND auto_resolvido  = FALSE`,
+    [grupoId, motivo],
   );
 }
 
@@ -261,7 +263,7 @@ export async function monitorarGruposDaEmpresa(
 
     // 6. Para cada interação, decide se alerta ou suprime
     const paraAlertar: Array<{
-      interacao_id: string;
+      grupo_id: string;
       grupo_nome: string;
       remetente_nome: string | null;
       aguardando_min: number;
@@ -281,7 +283,7 @@ export async function monitorarGruposDaEmpresa(
         if (mensagens.length === 0) {
           // Sem nenhuma mensagem posterior → definitivamente pendente
           paraAlertar.push({
-            interacao_id: interacao.interacao_id,
+            grupo_id: interacao.grupo_id,
             grupo_nome: interacao.grupo_nome,
             remetente_nome: interacao.remetente_nome,
             aguardando_min: interacao.aguardando_min,
@@ -298,7 +300,7 @@ export async function monitorarGruposDaEmpresa(
 
         if (verificacao.resolvido && verificacao.confianca >= 0.7) {
           // IA entendeu como resolvido com boa confiança → fecha sem alertar
-          await marcarAutoResolvida(interacao.interacao_id, verificacao.motivo);
+          await marcarAutoResolvida(interacao.grupo_id, verificacao.motivo);
           resultado.auto_resolvidos++;
           resultado.alertas_suprimidos_ia++;
           continue;
@@ -306,7 +308,7 @@ export async function monitorarGruposDaEmpresa(
 
         // IA disse pendente → alerta com o motivo como contexto
         paraAlertar.push({
-          interacao_id: interacao.interacao_id,
+          grupo_id: interacao.grupo_id,
           grupo_nome: interacao.grupo_nome,
           remetente_nome: interacao.remetente_nome,
           aguardando_min: interacao.aguardando_min,
@@ -316,7 +318,7 @@ export async function monitorarGruposDaEmpresa(
       // --- SEM IA ---
       } else {
         paraAlertar.push({
-          interacao_id: interacao.interacao_id,
+          grupo_id: interacao.grupo_id,
           grupo_nome: interacao.grupo_nome,
           remetente_nome: interacao.remetente_nome,
           aguardando_min: interacao.aguardando_min,
@@ -324,14 +326,14 @@ export async function monitorarGruposDaEmpresa(
       }
     }
 
-    // 7. Envia alerta consolidado no grupo de suporte e fecha as interações
+    // 7. Envia alerta consolidado no grupo de suporte e fecha TODAS as interações do grupo
     if (paraAlertar.length > 0) {
       await enviarAlertaNoGrupo(evolutionConfig, config.alerta_grupos_jid, paraAlertar);
       resultado.alertas_enviados = paraAlertar.length;
 
-      // Fecha todas as interações alertadas para não reenviar no próximo ciclo
+      // Fecha todas as interações abertas de cada grupo alertado (não só a do DISTINCT ON)
       for (const item of paraAlertar) {
-        await marcarAutoResolvida(item.interacao_id, item.motivo_ia ?? "Alerta enviado para grupo de suporte");
+        await marcarAutoResolvida(item.grupo_id, item.motivo_ia ?? "Alerta enviado para grupo de suporte");
         resultado.auto_resolvidos++;
       }
     }

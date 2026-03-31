@@ -91,6 +91,7 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
          LEFT JOIN clientes c ON c.id = t.cliente_id
          LEFT JOIN usuarios u ON u.id = t.atribuido_a
          WHERE t.empresa_id = $1
+           AND ts.codigo NOT IN ('finalizado', 'cancelado')
          ORDER BY t.criado_em DESC
          LIMIT 8`,
       [empresaId],

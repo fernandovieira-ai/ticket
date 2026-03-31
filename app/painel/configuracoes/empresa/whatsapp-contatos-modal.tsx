@@ -203,7 +203,7 @@ export function WhatsappContatosModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg" showCloseButton>
+      <DialogContent className="max-w-lg" showCloseButton>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">

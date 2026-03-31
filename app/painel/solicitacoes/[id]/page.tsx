@@ -617,7 +617,7 @@ export default function SolicitacaoDetalhePage() {
 
       {/* ═══ MODAL — Transferir ═══ */}
       <Dialog open={transferirAberto} onOpenChange={setTransferirAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
               Transferir: {solicitacao.titulo}
@@ -656,7 +656,7 @@ export default function SolicitacaoDetalhePage() {
 
       {/* ═══ MODAL — Concluir ═══ */}
       <Dialog open={concluirAberto} onOpenChange={setConcluirAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">Concluir Solicitação</DialogTitle>
             <button type="button" onClick={() => setConcluirAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -683,7 +683,7 @@ export default function SolicitacaoDetalhePage() {
 
       {/* ═══ MODAL — Cancelar ═══ */}
       <Dialog open={cancelarAberto} onOpenChange={setCancelarAberto}>
-        <DialogContent showCloseButton={false} className="sm:max-w-lg p-0 gap-0">
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">Cancelar Solicitação</DialogTitle>
             <button type="button" onClick={() => setCancelarAberto(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">

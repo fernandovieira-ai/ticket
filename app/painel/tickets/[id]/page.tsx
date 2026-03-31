@@ -973,7 +973,7 @@ export default function TicketPainelPage() {
       <Dialog open={transferirAberto} onOpenChange={setTransferirAberto}>
         <DialogContent
           showCloseButton={false}
-          className="sm:max-w-lg p-0 gap-0"
+          className="max-w-lg p-0 gap-0"
         >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
@@ -1082,7 +1082,7 @@ export default function TicketPainelPage() {
       <Dialog open={finalizarAberto} onOpenChange={setFinalizarAberto}>
         <DialogContent
           showCloseButton={false}
-          className="sm:max-w-lg p-0 gap-0"
+          className="max-w-lg p-0 gap-0"
         >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">
@@ -1173,7 +1173,7 @@ export default function TicketPainelPage() {
       <Dialog open={cancelarAberto} onOpenChange={setCancelarAberto}>
         <DialogContent
           showCloseButton={false}
-          className="sm:max-w-lg p-0 gap-0"
+          className="max-w-lg p-0 gap-0"
         >
           <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
             <DialogTitle className="text-base font-semibold text-gray-900">

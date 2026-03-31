@@ -107,6 +107,7 @@ interface UsuarioOpcao {
   id: string;
   nome: string;
   perfil: string;
+  ativo?: boolean;
 }
 interface DepartamentoOpcao {
   id: string;

@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   const busca = searchParams.get("q") ?? "";
   const statusId = searchParams.get("status_id") ?? "";
   const statusCodigo = searchParams.get("status_codigo") ?? "";
+  const encarraParam = searchParams.get("encerra"); // "true" | "false" | null
   const prioridadeId = searchParams.get("prioridade_id") ?? "";
   const meus = searchParams.get("meus") === "1";
   const fila = searchParams.get("fila") === "1";
@@ -108,6 +109,7 @@ export async function GET(req: NextRequest) {
        )
        AND (NOT $9::boolean OR t.atribuido_a IS NULL)
        AND (NOT $9::boolean OR ts.codigo NOT IN ('finalizado', 'cancelado'))
+       AND ($11::boolean IS NULL OR ts.encerra = $11::boolean)
      ORDER BY t.criado_em DESC
      LIMIT $7 OFFSET $8`,
     [
@@ -121,6 +123,7 @@ export async function GET(req: NextRequest) {
       offset,
       fila,
       abrirPor,
+      encarraParam === "true" ? true : encarraParam === "false" ? false : null,
     ],
   );
 

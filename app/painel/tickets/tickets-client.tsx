@@ -195,6 +195,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [total, setTotal] = useState(0);
   const [busca, setBusca] = useState("");
+  const [situacaoMeus, setSituacaoMeus] = useState<"aberto" | "fechado" | "todos">("aberto");
   const [loading, setLoading] = useState(true);
   const primeiroRender = useRef(true);
 
@@ -294,7 +295,11 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
     try {
       const params = new URLSearchParams({ q: busca, pageSize: "50" });
       if (statusCodigo) params.set("status_codigo", statusCodigo);
-      if (meus) params.set("meus", "1");
+      if (meus) {
+        params.set("meus", "1");
+        if (situacaoMeus === "aberto") params.set("encerra", "false");
+        else if (situacaoMeus === "fechado") params.set("encerra", "true");
+      }
       if (fila) params.set("fila", "1");
       const res = await fetch(`/api/tickets?${params}`);
       const data = await res.json();
@@ -303,7 +308,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
     } finally {
       setLoading(false);
     }
-  }, [busca, statusCodigo, meus, fila]);
+  }, [busca, statusCodigo, meus, fila, situacaoMeus]);
 
   useEffect(() => {
     if (primeiroRender.current) {
@@ -651,6 +656,33 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
           >
             {total} ticket(s)
           </p>
+          {meus && (
+            <div className="flex gap-1 mt-2">
+              {(["aberto", "fechado", "todos"] as const).map((s) => {
+                const label = s === "aberto" ? "Abertos" : s === "fechado" ? "Fechados" : "Todos";
+                const ativo = situacaoMeus === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setSituacaoMeus(s)}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: ativo ? 600 : 400,
+                      padding: "3px 10px",
+                      borderRadius: 6,
+                      border: ativo ? "1.5px solid var(--color-primary, #2563EB)" : "1px solid var(--color-border)",
+                      backgroundColor: ativo ? "var(--color-primary, #2563EB)" : "transparent",
+                      color: ativo ? "#fff" : "var(--color-text-muted)",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-auto">

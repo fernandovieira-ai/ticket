@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     `SELECT
        COUNT(*)::int                                                       AS total_interacoes,
        COUNT(*) FILTER (WHERE respondido_em IS NOT NULL)::int             AS respondidas,
-       COUNT(*) FILTER (WHERE respondido_em IS NULL)::int                 AS sem_resposta,
+       COUNT(*) FILTER (WHERE respondido_em IS NULL AND auto_resolvido = FALSE)::int AS sem_resposta,
        ROUND(AVG(tempo_resposta_seg) FILTER (WHERE respondido_em IS NOT NULL), 0)
                                                                           AS media_seg,
        PERCENTILE_CONT(0.5) WITHIN GROUP (
@@ -135,6 +135,7 @@ export async function GET(req: NextRequest, { params }: Params) {
      FROM whatsapp_grupos_interacoes i
      WHERE i.grupo_id      = $1
        AND i.respondido_em IS NULL
+       AND i.auto_resolvido = FALSE
      ORDER BY i.msg_criada_em ASC`,
     [id, slaSeg]
   );

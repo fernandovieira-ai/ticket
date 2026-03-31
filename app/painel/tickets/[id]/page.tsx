@@ -558,8 +558,9 @@ export default function TicketPainelPage() {
                   setTransferirDepartamento(ticket.departamento_id ?? "");
                   setTransferirAberto(true);
                 }}
-                title="Transferir chamado"
-                className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 border border-purple-200 bg-white hover:bg-purple-50 hover:border-purple-400 rounded-md px-2.5 py-1.5 transition-colors"
+                disabled={ticket.status_encerra}
+                title={ticket.status_encerra ? "Não é possível transferir um chamado finalizado" : "Transferir chamado"}
+                className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 border border-purple-200 bg-white hover:bg-purple-50 hover:border-purple-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ArrowRightLeft size={13} />
                 Transferir

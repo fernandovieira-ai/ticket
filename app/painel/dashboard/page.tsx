@@ -10,6 +10,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { query } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { TicketsSemAtribuir } from "./tickets-sem-atribuir";
 
 // Revalida a cada 30 segundos no cache do servidor
 export const revalidate = 30;
@@ -91,9 +92,10 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
          LEFT JOIN clientes c ON c.id = t.cliente_id
          LEFT JOIN usuarios u ON u.id = t.atribuido_a
          WHERE t.empresa_id = $1
+           AND t.atribuido_a IS NULL
            AND ts.codigo NOT IN ('finalizado', 'cancelado')
          ORDER BY t.criado_em DESC
-         LIMIT 8`,
+         LIMIT 10`,
       [empresaId],
     ),
     // Por prioridade (abertos + em andamento)
@@ -246,7 +248,7 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
                   letterSpacing: "-0.3px",
                 }}
               >
-                Tickets Recentes
+                Chamados Sem Atendente
               </p>
               <Link
                 href="/painel/tickets"
@@ -260,109 +262,7 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
                 Ver todos <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
-            {ticketsRecentes.length === 0 ? (
-              <p
-                style={{
-                  fontSize: 13,
-                  color: "var(--color-text-muted)",
-                  padding: "16px",
-                }}
-              >
-                Nenhum ticket encontrado.
-              </p>
-            ) : (
-              <div>
-                {ticketsRecentes.map((t) => (
-                  <Link
-                    key={t.id}
-                    href={`/painel/tickets/${t.id}`}
-                    className="dash-ticket-row flex items-start gap-3 transition-colors"
-                    style={{
-                      padding: "10px 16px",
-                      borderBottom: "0.5px solid var(--color-border)",
-                    }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            color: "var(--color-text-muted)",
-                            letterSpacing: "0.02em",
-                          }}
-                        >
-                          #{t.numero}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 500,
-                            color: "var(--color-text-primary)",
-                          }}
-                          className="truncate"
-                        >
-                          {t.titulo}
-                        </span>
-                      </div>
-                      <div
-                        className="flex items-center gap-2 flex-wrap"
-                        style={{ marginTop: 4 }}
-                      >
-                        <span
-                          className="inline-flex items-center"
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 20,
-                            fontSize: 10,
-                            fontWeight: 600,
-                            backgroundColor: t.status_cor + "20",
-                            color: t.status_cor,
-                          }}
-                        >
-                          {t.status_nome}
-                        </span>
-                        <span
-                          className="inline-flex items-center"
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 20,
-                            fontSize: 10,
-                            fontWeight: 600,
-                            backgroundColor: t.prioridade_cor + "20",
-                            color: t.prioridade_cor,
-                          }}
-                        >
-                          {t.prioridade_nome}
-                        </span>
-                        {t.cliente_nome && (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: "var(--color-text-muted)",
-                            }}
-                            className="truncate"
-                          >
-                            {t.cliente_nome}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "var(--color-text-muted)",
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                        marginTop: 2,
-                      }}
-                    >
-                      {new Date(t.criado_em).toLocaleDateString("pt-BR")}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
+            <TicketsSemAtribuir tickets={ticketsRecentes} />
           </div>
         </div>
 

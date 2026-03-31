@@ -102,6 +102,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   const [refreshing, setRefreshing] = useState(false);
   const mountedRef = useRef(false);
   const [modoVisu, setModoVisu] = useState<ModoVisu>("grade");
+  const [abaLista, setAbaLista] = useState<"atendentes" | "clientes">("atendentes");
   const [colunasVisiveis, setColunasVisiveis] = useState<Set<ColunaKey>>(
     new Set(COLUNAS_PADRAO),
   );
@@ -441,6 +442,11 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
     (d) => !deptsVinculados.some((v) => v.id === d.id),
   );
 
+  // filtra usuários pela aba selecionada
+  const usuariosFiltrados = usuarios.filter((u) =>
+    abaLista === "clientes" ? u.perfil === "cliente" : u.perfil !== "cliente",
+  );
+
   return (
     <div className="flex gap-0 h-full -mx-6 -mb-6">
       {/* ── Coluna esquerda: lista ── */}
@@ -548,9 +554,33 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
             )}
           </div>
 
+          {/* Abas Atendentes / Clientes */}
+          <div className="flex items-center gap-1 mt-3 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setAbaLista("atendentes")}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                abaLista === "atendentes"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Atendentes
+            </button>
+            <button
+              onClick={() => setAbaLista("clientes")}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                abaLista === "clientes"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Clientes
+            </button>
+          </div>
+
           {/* Linha de contagem + coluna visibility (grade) */}
           <div className="flex items-center justify-between mt-2">
-            <p className="text-[11px] text-gray-400">{total} usuário(s)</p>
+            <p className="text-[11px] text-gray-400">{usuariosFiltrados.length} usuário(s)</p>
             {!painelAberto && modoVisu === "grade" && (
               <div className="relative" ref={menuColunasRef}>
                 <button
@@ -593,7 +623,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                 <div className="w-14 h-5 bg-gray-100 rounded animate-pulse flex-shrink-0" />
               </div>
             ))
-          ) : usuarios.length === 0 ? (
+          ) : usuariosFiltrados.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <Users size={28} className="mx-auto mb-2 opacity-30" />
               <p className="text-xs">Nenhum usuário</p>
@@ -601,7 +631,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
           ) : modoVisu === "lista" || painelAberto ? (
             /* ── MODO LISTA (cards) ── */
             <div className={refreshing ? "opacity-60 transition-opacity duration-150" : ""}>
-            {usuarios.map((u) => {
+            {usuariosFiltrados.map((u) => {
               const initials = u.nome
                 .split(" ")
                 .slice(0, 2)
@@ -671,7 +701,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                   </tr>
                 </thead>
                 <tbody>
-                  {usuarios.map((u) => {
+                  {usuariosFiltrados.map((u) => {
                     const initials = u.nome
                       .split(" ")
                       .slice(0, 2)

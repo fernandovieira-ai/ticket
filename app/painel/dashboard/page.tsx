@@ -35,9 +35,18 @@ interface PrioRow {
   prioridade_cor: string;
   total: number;
 }
+interface UsuarioTickets {
+  usuario_nome: string;
+  total: number;
+}
 
-async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: string }) {
-
+async function DashboardContent({
+  empresaId,
+  nome,
+}: {
+  empresaId: string;
+  nome: string;
+}) {
   const [
     abertos,
     emAndamento,
@@ -45,6 +54,7 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
     clientesAtivos,
     ticketsRecentes,
     porPrioridade,
+    porUsuario,
   ] = await Promise.all([
     // Abertos
     query<StatRow>(
@@ -107,6 +117,19 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
          WHERE t.empresa_id = $1 AND ts.encerra = false
          GROUP BY tp.nome, tp.cor, tp.ordem
          ORDER BY tp.ordem DESC`,
+      [empresaId],
+    ),
+    // Por usuário atribuído (não-clientes, tickets em aberto)
+    query<UsuarioTickets>(
+      `SELECT u.nome AS usuario_nome, COUNT(*)::int AS total
+         FROM tickets t
+         JOIN usuarios u ON u.id = t.atribuido_a
+         JOIN ticket_status ts ON ts.id = t.status_id
+         WHERE t.empresa_id = $1
+           AND u.perfil != 'cliente'
+           AND ts.encerra = false
+         GROUP BY u.nome
+         ORDER BY total DESC`,
       [empresaId],
     ),
   ]);
@@ -224,7 +247,7 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Tickets recentes */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-4">
           <div
             style={{
               backgroundColor: "var(--color-bg-primary)",
@@ -263,6 +286,91 @@ async function DashboardContent({ empresaId, nome }: { empresaId: string; nome: 
               </Link>
             </div>
             <TicketsSemAtribuir tickets={ticketsRecentes} />
+          </div>
+
+          {/* Chamados por usuário */}
+          <div
+            style={{
+              backgroundColor: "var(--color-bg-primary)",
+              border: "0.5px solid var(--color-border)",
+              borderRadius: 14,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "0.5px solid var(--color-border)",
+              }}
+            >
+              <p
+                className="flex items-center gap-2"
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  letterSpacing: "-0.3px",
+                }}
+              >
+                <Users className="w-4 h-4 text-blue-500" />
+                Chamados por Atendente
+              </p>
+            </div>
+            <div style={{ padding: "12px 16px" }} className="space-y-2">
+              {porUsuario.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+                  Nenhum chamado atribuído no momento.
+                </p>
+              ) : (
+                porUsuario.map((u) => {
+                  const max = porUsuario[0].total;
+                  const pct = Math.round((u.total / max) * 100);
+                  return (
+                    <div key={u.usuario_nome} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: "var(--color-text-secondary)",
+                          }}
+                        >
+                          {u.usuario_nome}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            minWidth: 24,
+                            textAlign: "right",
+                          }}
+                        >
+                          {u.total}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 4,
+                          borderRadius: 4,
+                          backgroundColor: "var(--color-bg-secondary)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${pct}%`,
+                            borderRadius: 4,
+                            backgroundColor: "var(--color-brand)",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 

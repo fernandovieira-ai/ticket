@@ -661,7 +661,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
               onChange={(e) => setSituacaoMeus(e.target.value)}
               style={{
                 marginTop: 6,
-                width: "100%",
+                width: "150px",
                 fontSize: 11,
                 padding: "2px 6px",
                 height: 26,
@@ -685,7 +685,10 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
 
         <div className="flex-1 overflow-y-auto overflow-x-auto">
           {loading ? (
-            <div className="divide-y" style={{ borderColor: "var(--color-border)" }}>
+            <div
+              className="divide-y"
+              style={{ borderColor: "var(--color-border)" }}
+            >
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 px-4 py-3">
                   <div className="w-16 h-3 bg-gray-100 rounded animate-pulse flex-shrink-0" />

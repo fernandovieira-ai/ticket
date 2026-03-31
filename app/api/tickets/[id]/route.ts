@@ -363,8 +363,10 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const ticket = await queryOne<{ id: string }>(
-    `SELECT id FROM tickets WHERE id = $1`,
+  const ticket = await queryOne<{ id: string; status_encerra: boolean }>(
+    `SELECT t.id, ts.encerra AS status_encerra
+     FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id
+     WHERE t.id = $1`,
     [id],
   );
   if (!ticket)
@@ -372,6 +374,13 @@ export async function DELETE(
       { error: "Ticket não encontrado" },
       { status: 404 },
     );
+
+  if (ticket.status_encerra) {
+    return NextResponse.json(
+      { error: "Não é possível excluir um chamado finalizado." },
+      { status: 422 },
+    );
+  }
 
   await query(`DELETE FROM tickets WHERE id = $1`, [id]);
   return NextResponse.json({ ok: true });

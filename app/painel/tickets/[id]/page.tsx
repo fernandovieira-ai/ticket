@@ -568,8 +568,8 @@ export default function TicketPainelPage() {
                 <button
                   type="button"
                   onClick={excluirTicket}
-                  disabled={excluindo}
-                  title="Excluir chamado"
+                  disabled={excluindo || ticket.status_encerra}
+                  title={ticket.status_encerra ? "Não é possível excluir um chamado finalizado" : "Excluir chamado"}
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-red-600 border border-red-200 bg-white hover:bg-red-50 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {excluindo ? (

@@ -806,9 +806,23 @@ ${contexto}`;
  * Retorna null se a chave OpenAI não estiver configurada ou em caso de erro,
  * permitindo degradação graciosa (a análise vetorial é ignorada e cai para a IA generativa).
  */
-export async function gerarEmbedding(texto: string): Promise<number[] | null> {
+export async function gerarEmbedding(texto: string, empresaId?: string): Promise<number[] | null> {
   try {
-    const key = process.env.OPENAI_API_KEY;
+    let key = process.env.OPENAI_API_KEY;
+
+    // Fallback: busca a chave no banco da empresa (ou de qualquer empresa configurada)
+    if (!key) {
+      const row = empresaId
+        ? await queryOne<{ openai_api_key: string | null }>(
+            `SELECT openai_api_key FROM ia_config WHERE empresa_id = $1`,
+            [empresaId],
+          )
+        : await queryOne<{ openai_api_key: string | null }>(
+            `SELECT openai_api_key FROM ia_config WHERE openai_api_key IS NOT NULL LIMIT 1`,
+          );
+      key = row?.openai_api_key ?? undefined;
+    }
+
     if (!key) return null;
 
     const openai = new OpenAI({ apiKey: key });

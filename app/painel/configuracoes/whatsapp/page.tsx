@@ -96,6 +96,27 @@ export default function WhatsappConfigPage() {
   const [toggleMonitor, setToggleMonitor] = useState<string | null>(null);
   const [buscaGrupo, setBuscaGrupo] = useState("");
   const [removendoGrupo, setRemovendoGrupo] = useState<string | null>(null);
+  const [gerandoEmbeddings, setGerandoEmbeddings] = useState(false);
+
+  async function gerarEmbeddingsSeed() {
+    setGerandoEmbeddings(true);
+    try {
+      const res = await fetch("/api/whatsapp/grupos/resolucao-base/seed", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro desconhecido");
+      if (data.atualizados === 0 && !data.erros) {
+        toast.info("Todos os registros já possuem embedding.");
+      } else if (data.erros?.length) {
+        toast.error(`Falha ao gerar embeddings: ${data.erros[0]}`);
+      } else {
+        toast.success(`${data.atualizados} embeddings gerados (total: ${data.total_com_embedding})`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao gerar embeddings");
+    } finally {
+      setGerandoEmbeddings(false);
+    }
+  }
 
   // Config state
   const [config, setConfig] = useState<WhatsappConfig>({
@@ -927,6 +948,29 @@ export default function WhatsappConfigPage() {
                     </label>
                   </div>
                 )}
+              </div>
+
+              {/* Base de conhecimento vetorial */}
+              <div className="bg-white border border-zinc-200 rounded-lg p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-800">Base de conhecimento de resolução</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Gera os embeddings das frases de referência usadas para detectar resoluções localmente, sem chamar a IA generativa.
+                    Execute uma vez após a primeira configuração ou quando novas frases forem adicionadas.
+                  </p>
+                </div>
+                <Button
+                  onClick={gerarEmbeddingsSeed}
+                  disabled={gerandoEmbeddings}
+                  variant="outline"
+                  size="sm"
+                  className="border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                >
+                  {gerandoEmbeddings ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  ) : null}
+                  Gerar embeddings da base
+                </Button>
               </div>
 
               <div className="flex justify-end">

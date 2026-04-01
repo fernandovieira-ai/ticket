@@ -24,7 +24,7 @@ async function aprenderDaDecisaoIA(
   // Textos muito curtos não carregam semântica útil
   if (textoCliente.trim().length < 10) return;
 
-  const embedding = await gerarEmbedding(textoCliente);
+  const embedding = await gerarEmbedding(textoCliente, empresaId);
   if (!embedding) return;
 
   // Formato array literal do PostgreSQL: {0.1,0.2,...}
@@ -132,7 +132,7 @@ async function buscarResolucaoPorSimilaridade(
   textoCliente: string,
   empresaId: string,
 ): Promise<{ tipo: "resolucao" | "abandono" | "pendente"; similaridade: number; conteudo: string } | null> {
-  const embedding = await gerarEmbedding(textoCliente);
+  const embedding = await gerarEmbedding(textoCliente, empresaId);
   if (!embedding) return null;
 
   try {

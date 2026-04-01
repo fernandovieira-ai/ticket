@@ -31,10 +31,13 @@ export async function POST() {
   let atualizados = 0;
   const erros: string[] = [];
 
+  // Usa a empresa da sessão para localizar a chave OpenAI no banco
+  const empresaId: string = session.empresaId;
+
   for (const row of pendentes) {
-    const embedding = await gerarEmbedding(row.conteudo);
+    const embedding = await gerarEmbedding(row.conteudo, empresaId);
     if (!embedding) {
-      erros.push(`id=${row.id}: falha ao gerar embedding (verifique OPENAI_API_KEY)`);
+      erros.push(`id=${row.id}: falha ao gerar embedding (verifique OPENAI_API_KEY em Config → IA)`);
       continue;
     }
 

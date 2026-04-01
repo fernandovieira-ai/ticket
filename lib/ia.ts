@@ -796,6 +796,34 @@ ${contexto}`;
 }
 
 // ============================================================
+// EMBEDDINGS — base de conhecimento vetorial
+// ============================================================
+
+/**
+ * Gera embedding de um texto usando a API de embeddings da OpenAI
+ * (text-embedding-3-small, 1536 dimensões).
+ *
+ * Retorna null se a chave OpenAI não estiver configurada ou em caso de erro,
+ * permitindo degradação graciosa (a análise vetorial é ignorada e cai para a IA generativa).
+ */
+export async function gerarEmbedding(texto: string): Promise<number[] | null> {
+  try {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) return null;
+
+    const openai = new OpenAI({ apiKey: key });
+    const res = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: texto.slice(0, 8000), // limite seguro de tokens
+    });
+
+    return res.data[0]?.embedding ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
 // BOT WHATSAPP
 // ============================================================
 

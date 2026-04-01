@@ -9,7 +9,22 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl;
   const inicio = searchParams.get("inicio");
-  const fim    = searchParams.get("fim");
+  const fim = searchParams.get("fim");
+  const tipo = (searchParams.get("tipo") ?? "todos") as
+    | "todos"
+    | "operador"
+    | "instancia"
+    | "externo";
+
+  // Filtro de tipo aplicado no banco para que LIMIT 30 respeite o tipo selecionado
+  const filtroTipoSQL =
+    tipo === "operador"
+      ? "AND u.id IS NOT NULL AND wi.id IS NULL"
+      : tipo === "instancia"
+        ? "AND wi.id IS NOT NULL"
+        : tipo === "externo"
+          ? "AND u.id IS NULL AND wi.id IS NULL"
+          : "";
 
   const params: unknown[] = [empresaId];
   const filtroData =
@@ -33,10 +48,10 @@ export async function GET(req: NextRequest) {
 
   // Agrega métricas de atendimento por operador separadamente
   const statsOperadores = await query<{
-    operador_id:        string;
-    respostas_dadas:    string;
+    operador_id: string;
+    respostas_dadas: string;
     media_resposta_min: string | null;
-    pct_dentro_sla:     string | null;
+    pct_dentro_sla: string | null;
   }>(
     `SELECT
        i.operador_id,
@@ -61,16 +76,16 @@ export async function GET(req: NextRequest) {
   const statsMap = new Map(statsOperadores.map((s) => [s.operador_id, s]));
 
   const rows = await query<{
-    remetente_jid:   string;
-    remetente_nome:  string | null;
-    numero:          string;
+    remetente_jid: string;
+    remetente_nome: string | null;
+    numero: string;
     total_mensagens: number;
-    total_grupos:    number;
-    usuario_id:      string | null;
-    usuario_nome:    string | null;
-    usuario_perfil:  string | null;
-    instancia_nome:  string | null;
-    eh_instancia:    boolean;
+    total_grupos: number;
+    usuario_id: string | null;
+    usuario_nome: string | null;
+    usuario_perfil: string | null;
+    instancia_nome: string | null;
+    eh_instancia: boolean;
   }>(
     `SELECT
        m.remetente_jid,
@@ -94,6 +109,7 @@ export async function GET(req: NextRequest) {
            AND wi.numero     = SPLIT_PART(m.remetente_jid, '@', 1)
      WHERE m.empresa_id = $1
        ${filtroData}
+       ${filtroTipoSQL}
      GROUP BY
        m.remetente_jid, m.remetente_nome,
        u.id, u.nome, u.perfil,
@@ -108,9 +124,13 @@ export async function GET(req: NextRequest) {
       const stats = r.usuario_id ? statsMap.get(r.usuario_id) : undefined;
       return {
         ...r,
-        respostas_dadas:    stats ? parseInt(stats.respostas_dadas) : 0,
-        media_resposta_min: stats?.media_resposta_min ? parseFloat(stats.media_resposta_min) : null,
-        pct_dentro_sla:     stats?.pct_dentro_sla    ? parseFloat(stats.pct_dentro_sla)    : null,
+        respostas_dadas: stats ? parseInt(stats.respostas_dadas) : 0,
+        media_resposta_min: stats?.media_resposta_min
+          ? parseFloat(stats.media_resposta_min)
+          : null,
+        pct_dentro_sla: stats?.pct_dentro_sla
+          ? parseFloat(stats.pct_dentro_sla)
+          : null,
       };
     }),
   );

@@ -10,7 +10,11 @@ const schema = z.object({
 })
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!)
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+function getBaseUrl(req: NextRequest): string {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https'
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'localhost:3000'
+  return `${proto}://${host}`
+}
 
 export async function POST(req: NextRequest) {
   let body: unknown
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
       .setExpirationTime('1h')
       .sign(JWT_SECRET)
 
-    const urlRedefinir = `${BASE_URL}/cliente/redefinir-senha?token=${token}`
+    const urlRedefinir = `${getBaseUrl(req)}/cliente/redefinir-senha?token=${token}`
 
     const resultado = await emailRecuperacaoSenha({
       emailCliente: usuario.email,

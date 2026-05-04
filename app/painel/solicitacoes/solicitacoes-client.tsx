@@ -44,6 +44,8 @@ interface SolicitacaoRow {
   solicitante_nome: string;
   responsavel_nome: string | null;
   departamento_nome: string | null;
+  categoria_nome: string | null;
+  subcategoria_nome: string | null;
   prazo: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -52,6 +54,8 @@ interface SolicitacaoRow {
 interface Departamento { id: string; nome: string; }
 interface Usuario { id: string; nome: string; perfil: string; }
 interface Prioridade { id: string; nome: string; cor: string; }
+interface Categoria { id: string; nome: string; }
+interface Subcategoria { id: string; nome: string; }
 
 const STATUS_LABELS: Record<string, string> = {
   aberta: "Aberta",
@@ -105,6 +109,10 @@ export function SolicitacoesClient() {
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
+  const [carregandoCats, setCarregandoCats] = useState(false);
+  const [carregandoSubs, setCarregandoSubs] = useState(false);
 
   // Painel lateral criar (igual ao tickets)
   const [painelAberto, setPainelAberto] = useState(false);
@@ -119,6 +127,8 @@ export function SolicitacoesClient() {
     departamento_dest: "",
     responsavel_id: "",
     prazo: "",
+    categoria_id: "",
+    subcategoria_id: "",
   });
 
   const carregarDados = useCallback(async () => {
@@ -157,8 +167,56 @@ export function SolicitacoesClient() {
   useEffect(() => { setPage(1); }, [busca, statusFiltro, tipoFiltro]);
   useEffect(() => { carregarDados(); }, [carregarDados]);
 
+  // Carregar categorias quando departamento for selecionado (igual aos tickets)
+  useEffect(() => {
+    if (!form.departamento_dest) {
+      setCategorias([]);
+      setSubcategorias([]);
+      setForm((f) => ({ ...f, categoria_id: "", subcategoria_id: "" }));
+      return;
+    }
+    setCarregandoCats(true);
+    fetch(`/api/categorias?departamento_id=${form.departamento_dest}&pageSize=100`)
+      .then((r) => r.json())
+      .then((d) => {
+        setCategorias(d.data ?? d);
+        setSubcategorias([]);
+        setForm((f) => ({ ...f, categoria_id: "", subcategoria_id: "" }));
+      })
+      .catch(() => {})
+      .finally(() => setCarregandoCats(false));
+  }, [form.departamento_dest]);
+
+  // Carregar subcategorias quando categoria for selecionada (igual aos tickets)
+  useEffect(() => {
+    if (!form.categoria_id) {
+      setSubcategorias([]);
+      setForm((f) => ({ ...f, subcategoria_id: "" }));
+      return;
+    }
+    setCarregandoSubs(true);
+    fetch(`/api/subcategorias?categoria_id=${form.categoria_id}&pageSize=100`)
+      .then((r) => r.json())
+      .then((d) => {
+        setSubcategorias(d.data ?? d);
+        setForm((f) => ({ ...f, subcategoria_id: "" }));
+      })
+      .catch(() => {})
+      .finally(() => setCarregandoSubs(false));
+  }, [form.categoria_id]);
+
   function resetForm() {
-    setForm({ tipo_id: "", titulo: "", mensagem: "", prioridade_id: "", departamento_dest: "", responsavel_id: "", prazo: "" });
+    setForm({
+      tipo_id: "",
+      titulo: "",
+      mensagem: "",
+      prioridade_id: "",
+      departamento_dest: "",
+      responsavel_id: "",
+      prazo: "",
+      categoria_id: "",
+      subcategoria_id: "",
+    });
     setErro("");
     editorRef.current?.clear();
   }
@@ -179,6 +237,8 @@ export function SolicitacoesClient() {
         departamento_dest: form.departamento_dest || undefined,
         responsavel_id: form.responsavel_id || undefined,
         prazo: form.prazo || undefined,
+        categoria_id: form.categoria_id || undefined,
+        subcategoria_id: form.subcategoria_id || undefined,
       };
       const res = await fetch("/api/solicitacoes", {
         method: "POST",
@@ -273,7 +333,7 @@ export function SolicitacoesClient() {
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 bg-gray-50 z-10">
                 <tr className="border-b border-gray-200">
-                  {["Título", "Tipo", "Status", "Prioridade", "Solicitante", "Responsável", "Departamento", "Prazo", "Criado", ""].map((h) => (
+                  {["Título", "Tipo", "Status", "Prioridade", "Solicitante", "Responsável", "Departamento", "Categoria", "Subcategoria", "Prazo", "Criado", ""].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -330,6 +390,12 @@ export function SolicitacoesClient() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-gray-600">
                         {row.departamento_nome ?? <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                        {row.categoria_nome ?? <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                        {row.subcategoria_nome ?? <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {row.prazo ? (
@@ -455,30 +521,80 @@ export function SolicitacoesClient() {
               </div>
             </div>
 
-            {/* Departamento + Responsável */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Departamento destino */}
+            <div>
+              <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Departamento destino</Label>
+              <select
+                value={form.departamento_dest}
+                onChange={(e) => setForm((f) => ({ ...f, departamento_dest: e.target.value }))}
+                className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Nenhum</option>
+                {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+              </select>
+            </div>
+
+            {/* Categoria (cascata do departamento) */}
+            {form.departamento_dest && (
               <div>
-                <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Departamento destino</Label>
-                <select
-                  value={form.departamento_dest}
-                  onChange={(e) => setForm((f) => ({ ...f, departamento_dest: e.target.value }))}
-                  className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Nenhum</option>
-                  {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
-                </select>
+                <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Categoria</Label>
+                {carregandoCats ? (
+                  <div className="h-9 flex items-center px-2.5 rounded-md border border-gray-200 bg-white text-xs text-gray-400">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> Carregando...
+                  </div>
+                ) : categorias.length === 0 ? (
+                  <div className="h-9 flex items-center px-2.5 rounded-md border border-gray-200 bg-white text-xs text-gray-400">
+                    Nenhuma categoria disponível
+                  </div>
+                ) : (
+                  <select
+                    value={form.categoria_id}
+                    onChange={(e) => setForm((f) => ({ ...f, categoria_id: e.target.value }))}
+                    className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione...</option>
+                    {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                )}
               </div>
+            )}
+
+            {/* Subcategoria (cascata da categoria) */}
+            {form.categoria_id && (
               <div>
-                <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Responsável</Label>
-                <select
-                  value={form.responsavel_id}
-                  onChange={(e) => setForm((f) => ({ ...f, responsavel_id: e.target.value }))}
-                  className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Não atribuído</option>
-                  {usuarios.filter((u) => u.perfil !== "cliente").map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-                </select>
+                <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Subcategoria</Label>
+                {carregandoSubs ? (
+                  <div className="h-9 flex items-center px-2.5 rounded-md border border-gray-200 bg-white text-xs text-gray-400">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> Carregando...
+                  </div>
+                ) : subcategorias.length === 0 ? (
+                  <div className="h-9 flex items-center px-2.5 rounded-md border border-gray-200 bg-white text-xs text-gray-400">
+                    Nenhuma subcategoria disponível
+                  </div>
+                ) : (
+                  <select
+                    value={form.subcategoria_id}
+                    onChange={(e) => setForm((f) => ({ ...f, subcategoria_id: e.target.value }))}
+                    className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione...</option>
+                    {subcategorias.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                  </select>
+                )}
               </div>
+            )}
+
+            {/* Responsável */}
+            <div>
+              <Label className="text-xs font-medium text-gray-700 mb-1.5 block">Responsável</Label>
+              <select
+                value={form.responsavel_id}
+                onChange={(e) => setForm((f) => ({ ...f, responsavel_id: e.target.value }))}
+                className="w-full h-9 text-xs border border-gray-200 rounded-md px-2.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Não atribuído</option>
+                {usuarios.filter((u) => u.perfil !== "cliente").map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
             </div>
           </form>
 

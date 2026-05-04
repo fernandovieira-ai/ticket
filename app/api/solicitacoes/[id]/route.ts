@@ -36,6 +36,10 @@ export async function GET(
     responsavel_nome: string | null;
     departamento_id: string | null;
     departamento_nome: string | null;
+    categoria_id: string | null;
+    categoria_nome: string | null;
+    subcategoria_id: string | null;
+    subcategoria_nome: string | null;
   }>(
     `SELECT
        s.id, s.titulo, s.descricao, s.status, s.prazo, s.fechado_em,
@@ -44,13 +48,17 @@ export async function GET(
        s.prioridade_id, tp.nome AS prioridade_nome, tp.cor AS prioridade_cor,
        s.solicitante_id, us.nome AS solicitante_nome,
        s.responsavel_id, ur.nome AS responsavel_nome,
-       s.departamento_dest AS departamento_id, d.nome AS departamento_nome
+       s.departamento_dest AS departamento_id, d.nome AS departamento_nome,
+       s.categoria_id, c.nome AS categoria_nome,
+       s.subcategoria_id, sc.nome AS subcategoria_nome
      FROM solicitacoes_internas s
      JOIN solicitacao_tipos st ON st.id = s.tipo_id
      LEFT JOIN ticket_prioridades tp ON tp.id = s.prioridade_id
      JOIN usuarios us ON us.id = s.solicitante_id
      LEFT JOIN usuarios ur ON ur.id = s.responsavel_id
      LEFT JOIN departamentos d ON d.id = s.departamento_dest
+     LEFT JOIN categorias c ON c.id = s.categoria_id
+     LEFT JOIN subcategorias sc ON sc.id = s.subcategoria_id
      WHERE s.id = $1 AND s.empresa_id = $2`,
     [id, session.empresaId],
   );
@@ -70,6 +78,8 @@ const atualizarSchema = z.object({
   departamento_dest: z.string().uuid().nullable().optional(),
   prazo: z.string().nullable().optional(),
   titulo: z.string().min(3).max(200).optional(),
+  categoria_id: z.string().uuid().nullable().optional(),
+  subcategoria_id: z.string().uuid().nullable().optional(),
 });
 
 // PATCH /api/solicitacoes/[id]
@@ -136,20 +146,51 @@ export async function PATCH(
   if (parsed.data.prazo !== undefined)
     addField("prazo", parsed.data.prazo ?? null);
   if (parsed.data.titulo !== undefined) addField("titulo", parsed.data.titulo);
+  if (parsed.data.categoria_id !== undefined)
+    addField("categoria_id", parsed.data.categoria_id);
+  if (parsed.data.subcategoria_id !== undefined)
+    addField("subcategoria_id", parsed.data.subcategoria_id);
 
   if (updates.length === 0)
     return NextResponse.json({ error: "Nada para atualizar" }, { status: 400 });
 
   values.push(id, session.empresaId);
-  const updated = await queryOne<{ id: string }>(
-    `UPDATE solicitacoes_internas SET ${updates.join(", ")}
-     WHERE id = $${idx++} AND empresa_id = $${idx}
-     RETURNING id`,
-    values,
-  );
 
-  if (!updated)
-    return NextResponse.json({ error: "Erro ao atualizar" }, { status: 500 });
+  try {
+    const updated = await queryOne<{ id: string }>(
+      `UPDATE solicitacoes_internas SET ${updates.join(", ")}
+       WHERE id = $${idx++} AND empresa_id = $${idx}
+       RETURNING id`,
+      values,
+    );
+
+    if (!updated)
+      return NextResponse.json({ error: "Erro ao atualizar" }, { status: 500 });
+  } catch (error: any) {
+    console.error("Erro ao atualizar solicitação:", error);
+
+    // Handle foreign key constraint errors specifically
+    if (error.code === '23503') {
+      if (error.constraint === 'solicitacoes_internas_subcategoria_id_fkey') {
+        return NextResponse.json({
+          error: "Subcategoria inválida ou constraint de banco incorreta",
+          details: "A constraint do banco precisa ser corrigida. Execute a migração de correção.",
+          sqlError: error.detail
+        }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        error: "Referência inválida",
+        details: error.detail,
+        constraint: error.constraint
+      }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      error: "Erro ao atualizar solicitação",
+      details: error.message
+    }, { status: 500 });
+  }
 
   // Buscar dados atualizados e retornar
   const rows = await query<{ id: string }>(

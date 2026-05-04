@@ -18,6 +18,7 @@ import {
   LayoutTemplate,
   ClipboardList,
   ArrowRightLeft,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +56,10 @@ interface SolicitacaoDetalhe {
   responsavel_nome: string | null;
   departamento_id: string | null;
   departamento_nome: string | null;
+  categoria_id: string | null;
+  categoria_nome: string | null;
+  subcategoria_id: string | null;
+  subcategoria_nome: string | null;
 }
 
 interface Mensagem {
@@ -69,6 +74,8 @@ interface Mensagem {
 interface Departamento { id: string; nome: string; }
 interface Usuario { id: string; nome: string; perfil: string; }
 interface Prioridade { id: string; nome: string; cor: string; }
+interface Categoria { id: string; nome: string; }
+interface Subcategoria { id: string; nome: string; }
 
 const STATUS_LABELS: Record<string, string> = {
   aberta: "Aberta",
@@ -98,6 +105,38 @@ function TipoIcone({ icone, size = 13 }: { icone: string | null; size?: number }
 }
 
 const USER_COLORS = ["#6366f1","#8b5cf6","#0d9488","#f43f5e","#f97316","#0891b2","#10b981","#ec4899","#84cc16","#eab308"];
+
+// Funções para conversão de data
+function formatDateToBR(isoDate: string): string {
+  if (!isoDate) return "";
+  const date = new Date(isoDate);
+  return format(date, "dd/MM/yyyy", { locale: ptBR });
+}
+
+function formatDateToISO(brDate: string): string {
+  if (!brDate) return "";
+  const [day, month, year] = brDate.split("/");
+  if (!day || !month || !year) return "";
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function handleDateInput(value: string, setter: (value: string) => void): void {
+  // Remove tudo exceto números
+  const numbers = value.replace(/\D/g, "");
+
+  let formatted = "";
+  if (numbers.length >= 1) {
+    formatted = numbers.substring(0, 2);
+  }
+  if (numbers.length >= 3) {
+    formatted += "/" + numbers.substring(2, 4);
+  }
+  if (numbers.length >= 5) {
+    formatted += "/" + numbers.substring(4, 8);
+  }
+
+  setter(formatted);
+}
 
 export default function SolicitacaoDetalhePage() {
   const { id } = useParams<{ id: string }>();
@@ -129,6 +168,19 @@ export default function SolicitacaoDetalhePage() {
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
+
+  // Modal de edição
+  const [editarAberto, setEditarAberto] = useState(false);
+  const [editarTitulo, setEditarTitulo] = useState("");
+  const [editarDepartamentoId, setEditarDepartamentoId] = useState("");
+  const [editarCategoriaId, setEditarCategoriaId] = useState("");
+  const [editarSubcategoriaId, setEditarSubcategoriaId] = useState("");
+  const [editarPrioridadeId, setEditarPrioridadeId] = useState("");
+  const [editarResponsavelId, setEditarResponsavelId] = useState("");
+  const [editarPrazo, setEditarPrazo] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichTextEditorRef>(null);
@@ -163,6 +215,48 @@ export default function SolicitacaoDetalhePage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensagens]);
+
+  // Carregar categorias quando departamento mudar no modal de edição (apenas para mudanças do usuário)
+  useEffect(() => {
+    if (!editarAberto || !editarDepartamentoId) {
+      return;
+    }
+
+    // Só recarregar se o modal já estava aberto (mudança pelo usuário)
+    const timeoutId = setTimeout(() => {
+      fetch(`/api/categorias?departamento_id=${editarDepartamentoId}&pageSize=100`)
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .then((d) => {
+          setCategorias(d.data ?? []);
+          setEditarCategoriaId("");
+          setEditarSubcategoriaId("");
+          setSubcategorias([]);
+        })
+        .catch(() => {});
+    }, 100); // Delay para não interferir com o carregamento inicial
+
+    return () => clearTimeout(timeoutId);
+  }, [editarDepartamentoId]); // Removemos editarAberto da dependência
+
+  // Carregar subcategorias quando categoria mudar no modal de edição (apenas para mudanças do usuário)
+  useEffect(() => {
+    if (!editarAberto || !editarCategoriaId) {
+      return;
+    }
+
+    // Só recarregar se o modal já estava aberto (mudança pelo usuário)
+    const timeoutId = setTimeout(() => {
+      fetch(`/api/subcategorias?categoria_id=${editarCategoriaId}&pageSize=100`)
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .then((d) => {
+          setSubcategorias(d.data ?? []);
+          setEditarSubcategoriaId("");
+        })
+        .catch(() => {});
+    }, 100); // Delay para não interferir com o carregamento inicial
+
+    return () => clearTimeout(timeoutId);
+  }, [editarCategoriaId]); // Removemos editarAberto da dependência
 
   async function enviarMensagem(e: React.FormEvent) {
     e.preventDefault();
@@ -203,6 +297,87 @@ export default function SolicitacaoDetalhePage() {
       body: JSON.stringify({ [campo]: valor }),
     });
     await carregar();
+  }
+
+  async function abrirModalEditar() {
+    if (!solicitacao) return;
+
+    setEditarTitulo(solicitacao.titulo);
+    setEditarPrioridadeId(solicitacao.prioridade_id ?? "");
+    setEditarResponsavelId(solicitacao.responsavel_id ?? "");
+    setEditarPrazo(solicitacao.prazo ? formatDateToBR(solicitacao.prazo) : "");
+
+    // Primeiro definir o departamento
+    setEditarDepartamentoId(solicitacao.departamento_id ?? "");
+
+    // Se tem departamento, carregar categorias antes de definir valores
+    if (solicitacao.departamento_id) {
+      try {
+        const resCateg = await fetch(`/api/categorias?departamento_id=${solicitacao.departamento_id}&pageSize=100`);
+        const dataCateg = await resCateg.json();
+        setCategorias(dataCateg.data ?? []);
+
+        // Agora definir a categoria
+        setEditarCategoriaId(solicitacao.categoria_id ?? "");
+
+        // Se tem categoria, carregar subcategorias
+        if (solicitacao.categoria_id) {
+          const resSub = await fetch(`/api/subcategorias?categoria_id=${solicitacao.categoria_id}&pageSize=100`);
+          const dataSub = await resSub.json();
+          setSubcategorias(dataSub.data ?? []);
+
+          // Agora definir a subcategoria
+          setEditarSubcategoriaId(solicitacao.subcategoria_id ?? "");
+        } else {
+          setSubcategorias([]);
+          setEditarSubcategoriaId("");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar categorias:", error);
+      }
+    } else {
+      setCategorias([]);
+      setSubcategorias([]);
+      setEditarCategoriaId("");
+      setEditarSubcategoriaId("");
+    }
+
+    setEditarAberto(true);
+  }
+
+  async function salvarEdicao() {
+    if (!editarTitulo.trim()) return;
+    setSalvandoEdicao(true);
+
+    try {
+      const res = await fetch(`/api/solicitacoes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: editarTitulo.trim(),
+          departamento_dest: editarDepartamentoId || null,
+          categoria_id: editarCategoriaId || null,
+          subcategoria_id: editarSubcategoriaId || null,
+          prioridade_id: editarPrioridadeId || null,
+          responsavel_id: editarResponsavelId || null,
+          prazo: editarPrazo ? formatDateToISO(editarPrazo) : null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+        throw new Error(errorData.error || `Erro ${res.status}: ${res.statusText}`);
+      }
+
+      setEditarAberto(false);
+      await carregar();
+      toast.success("Solicitação atualizada com sucesso");
+    } catch (error) {
+      console.error("Erro ao salvar edição:", error);
+      toast.error(`Erro ao atualizar solicitação: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+    } finally {
+      setSalvandoEdicao(false);
+    }
   }
 
   async function handleTransferir() {
@@ -296,6 +471,14 @@ export default function SolicitacaoDetalhePage() {
 
               {/* Ações */}
               <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => abrirModalEditar()}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-400 rounded-md px-2.5 py-1.5 transition-colors"
+                >
+                  <Pencil size={13} />
+                  Editar
+                </button>
                 {isEncerrada ? (
                   <button
                     type="button"
@@ -521,55 +704,59 @@ export default function SolicitacaoDetalhePage() {
               </div>
 
               <div>
-                <p className="text-[11px] text-gray-400 mb-1">Responsável</p>
-                <select
-                  value={solicitacao.responsavel_id ?? ""}
-                  onChange={(e) => atualizarCampo("responsavel_id", e.target.value || null)}
-                  className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Não atribuído</option>
-                  {usuarios.filter((u) => u.perfil !== "cliente").map((u) => (
-                    <option key={u.id} value={u.id}>{u.nome}</option>
-                  ))}
-                </select>
+                <p className="text-[11px] text-gray-400 mb-0.5">Responsável</p>
+                <span className="text-sm text-gray-800">
+                  {solicitacao.responsavel_nome ?? "Não atribuído"}
+                </span>
               </div>
 
               <div>
                 <p className="text-[11px] text-gray-400 mb-1">Departamento</p>
-                <select
-                  value={solicitacao.departamento_id ?? ""}
-                  onChange={(e) => atualizarCampo("departamento_dest", e.target.value || null)}
-                  className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Nenhum</option>
-                  {departamentos.map((d) => (
-                    <option key={d.id} value={d.id}>{d.nome}</option>
-                  ))}
-                </select>
+                <span className="text-sm text-gray-800">
+                  {solicitacao.departamento_nome ?? "Nenhum"}
+                </span>
               </div>
 
               <div>
-                <p className="text-[11px] text-gray-400 mb-1">Prioridade</p>
-                <select
-                  value={solicitacao.prioridade_id ?? ""}
-                  onChange={(e) => atualizarCampo("prioridade_id", e.target.value || null)}
-                  className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Normal</option>
-                  {prioridades.map((p) => (
-                    <option key={p.id} value={p.id}>{p.nome}</option>
-                  ))}
-                </select>
+                <p className="text-[11px] text-gray-400 mb-0.5">Categoria</p>
+                <span className="text-sm text-gray-800">
+                  {solicitacao.categoria_nome ?? "Não definida"}
+                </span>
               </div>
 
               <div>
-                <p className="text-[11px] text-gray-400 mb-1">Prazo</p>
-                <input
-                  type="date"
-                  value={solicitacao.prazo ? solicitacao.prazo.split("T")[0] : ""}
-                  onChange={(e) => atualizarCampo("prazo", e.target.value || null)}
-                  className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <p className="text-[11px] text-gray-400 mb-0.5">Subcategoria</p>
+                <span className="text-sm text-gray-800">
+                  {solicitacao.subcategoria_nome ?? "Não definida"}
+                </span>
+              </div>
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
+                {solicitacao.prioridade_nome ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border"
+                    style={{
+                      color: solicitacao.prioridade_cor || "#6B7280",
+                      borderColor: (solicitacao.prioridade_cor || "#6B7280") + "55",
+                      backgroundColor: (solicitacao.prioridade_cor || "#6B7280") + "15",
+                    }}
+                  >
+                    {solicitacao.prioridade_nome}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-800">Normal</span>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Prazo</p>
+                <span className="text-sm text-gray-800">
+                  {solicitacao.prazo
+                    ? format(new Date(solicitacao.prazo), "dd/MM/yyyy", { locale: ptBR })
+                    : "Sem prazo definido"
+                  }
+                </span>
               </div>
             </div>
           </div>
@@ -706,6 +893,185 @@ export default function SolicitacaoDetalhePage() {
                 Fechar
               </button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ MODAL — Editar Solicitação ═══ */}
+      <Dialog open={editarAberto} onOpenChange={setEditarAberto}>
+        <DialogContent showCloseButton={false} className="max-w-lg p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
+              Editar Solicitação: {solicitacao?.titulo}
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setEditarAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Título */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Título
+              </label>
+              <input
+                type="text"
+                value={editarTitulo}
+                onChange={(e) => setEditarTitulo(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Digite o título da solicitação"
+              />
+            </div>
+
+            {/* Departamento */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Departamento destino
+              </label>
+              <select
+                value={editarDepartamentoId}
+                onChange={(e) => {
+                  setEditarDepartamentoId(e.target.value);
+                  setEditarCategoriaId("");
+                  setEditarSubcategoriaId("");
+                }}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Nenhum</option>
+                {departamentos.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Categoria */}
+            {editarDepartamentoId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Categoria
+                </label>
+                {categorias.length === 0 ? (
+                  <div className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-400 bg-gray-50">
+                    Nenhuma categoria disponível
+                  </div>
+                ) : (
+                  <select
+                    value={editarCategoriaId}
+                    onChange={(e) => {
+                      setEditarCategoriaId(e.target.value);
+                      setEditarSubcategoriaId("");
+                    }}
+                    className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">Selecione...</option>
+                    {categorias.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
+            {/* Subcategoria */}
+            {editarCategoriaId && subcategorias.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subcategoria
+                </label>
+                <select
+                  value={editarSubcategoriaId}
+                  onChange={(e) => setEditarSubcategoriaId(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Selecione...</option>
+                  {subcategorias.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Responsável */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Responsável
+              </label>
+              <select
+                value={editarResponsavelId}
+                onChange={(e) => setEditarResponsavelId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Não atribuído</option>
+                {usuarios.filter((u) => u.perfil !== "cliente").map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Prioridade */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Prioridade
+              </label>
+              <select
+                value={editarPrioridadeId}
+                onChange={(e) => setEditarPrioridadeId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Normal</option>
+                {prioridades.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Prazo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Prazo
+              </label>
+              <input
+                type="text"
+                value={editarPrazo}
+                onChange={(e) => handleDateInput(e.target.value, setEditarPrazo)}
+                placeholder="DD/MM/AAAA"
+                maxLength={10}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={salvarEdicao}
+              disabled={salvandoEdicao || !editarTitulo.trim()}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {salvandoEdicao ? <Loader2 size={14} className="animate-spin" /> : null}
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditarAberto(false)}
+              className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+            >
+              Cancelar
+            </button>
           </div>
         </DialogContent>
       </Dialog>

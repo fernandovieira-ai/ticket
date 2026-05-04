@@ -14,8 +14,9 @@ export async function GET(
 
   const { id } = await params
 
-  const clientes = await query<Cliente>(
-    `SELECT c.id, c.nome_razao, c.tipo, c.documento, c.email, c.telefone, c.ativo
+  const clientes = await query<Cliente & { grupo_whatsapp: string | null; filial: string | null }>(
+    `SELECT c.id, c.nome_razao, c.tipo, c.documento, c.email, c.telefone, c.ativo,
+            uc.grupo_whatsapp, uc.filial
      FROM clientes c
      INNER JOIN usuario_clientes uc ON uc.cliente_id = c.id
      WHERE uc.usuario_id = $1

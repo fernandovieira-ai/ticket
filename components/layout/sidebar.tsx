@@ -174,6 +174,11 @@ const MENU: MenuItem[] = [
         href: "/painel/whatsapp/ranking-grupos",
         icon: <BarChart2 size={13} />,
       },
+      {
+        label: "Base de Conhecimento",
+        href: "/painel/whatsapp/base-conhecimento",
+        icon: <Bot size={13} />,
+      },
     ],
   },
   {

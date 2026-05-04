@@ -18,33 +18,31 @@ export async function GET(req: NextRequest) {
     return d;
   })();
 
-  // 1. Total de mensagens por grupo monitorado no período (1 query para todos)
-  const totalMensagens = await query<{ grupo_id: string; total: string }>(
-    `SELECT m.grupo_id, COUNT(*) AS total
-     FROM whatsapp_grupos_mensagens m
-     JOIN whatsapp_grupos g ON g.id = m.grupo_id
-     WHERE g.empresa_id = $1
-       AND g.monitorado = true
-       AND m.criado_em >= $2
-       AND m.criado_em <= $3
-     GROUP BY m.grupo_id`,
-    [session.empresaId, desde, ate]
-  );
-
-  // 2. Última análise por grupo monitorado (1 query para todos)
-  const ultimasAnalises = await query<{
-    grupo_id: string;
-    sentimento: string;
-    criado_em: string;
-  }>(
-    `SELECT DISTINCT ON (a.grupo_id) a.grupo_id, a.sentimento, a.criado_em
-     FROM whatsapp_grupos_analises a
-     JOIN whatsapp_grupos g ON g.id = a.grupo_id
-     WHERE g.empresa_id = $1
-       AND g.monitorado = true
-     ORDER BY a.grupo_id, a.criado_em DESC`,
-    [session.empresaId]
-  );
+  // 1. Total de mensagens e 2. Última análise — executadas em paralelo
+  const [totalMensagens, ultimasAnalises] = await Promise.all([
+    query<{ grupo_id: string; total: string }>(
+      `SELECT m.grupo_id, COUNT(*) AS total
+       FROM whatsapp_grupos_mensagens m
+       WHERE m.empresa_id = $1
+         AND m.criado_em >= $2
+         AND m.criado_em <= $3
+         AND EXISTS (
+           SELECT 1 FROM whatsapp_grupos g
+           WHERE g.id = m.grupo_id AND g.monitorado = true
+         )
+       GROUP BY m.grupo_id`,
+      [session.empresaId, desde, ate]
+    ),
+    query<{ grupo_id: string; sentimento: string; criado_em: string }>(
+      `SELECT DISTINCT ON (a.grupo_id) a.grupo_id, a.sentimento, a.criado_em
+       FROM whatsapp_grupos_analises a
+       JOIN whatsapp_grupos g ON g.id = a.grupo_id
+       WHERE g.empresa_id = $1
+         AND g.monitorado = true
+       ORDER BY a.grupo_id, a.criado_em DESC`,
+      [session.empresaId]
+    ),
+  ]);
 
   // Monta mapa grupo_id → dados
   const resultado: Record<string, {

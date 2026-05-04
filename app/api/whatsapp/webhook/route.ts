@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
+import { gerarEmbedding } from "@/lib/ia";
+import { getEvolutionConfig } from "@/lib/whatsapp";
 import type { PoolClient } from "pg";
 
 // Remove characters that cannot be represented in LATIN1 (code point > 255).
@@ -268,7 +270,8 @@ async function processarMensagemEntrada(
 // ------------------------------------------------------------
 // Processa mensagens de grupos WhatsApp (@g.us)
 // Só persiste se o grupo estiver com monitorado = TRUE.
-// Toda a lógica roda em uma única transação/conexão.
+// Toda a lógica de persistência roda em uma única transação.
+// O autoreply roda APÓS a transação (faz chamadas HTTP externas).
 // ------------------------------------------------------------
 async function processarMensagemGrupo(
   instancia: { id: string; empresa_id: string },
@@ -283,8 +286,10 @@ async function processarMensagemGrupo(
 
   if (!groupJid || !messageId) return;
 
+  let autoReplyCtx: AutoReplyCtx | null = null;
+
   await transaction(async (client) => {
-    await _processarMensagemGrupoTx(
+    autoReplyCtx = await _processarMensagemGrupoTx(
       client,
       instancia,
       msg,
@@ -293,6 +298,135 @@ async function processarMensagemGrupo(
       messageId,
     );
   });
+
+  // Autoreply fora da transação para não segurar a conexão durante chamadas HTTP
+  if (autoReplyCtx) {
+    executarAutoreply(autoReplyCtx).catch((err) =>
+      console.error("[autoreply] Erro inesperado:", err),
+    );
+  }
+}
+
+interface AutoReplyCtx {
+  interacaoId: string;
+  grupoId: string;
+  groupJid: string;
+  conteudo: string;
+  empresaId: string;
+  instanciaId: string;
+}
+
+async function executarAutoreply(ctx: AutoReplyCtx): Promise<void> {
+  // Busca configuração de autoreply do grupo
+  const cfg = await queryOne<{
+    autoreply_ativo: boolean;
+    autoreply_threshold: number;
+    autoreply_delay_seg: number;
+    autoreply_categorias: string[];
+    autoreply_excluir_grupo: boolean;
+    autoreply_horario_inicio: string; // "HH:MM:SS"
+    autoreply_horario_fim: string;
+    autoreply_max_por_hora: number;
+  }>(
+    `SELECT autoreply_ativo, autoreply_threshold, autoreply_delay_seg,
+            autoreply_categorias, autoreply_excluir_grupo,
+            autoreply_horario_inicio, autoreply_horario_fim, autoreply_max_por_hora
+     FROM whatsapp_grupos WHERE id = $1`,
+    [ctx.grupoId],
+  );
+
+  if (!cfg?.autoreply_ativo || cfg.autoreply_excluir_grupo) return;
+
+  // Verifica horário permitido (banco retorna time sem timezone)
+  const agora = new Date();
+  const horaAtual = agora.getHours() * 60 + agora.getMinutes();
+  const [hIni, mIni] = cfg.autoreply_horario_inicio.split(":").map(Number);
+  const [hFim, mFim] = cfg.autoreply_horario_fim.split(":").map(Number);
+  if (horaAtual < hIni * 60 + mIni || horaAtual > hFim * 60 + mFim) return;
+
+  // Verifica rate limit por hora
+  const [{ enviados_hora }] = await query<{ enviados_hora: string }>(
+    `SELECT COUNT(*)::text AS enviados_hora
+     FROM whatsapp_grupos_interacoes
+     WHERE grupo_id = $1
+       AND ia_auto_respondido = TRUE
+       AND ia_enviado_at >= NOW() - INTERVAL '1 hour'`,
+    [ctx.grupoId],
+  );
+  if (parseInt(enviados_hora) >= cfg.autoreply_max_por_hora) return;
+
+  // Gera embedding da mensagem recebida
+  const embedding = await gerarEmbedding(ctx.conteudo, ctx.empresaId);
+  if (!embedding) return;
+
+  // Busca Q&A similar via função SQL
+  const categorias = cfg.autoreply_categorias ?? [];
+  const resultado = await queryOne<{
+    id: string;
+    categoria: string;
+    pergunta_exemplo: string;
+    resposta_template: string;
+    score_similitude: number;
+    score_confianca: number | null;
+    versao: number;
+  }>(
+    `SELECT * FROM buscar_qa_similar($1::float8[], $2, 1)`,
+    [`{${embedding.join(",")}}`, categorias.length > 0 ? categorias[0] : null],
+  );
+
+  if (!resultado) return;
+  if (resultado.score_similitude < cfg.autoreply_threshold) return;
+
+  // Aguarda o delay configurado antes de enviar
+  if (cfg.autoreply_delay_seg > 0) {
+    await new Promise((r) => setTimeout(r, cfg.autoreply_delay_seg * 1000));
+  }
+
+  // Envia via Evolution API para o grupo
+  const evolutionCfg = await getEvolutionConfig(ctx.empresaId);
+  if (!evolutionCfg) return;
+
+  // Pega o nome da instância a partir do grupo
+  const instanciaRow = await queryOne<{ nome_instancia: string }>(
+    `SELECT nome_instancia FROM whatsapp_instancias WHERE id = $1`,
+    [ctx.instanciaId],
+  );
+  if (!instanciaRow) return;
+
+  const apiUrl = `${evolutionCfg.url}/message/sendText/${instanciaRow.nome_instancia}`;
+  const respostaTexto = resultado.resposta_template;
+
+  try {
+    await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: evolutionCfg.key },
+      body: JSON.stringify({ number: ctx.groupJid, text: respostaTexto }),
+    });
+  } catch (err) {
+    console.error("[autoreply] Falha ao enviar para Evolution:", err);
+    return;
+  }
+
+  // Atualiza interação com dados da IA
+  await query(
+    `UPDATE whatsapp_grupos_interacoes
+     SET ia_auto_respondido  = TRUE,
+         ia_qa_id            = $2,
+         ia_score            = $3,
+         ia_modelo_embedding = 'text-embedding-3-small',
+         ia_resposta_enviada = $4,
+         ia_enviado_at       = NOW(),
+         respondido_em       = NOW(),
+         tempo_resposta_seg  = EXTRACT(EPOCH FROM (NOW() - msg_criada_em))::int
+     WHERE id = $1`,
+    [ctx.interacaoId, resultado.id, resultado.score_similitude, respostaTexto],
+  );
+
+  // Incrementa uso do Q&A
+  await query(
+    `UPDATE grupos_qa_base SET usos_total = usos_total + 1, atualizado_at = NOW() WHERE id = $1`,
+    [resultado.id],
+  );
 }
 
 async function _processarMensagemGrupoTx(
@@ -302,7 +436,7 @@ async function _processarMensagemGrupoTx(
   groupJid: string,
   participantJid: string | null,
   messageId: string,
-) {
+): Promise<AutoReplyCtx | null> {
   const q = <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
     client.query(sql, params).then((r) => r.rows as T[]);
   const q1 = async <T = Record<string, unknown>>(
@@ -311,8 +445,8 @@ async function _processarMensagemGrupoTx(
   ) => (await q<T>(sql, params))[0] ?? null;
 
   // Busca ou cria o registro do grupo (auto-criado com monitorado=TRUE)
-  let grupo = await q1<{ id: string; monitorado: boolean }>(
-    `SELECT id, monitorado FROM whatsapp_grupos
+  let grupo = await q1<{ id: string; monitorado: boolean; instancia_id: string }>(
+    `SELECT id, monitorado, instancia_id FROM whatsapp_grupos
      WHERE instancia_id = $1 AND group_jid = $2 AND ativo = TRUE`,
     [instancia.id, groupJid],
   );
@@ -321,19 +455,19 @@ async function _processarMensagemGrupoTx(
     const nomeGrupo =
       san((msg.pushName as string) ?? groupJid.replace("@g.us", "")) ??
       groupJid.replace("@g.us", "");
-    const [novo] = await q<{ id: string; monitorado: boolean }>(
+    const [novo] = await q<{ id: string; monitorado: boolean; instancia_id: string }>(
       `INSERT INTO whatsapp_grupos
          (empresa_id, instancia_id, group_jid, nome, monitorado, ativo)
        VALUES ($1, $2, $3, $4, TRUE, TRUE)
        ON CONFLICT (instancia_id, group_jid) DO UPDATE
          SET ativo = TRUE
-       RETURNING id, monitorado`,
+       RETURNING id, monitorado, instancia_id`,
       [instancia.empresa_id, instancia.id, groupJid, nomeGrupo],
     );
     grupo = novo;
   }
 
-  if (!grupo?.monitorado) return;
+  if (!grupo?.monitorado) return null;
 
   // Deduplicação por message_id
   const existente = await q1(
@@ -341,7 +475,7 @@ async function _processarMensagemGrupoTx(
      WHERE message_id = $1 AND grupo_id = $2`,
     [messageId, grupo.id],
   );
-  if (existente) return;
+  if (existente) return null;
 
   // Extrai texto da mensagem
   const message = msg.message as Record<string, unknown> | undefined;
@@ -360,7 +494,7 @@ async function _processarMensagemGrupoTx(
     else if (message?.videoMessage) tipo = "video";
     else if (message?.documentMessage) tipo = "documento";
     else if (message?.stickerMessage) tipo = "sticker";
-    else return;
+    else return null;
   }
 
   const remetenteJid = participantJid ?? groupJid;
@@ -391,7 +525,7 @@ async function _processarMensagemGrupoTx(
     ],
   );
 
-  if (!msgSalva) return;
+  if (!msgSalva) return null;
 
   // ----------------------------------------------------------
   // Controle de interações de atendimento
@@ -435,12 +569,14 @@ async function _processarMensagemGrupoTx(
          AND respondido_em  IS NULL`,
       [msgSalva.id, operador.id, grupo.id],
     );
+    return null; // Mensagem de operador não dispara autoreply
   } else {
     if (tipo === "texto" && conteudo) {
-      await q(
+      const [interacao] = await q<{ id: string }>(
         `INSERT INTO whatsapp_grupos_interacoes
            (empresa_id, grupo_id, msg_cliente_id, remetente_jid, remetente_nome, msg_criada_em)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         RETURNING id`,
         [
           instancia.empresa_id,
           grupo.id,
@@ -449,6 +585,19 @@ async function _processarMensagemGrupoTx(
           remetenteNome,
         ],
       );
+      // Retorna contexto para o autoreply processar após a transação
+      return interacao
+        ? {
+            interacaoId: interacao.id,
+            grupoId: grupo.id,
+            groupJid,
+            conteudo,
+            empresaId: instancia.empresa_id,
+            instanciaId: instancia.id,
+          }
+        : null;
     }
   }
+
+  return null;
 }

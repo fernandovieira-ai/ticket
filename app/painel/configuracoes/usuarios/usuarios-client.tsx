@@ -118,7 +118,8 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   const [vinculando, setVinculando] = useState(false);
 
   // clientes
-  const [clientesVinculados, setClientesVinculados] = useState<Cliente[]>([]);
+  type ClienteVinculado = Cliente & { grupo_whatsapp: string | null; filial: string | null };
+  const [clientesVinculados, setClientesVinculados] = useState<ClienteVinculado[]>([]);
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clientesDisponiveis, setClientesDisponiveis] = useState<Cliente[]>([]);
@@ -1284,6 +1285,20 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
                                 <p className="text-xs text-gray-400 truncate">
                                   {c.documento ?? c.email ?? "—"}
                                 </p>
+                                {(c.grupo_whatsapp || c.filial) && (
+                                  <div className="flex flex-wrap gap-1.5 mt-1">
+                                    {c.grupo_whatsapp && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 truncate max-w-[160px]" title={c.grupo_whatsapp}>
+                                        <Phone size={9} /> {c.grupo_whatsapp}
+                                      </span>
+                                    )}
+                                    {c.filial && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 truncate max-w-[120px]" title={c.filial}>
+                                        <Building2 size={9} /> {c.filial}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               <button
                                 type="button"

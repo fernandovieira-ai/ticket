@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  const { nome, email, password, telefone, cnpj } = parsed.data;
+  const { nome, email, password, telefone, cnpj, grupoWhatsapp, filial } = parsed.data;
   const cnpjDigits = cnpj ? cnpj.replace(/\D/g, "") : "";
 
   const client = await pool.connect();
@@ -186,10 +186,10 @@ export async function POST(req: NextRequest) {
 
     // ── 5. Vincular usuário ↔ cliente ─────────────────────────────────────
     await client.query(
-      `INSERT INTO usuario_clientes (usuario_id, cliente_id)
-       VALUES ($1, $2)
+      `INSERT INTO usuario_clientes (usuario_id, cliente_id, grupo_whatsapp, filial)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
-      [usuario.id, clienteId],
+      [usuario.id, clienteId, grupoWhatsapp ?? null, filial ?? null],
     );
 
     await client.query("COMMIT");

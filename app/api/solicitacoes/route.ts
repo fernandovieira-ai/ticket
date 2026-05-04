@@ -11,6 +11,8 @@ const criarSolicitacaoSchema = z.object({
   departamento_dest: z.string().uuid().optional().nullable(),
   responsavel_id: z.string().uuid().optional().nullable(),
   prazo: z.string().optional().nullable(),
+  categoria_id: z.string().uuid().optional().nullable(),
+  subcategoria_id: z.string().uuid().optional().nullable(),
 });
 
 // GET /api/solicitacoes
@@ -41,6 +43,8 @@ export async function GET(req: NextRequest) {
     solicitante_nome: string;
     responsavel_nome: string | null;
     departamento_nome: string | null;
+    categoria_nome: string | null;
+    subcategoria_nome: string | null;
     prazo: string | null;
     criado_em: Date;
     atualizado_em: Date;
@@ -53,6 +57,8 @@ export async function GET(req: NextRequest) {
        us.nome AS solicitante_nome,
        ur.nome AS responsavel_nome,
        d.nome AS departamento_nome,
+       c.nome AS categoria_nome,
+       sc.nome AS subcategoria_nome,
        COUNT(*) OVER() AS total_count
      FROM solicitacoes_internas s
      JOIN solicitacao_tipos st ON st.id = s.tipo_id
@@ -60,6 +66,8 @@ export async function GET(req: NextRequest) {
      JOIN usuarios us ON us.id = s.solicitante_id
      LEFT JOIN usuarios ur ON ur.id = s.responsavel_id
      LEFT JOIN departamentos d ON d.id = s.departamento_dest
+     LEFT JOIN categorias c ON c.id = s.categoria_id
+     LEFT JOIN subcategorias sc ON sc.id = s.subcategoria_id
      WHERE s.empresa_id = $1
        AND ($2 = '' OR s.titulo ILIKE $2)
        AND ($3 = '' OR s.status = $3::status_solicitacao)
@@ -118,6 +126,8 @@ export async function POST(req: NextRequest) {
     departamento_dest,
     responsavel_id,
     prazo,
+    categoria_id,
+    subcategoria_id,
   } = parsed.data;
 
   // Validar que o tipo existe e pertence à empresa
@@ -132,8 +142,9 @@ export async function POST(req: NextRequest) {
   const solicitacao = await queryOne<{ id: string; criado_em: Date }>(
     `INSERT INTO solicitacoes_internas
        (empresa_id, tipo_id, titulo, descricao, prioridade_id,
-        solicitante_id, departamento_dest, responsavel_id, prazo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date)
+        solicitante_id, departamento_dest, responsavel_id, prazo,
+        categoria_id, subcategoria_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11)
      RETURNING id, criado_em`,
     [
       session.empresaId,
@@ -145,6 +156,8 @@ export async function POST(req: NextRequest) {
       departamento_dest ?? null,
       responsavel_id ?? null,
       prazo ?? null,
+      categoria_id ?? null,
+      subcategoria_id ?? null,
     ],
   );
 

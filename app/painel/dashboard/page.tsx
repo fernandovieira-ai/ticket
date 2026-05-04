@@ -39,6 +39,10 @@ interface UsuarioTickets {
   usuario_nome: string;
   total: number;
 }
+interface UsuarioSolicitacoes {
+  usuario_nome: string;
+  total: number;
+}
 
 async function DashboardContent({
   empresaId,
@@ -55,6 +59,7 @@ async function DashboardContent({
     ticketsRecentes,
     porPrioridade,
     porUsuario,
+    solicitacoesPorUsuario,
   ] = await Promise.all([
     // Abertos
     query<StatRow>(
@@ -128,6 +133,18 @@ async function DashboardContent({
          WHERE t.empresa_id = $1
            AND u.perfil != 'cliente'
            AND ts.encerra = false
+         GROUP BY u.nome
+         ORDER BY total DESC`,
+      [empresaId],
+    ),
+    // Solicitações internas por usuário responsável (em aberto)
+    query<UsuarioSolicitacoes>(
+      `SELECT u.nome AS usuario_nome, COUNT(*)::int AS total
+         FROM solicitacoes_internas s
+         JOIN usuarios u ON u.id = s.responsavel_id
+         WHERE s.empresa_id = $1
+           AND u.perfil != 'cliente'
+           AND s.status NOT IN ('finalizada', 'cancelada')
          GROUP BY u.nome
          ORDER BY total DESC`,
       [empresaId],
@@ -362,6 +379,91 @@ async function DashboardContent({
                             width: `${pct}%`,
                             borderRadius: 4,
                             backgroundColor: "var(--color-brand)",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Solicitações internas por usuário */}
+          <div
+            style={{
+              backgroundColor: "var(--color-bg-primary)",
+              border: "0.5px solid var(--color-border)",
+              borderRadius: 14,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "0.5px solid var(--color-border)",
+              }}
+            >
+              <p
+                className="flex items-center gap-2"
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  letterSpacing: "-0.3px",
+                }}
+              >
+                <Users className="w-4 h-4 text-orange-500" />
+                Solicitações Internas por Atendente
+              </p>
+            </div>
+            <div style={{ padding: "12px 16px" }} className="space-y-2">
+              {solicitacoesPorUsuario.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+                  Nenhuma solicitação atribuída no momento.
+                </p>
+              ) : (
+                solicitacoesPorUsuario.map((u) => {
+                  const max = solicitacoesPorUsuario[0].total;
+                  const pct = Math.round((u.total / max) * 100);
+                  return (
+                    <div key={u.usuario_nome} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: "var(--color-text-secondary)",
+                          }}
+                        >
+                          {u.usuario_nome}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            minWidth: 24,
+                            textAlign: "right",
+                          }}
+                        >
+                          {u.total}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 4,
+                          borderRadius: 4,
+                          backgroundColor: "var(--color-bg-secondary)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${pct}%`,
+                            borderRadius: 4,
+                            backgroundColor: "#f97316", // orange-500
                             transition: "width 0.3s ease",
                           }}
                         />

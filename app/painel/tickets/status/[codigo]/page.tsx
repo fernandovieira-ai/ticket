@@ -2,13 +2,14 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { TicketsClient } from "../../tickets-client";
 
-const STATUS_MAP: Record<string, { label: string; descricao: string }> = {
+const STATUS_MAP: Record<string, { label: string; descricao: string; statusCodigo?: string }> = {
   aberto:             { label: "Aberto",             descricao: "Tickets recém-criados, aguardando atribuição" },
   em_andamento:       { label: "Em Andamento",       descricao: "Tickets atribuídos a um agente, em atendimento" },
   aguardando_cliente: { label: "Aguardando Cliente", descricao: "Tickets aguardando retorno do cliente" },
   resolvido:          { label: "Resolvido",          descricao: "Tickets resolvidos pelo operador" },
   cancelado:          { label: "Cancelado",          descricao: "Tickets cancelados pelo cliente ou operador" },
   finalizado:         { label: "Finalizado",         descricao: "Tickets encerrados definitivamente" },
+  resolvidos:         { label: "Resolvidos",         descricao: "Tickets finalizados e cancelados", statusCodigo: "finalizado,cancelado" },
 };
 
 interface Props {
@@ -28,7 +29,7 @@ export default async function TicketsPorStatusPage({ params }: Props) {
       </div>
       <div className="h-[calc(100vh-10rem)]">
         <Suspense fallback={<div className="text-gray-400 text-sm p-6">Carregando...</div>}>
-          <TicketsClient statusCodigo={codigo} />
+          <TicketsClient statusCodigo={info.statusCodigo ?? codigo} />
         </Suspense>
       </div>
     </div>

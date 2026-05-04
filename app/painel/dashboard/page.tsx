@@ -154,7 +154,7 @@ async function DashboardContent({
       value: resolvidosHoje[0]?.total ?? 0,
       icon: <CheckCircle className="w-5 h-5 text-green-500" />,
       color: "text-green-600",
-      href: "/painel/tickets/status/finalizado",
+      href: "/painel/tickets/status/resolvidos",
     },
     {
       title: "Clientes Ativos",

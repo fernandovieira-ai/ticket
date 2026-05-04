@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
      WHERE t.empresa_id = $1
        AND ($2 = '' OR t.titulo ILIKE $2 OR t.numero ILIKE $2)
        AND ($3::uuid IS NULL OR t.status_id = $3::uuid)
-       AND ($4 = '' OR ts.codigo = $4)
+       AND ($4 = '' OR ts.codigo = ANY(string_to_array($4, ',')))
        AND ($5::uuid IS NULL OR t.prioridade_id = $5::uuid)
        AND ($6::uuid IS NULL OR t.atribuido_a = $6::uuid)
        AND (

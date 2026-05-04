@@ -144,7 +144,7 @@ async function DashboardContent({
          JOIN usuarios u ON u.id = s.responsavel_id
          WHERE s.empresa_id = $1
            AND u.perfil != 'cliente'
-           AND s.status NOT IN ('finalizada', 'cancelada')
+           AND s.status NOT IN ('concluida', 'cancelada')
          GROUP BY u.nome
          ORDER BY total DESC`,
       [empresaId],

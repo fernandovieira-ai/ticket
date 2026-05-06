@@ -45,6 +45,16 @@ interface Anexo {
   mime_type: string | null;
 }
 
+interface AnexoTicket {
+  id: string;
+  nome: string;
+  url: string;
+  tamanho: number | null;
+  mime_type: string | null;
+  criado_em: string;
+  enviado_por_nome: string;
+}
+
 interface Mensagem {
   id: string;
   corpo: string;
@@ -72,6 +82,7 @@ export default function TicketClientePage() {
 
   const [ticket, setTicket] = useState<TicketDetalhe | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+  const [anexosTicket, setAnexosTicket] = useState<AnexoTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [resposta, setResposta] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -83,9 +94,10 @@ export default function TicketClientePage() {
   const editorRef = useRef<RichTextEditorRef>(null);
 
   const carregar = useCallback(async () => {
-    const [resT, resM] = await Promise.all([
+    const [resT, resM, resA] = await Promise.all([
       fetch(`/api/tickets/${id}`),
       fetch(`/api/tickets/${id}/mensagens`),
+      fetch(`/api/tickets/${id}/anexos`),
     ]);
     if (!resT.ok) {
       router.push("/portal/meus-tickets");
@@ -93,6 +105,7 @@ export default function TicketClientePage() {
     }
     setTicket(await resT.json());
     setMensagens(await resM.json());
+    if (resA.ok) setAnexosTicket(await resA.json());
     setLoading(false);
   }, [id, router]);
 
@@ -339,6 +352,27 @@ export default function TicketClientePage() {
                     )}
                   </p>
                 </div>
+                {anexosTicket.length > 0 && (
+                  <div className="col-span-2 md:col-span-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1.5">
+                      Anexos do chamado
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {anexosTicket.map((a) => (
+                        <a
+                          key={a.id}
+                          href={a.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs rounded-md px-2 py-1 bg-gray-100 text-gray-600 hover:opacity-80 transition-opacity"
+                        >
+                          <Paperclip size={10} />
+                          <span className="max-w-[180px] truncate">{a.nome}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

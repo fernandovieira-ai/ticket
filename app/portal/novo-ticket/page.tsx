@@ -192,6 +192,21 @@ export default function NovoTicketPage() {
         setErro(data.error ?? "Erro ao criar chamado");
         return;
       }
+
+      // Upload dos anexos (se houver)
+      if (arquivos.length > 0) {
+        const fd = new FormData();
+        for (const f of arquivos) fd.append("arquivos", f);
+        const resAnexo = await fetch(`/api/tickets/${data.id}/anexos`, {
+          method: "POST",
+          body: fd,
+        });
+        if (!resAnexo.ok) {
+          const errAnexo = await resAnexo.json().catch(() => ({}));
+          toast.error(errAnexo.error ?? "Chamado criado, mas falha ao salvar anexos.");
+        }
+      }
+
       toast.success(`Chamado #${data.numero} criado com sucesso!`);
       router.push(`/portal/meus-tickets/${data.id}`);
     } finally {

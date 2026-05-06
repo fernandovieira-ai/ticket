@@ -108,31 +108,32 @@ export async function POST(
     });
   }
 
-  // Cria uma mensagem automática para que os anexos apareçam no histórico
+  // Vincula os anexos à mensagem inicial do ticket (descrição)
   if (salvos.length > 0) {
-    const nomeAnexos = salvos.map(a => a.nome).join(", ");
-    const corpoMensagem = `📎 Anexou ${salvos.length === 1 ? 'o arquivo' : 'os arquivos'}: ${nomeAnexos}`;
-
-    const [mensagem] = await query<{ id: string }>(
-      `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id`,
-      [id, session.sub, corpoMensagem, false],
+    // Busca a primeira mensagem do ticket (mensagem inicial com a descrição)
+    const mensagemInicial = await queryOne<{ id: string }>(
+      `SELECT id FROM mensagens
+       WHERE ticket_id = $1
+       ORDER BY criado_em ASC
+       LIMIT 1`,
+      [id],
     );
 
-    // Salva os anexos também na tabela anexos_mensagem para aparecerem no histórico
-    for (const anexo of salvos) {
-      await query(
-        `INSERT INTO anexos_mensagem (mensagem_id, nome, url, tamanho, mime_type)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          mensagem.id,
-          anexo.nome,
-          anexo.url,
-          anexo.tamanho,
-          anexo.mime_type
-        ],
-      );
+    if (mensagemInicial) {
+      // Salva os anexos vinculados à mensagem inicial
+      for (const anexo of salvos) {
+        await query(
+          `INSERT INTO anexos_mensagem (mensagem_id, nome, url, tamanho, mime_type)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            mensagemInicial.id,
+            anexo.nome,
+            anexo.url,
+            anexo.tamanho,
+            anexo.mime_type
+          ],
+        );
+      }
     }
 
     // Atualiza o timestamp do ticket

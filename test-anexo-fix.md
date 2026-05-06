@@ -9,9 +9,11 @@ O endpoint `/api/tickets/[id]/anexos` estava salvando anexos apenas na tabela `a
 Modificado o endpoint `/api/tickets/[id]/anexos/route.ts` para:
 
 1. Continuar salvando anexos em `anexos_ticket` (para compatibilidade)
-2. Criar automaticamente uma mensagem quando anexos são enviados
-3. Salvar os anexos também em `anexos_mensagem` vinculados à mensagem criada
+2. **Vincular anexos à mensagem inicial do ticket** (que contém a descrição)
+3. Salvar os anexos em `anexos_mensagem` vinculados à primeira mensagem
 4. Atualizar o timestamp do ticket
+
+**Vantagem:** Os anexos aparecem junto com a descrição original, não como mensagem separada.
 
 ## Como Testar
 

@@ -7,16 +7,24 @@ interface TicketRow {
   id: string;
   numero: string;
   titulo: string;
+  canal: string;
   status_nome: string;
   status_cor: string;
   prioridade_nome: string;
   prioridade_cor: string;
   cliente_nome: string | null;
   atribuido_nome: string | null;
-  criado_em: Date;
-  atualizado_em: Date;
-  tempo_aberto?: string;
-  sla_vencido?: boolean;
+  departamento_nome: string | null;
+  categoria_nome: string | null;
+  criado_em: string;
+  atualizado_em: string;
+  sla_primeira_resp_deadline: string | null;
+  sla_resolucao_deadline: string | null;
+  respondido_em: string | null;
+  sla_primeira_resp_ok: boolean | null;
+  fechado_em: string | null;
+  tempo_trabalho_minutos: number | null;
+  sla_alerta_pct: number;
 }
 
 // Server component que carrega dados iniciais
@@ -33,7 +41,10 @@ export async function TicketsServer() {
     carregarTicketsIniciais(session),
     // Opções de status e prioridades que sempre serão usadas
     carregarOpcoesPadrao(session),
-  ]);
+  ]) as [
+    { data: TicketRow[]; total: number },
+    { status: any[]; prioridades: any[]; usuarios: any[] }
+  ];
 
   return (
     <TicketsClient
@@ -60,16 +71,23 @@ async function carregarTicketsIniciais(session: any) {
 
     const tickets = await query<TicketRow>(`
       SELECT
-        t.id, t.numero, t.titulo, t.criado_em, t.atualizado_em,
+        t.id, t.numero, t.titulo, t.canal, t.criado_em, t.atualizado_em,
+        t.sla_primeira_resp_deadline, t.sla_resolucao_deadline,
+        t.respondido_em, t.sla_primeira_resp_ok, t.fechado_em,
+        t.tempo_trabalho_minutos, t.sla_alerta_pct,
         ts.nome AS status_nome, ts.cor AS status_cor,
         tp.nome AS prioridade_nome, tp.cor AS prioridade_cor,
         c.nome_razao AS cliente_nome,
-        u.nome AS atribuido_nome
+        u.nome AS atribuido_nome,
+        d.nome AS departamento_nome,
+        tc.nome AS categoria_nome
       FROM tickets t
       JOIN ticket_status ts ON ts.id = t.status_id
       JOIN ticket_prioridades tp ON tp.id = t.prioridade_id
       LEFT JOIN clientes c ON c.id = t.cliente_id
       LEFT JOIN usuarios u ON u.id = t.atribuido_a
+      LEFT JOIN departamentos d ON d.id = t.departamento_id
+      LEFT JOIN ticket_categorias tc ON tc.id = t.categoria_id
       ${whereClause}
       ORDER BY t.atualizado_em DESC
       LIMIT 20

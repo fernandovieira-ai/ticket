@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -94,13 +94,23 @@ function whatsappLink(telefone: string) {
   return `https://wa.me/${number}`;
 }
 
-export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: string }) {
-  const [usuarios, setUsuarios] = useState<UsuarioComDept[]>([]);
-  const [total, setTotal] = useState(0);
+interface UsuariosClientProps {
+  perfilAtual?: string;
+  usuariosIniciais?: { data: UsuarioComDept[]; total: number };
+  departamentosIniciais?: Departamento[];
+}
+
+function UsuariosClientComponent({
+  perfilAtual = "operador",
+  usuariosIniciais,
+  departamentosIniciais
+}: UsuariosClientProps) {
+  const [usuarios, setUsuarios] = useState<UsuarioComDept[]>(usuariosIniciais?.data || []);
+  const [total, setTotal] = useState(usuariosIniciais?.total || 0);
   const [busca, setBusca] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!usuariosIniciais);
   const [refreshing, setRefreshing] = useState(false);
-  const mountedRef = useRef(false);
+  const mountedRef = useRef(!!usuariosIniciais);
   const [modoVisu, setModoVisu] = useState<ModoVisu>("grade");
   const [abaLista, setAbaLista] = useState<"atendentes" | "clientes">("atendentes");
   const [colunasVisiveis, setColunasVisiveis] = useState<Set<ColunaKey>>(
@@ -110,7 +120,7 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
   const menuColunasRef = useRef<HTMLDivElement>(null);
 
   // todos os departamentos disponíveis
-  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+  const [departamentos, setDepartamentos] = useState<Departamento[]>(departamentosIniciais || []);
   // departamentos já vinculados ao usuário selecionado
   const [deptsVinculados, setDeptsVinculados] = useState<Departamento[]>([]);
   const [loadingDepts, setLoadingDepts] = useState(false);
@@ -151,13 +161,15 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // carrega lista completa de departamentos uma vez
+  // carrega lista completa de departamentos uma vez (se não foi pré-carregado)
   useEffect(() => {
-    fetch("/api/departamentos?pageSize=50")
-      .then((r) => r.json())
-      .then((d) => setDepartamentos(d.data ?? []))
-      .catch(() => {});
-  }, []);
+    if (!departamentosIniciais) {
+      fetch("/api/departamentos?pageSize=50")
+        .then((r) => r.json())
+        .then((d) => setDepartamentos(d.data ?? []))
+        .catch(() => {});
+    }
+  }, [departamentosIniciais]);
 
   // carrega departamentos do usuário selecionado
   const carregarDeptsVinculados = useCallback(async (usuarioId: string) => {
@@ -1402,3 +1414,5 @@ export function UsuariosClient({ perfilAtual = "operador" }: { perfilAtual?: str
     </div>
   );
 }
+
+export const UsuariosClient = memo(UsuariosClientComponent);

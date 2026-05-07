@@ -1,11 +1,7 @@
 import { Suspense } from 'react'
-import { UsuariosClient } from './usuarios-client'
-import { getSession } from '@/lib/auth'
+import { UsuariosServer } from './usuarios-server'
 
-export default async function UsuariosPage() {
-  const session = await getSession()
-  const perfilAtual = session?.perfil ?? 'operador'
-
+export default function UsuariosPage() {
   return (
     <div className="h-full">
       <div className="px-6 py-4 border-b border-gray-200 bg-white -mx-6 -mt-6 mb-0">
@@ -14,7 +10,7 @@ export default async function UsuariosPage() {
       </div>
       <div className="h-[calc(100vh-10rem)]">
         <Suspense fallback={<div className="text-gray-400 text-sm p-6">Carregando...</div>}>
-          <UsuariosClient perfilAtual={perfilAtual} />
+          <UsuariosServer />
         </Suspense>
       </div>
     </div>

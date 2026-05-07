@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Loader2, Building2, Trash2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ interface Props {
   empresa: Empresa;
 }
 
-export function GeralClient({ empresa }: Props) {
+function GeralClientComponent({ empresa }: Props) {
   const router = useRouter();
   const [logoUrl, setLogoUrl] = useState(empresa.logo_url ?? "");
   const [uploadando, setUploadando] = useState(false);
@@ -150,3 +150,5 @@ export function GeralClient({ empresa }: Props) {
     </div>
   );
 }
+
+export const GeralClient = memo(GeralClientComponent);

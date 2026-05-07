@@ -218,9 +218,6 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
       // Reset todos os states para valores iniciais
       setLoading(false);
       setTickets([]);
-      setMensagemSelecionada(null);
-      setNovaMensagem("");
-      setEnviandoMensagem(false);
       loadingRef.current = false;
     };
   }, []);

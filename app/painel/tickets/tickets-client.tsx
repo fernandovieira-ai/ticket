@@ -497,7 +497,7 @@ export const TicketsClient = React.memo(function TicketsClient({
   const [total, setTotal] = useState(ticketsIniciais?.total || 0);
   const [primeiroCarregamento, setPrimeiroCarregamento] = useState(true);
   const [busca, setBusca] = useState("");
-  const [situacaoMeus, setSituacaoMeus] = useState("aberto");
+  const [situacaoMeus, setSituacaoMeus] = useState("abertos_todos");
   const [loading, setLoading] = useState(!ticketsIniciais?.data?.length);
   const primeiroRender = useRef(true);
   const loadingRef = useRef(false); // Ref para evitar race conditions
@@ -620,7 +620,14 @@ export const TicketsClient = React.memo(function TicketsClient({
       if (statusCodigo) params.set("status_codigo", statusCodigo);
       if (meus) {
         params.set("meus", "1");
-        if (situacaoMeus) params.set("status_codigo", situacaoMeus);
+        if (situacaoMeus) {
+          if (situacaoMeus === "abertos_todos") {
+            // Filtrar pelos 3 status que representam tickets realmente abertos
+            params.set("status_codigo", "aberto,em_andamento,aguardando");
+          } else {
+            params.set("status_codigo", situacaoMeus);
+          }
+        }
       }
       if (fila) params.set("fila", "1");
       const res = await fetch(`/api/tickets?${params}`);
@@ -1052,12 +1059,13 @@ export const TicketsClient = React.memo(function TicketsClient({
                 outline: "none",
               }}
             >
-              <option value="">Todos</option>
-              <option value="aberto">Aberto</option>
-              <option value="em_andamento">Em Andamento</option>
-              <option value="aguardando">Aguardando</option>
-              <option value="cancelado">Cancelado</option>
-              <option value="finalizado">Finalizado</option>
+              <option value="abertos_todos">🔥 Abertos (todos)</option>
+              <option value="">Todos os status</option>
+              <option value="aberto">📌 Aberto</option>
+              <option value="em_andamento">⚙️ Em Andamento</option>
+              <option value="aguardando">⏳ Aguardando</option>
+              <option value="cancelado">❌ Cancelado</option>
+              <option value="finalizado">✅ Finalizado</option>
             </select>
           )}
         </div>

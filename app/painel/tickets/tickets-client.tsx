@@ -637,19 +637,12 @@ export const TicketsClient = React.memo(function TicketsClient({ statusCodigo }:
       primeiroRender.current = false;
       // Carregamento inicial imediato sem delay
       carregar();
-      return () => {
-        if (carregar.cleanup) {
-          carregar.cleanup();
-        }
-      };
+      return;
     }
     // Para mudanças subsequentes (busca, filtros), usar debounce
     const t = setTimeout(carregar, 300);
     return () => {
       clearTimeout(t);
-      if (carregar.cleanup) {
-        carregar.cleanup();
-      }
     };
   }, [busca, statusCodigo, meus, fila, situacaoMeus]); // Dependências diretas ao invés de carregar
 

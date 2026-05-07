@@ -1352,7 +1352,9 @@ export default function TicketPainelPage() {
             <DialogTitle>Alterar Status</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2 pt-2">
-            {statusOpcoes.map((s) => (
+            {statusOpcoes
+              .filter((s) => !['finalizado', 'cancelado'].includes(s.codigo))
+              .map((s) => (
               <button
                 key={s.id}
                 type="button"

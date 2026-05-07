@@ -201,11 +201,6 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
       }
       loadingRef.current = false;
     }
-
-    // Cleanup function disponível no escopo
-    carregar.cleanup = () => {
-      isMounted = false;
-    };
   }, [primeiroCarregamento]);
 
   useEffect(() => {
@@ -213,9 +208,6 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
 
     // Cleanup quando componente for desmontado
     return () => {
-      if (carregar.cleanup) {
-        carregar.cleanup();
-      }
       loadingRef.current = false;
     };
   }, []); // Sem dependências - carrega apenas uma vez no mount

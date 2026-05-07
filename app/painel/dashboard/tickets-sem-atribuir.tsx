@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import Link from "next/link";
 import { UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ interface Usuario {
   nome: string;
 }
 
-export function TicketsSemAtribuir({
+const TicketsSemAtribuirComponent = memo(function TicketsSemAtribuir({
   tickets: inicial,
 }: {
   tickets: TicketRow[];
@@ -31,23 +31,34 @@ export function TicketsSemAtribuir({
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [atribuindo, setAtribuindo] = useState<string | null>(null); // ticket id com dropdown aberto
   const [salvando, setSalvando] = useState<string | null>(null); // ticket id sendo salvo
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     fetch("/api/usuarios?pageSize=100")
       .then((r) => r.json())
       .then((d) => {
+        if (!isMounted || !isMountedRef.current) return;
         const lista: Usuario[] = d.data ?? d;
-        setUsuarios(
-          lista.filter(
-            (u: Usuario & { perfil?: string; ativo?: boolean }) =>
-              u.perfil !== "cliente" && u.ativo !== false,
-          ),
-        );
+        setUsuarios(lista);
       })
       .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  async function atribuir(ticketId: string, usuarioId: string) {
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const atribuir = useCallback(async (ticketId: string, usuarioId: string) => {
+    if (!isMountedRef.current) return;
+
     setSalvando(ticketId);
     try {
       const res = await fetch(`/api/tickets/${ticketId}`, {
@@ -55,6 +66,9 @@ export function TicketsSemAtribuir({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ atribuido_a: usuarioId }),
       });
+
+      if (!isMountedRef.current) return;
+
       if (!res.ok) {
         const d = await res.json();
         toast.error(d.error ?? "Erro ao atribuir");
@@ -64,21 +78,76 @@ export function TicketsSemAtribuir({
       setAtribuindo(null);
       toast.success("Chamado atribuído com sucesso");
     } catch {
+      if (!isMountedRef.current) return;
       toast.error("Erro de conexão");
     } finally {
-      setSalvando(null);
+      if (isMountedRef.current) {
+        setSalvando(null);
+      }
     }
-  }
+  }, []);
+
+  // Memoized usuarios filtering
+  const usuariosAtivos = useMemo(() => {
+    return usuarios.filter(
+      (u: Usuario & { perfil?: string; ativo?: boolean }) =>
+        u.perfil !== "cliente" && u.ativo !== false,
+    );
+  }, [usuarios]);
+
+  // Memoized styles
+  const containerStyle = useMemo(() => ({
+    fontSize: 13,
+    color: "var(--color-text-muted)",
+    padding: "16px",
+  }), []);
+
+  const itemStyle = useMemo(() => ({
+    padding: "10px 16px",
+    borderBottom: "0.5px solid var(--color-border)",
+  }), []);
+
+  const selectStyle = useMemo(() => ({
+    fontSize: 11,
+    padding: "3px 6px",
+    height: 26,
+    borderRadius: 5,
+    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--color-bg-primary)",
+    color: "var(--color-text)",
+    cursor: "pointer",
+    outline: "none",
+    maxWidth: 140,
+  }), []);
+
+  const buttonStyle = useMemo(() => ({
+    fontSize: 11,
+    color: "var(--color-brand, #2563EB)",
+    fontWeight: 500,
+    cursor: "pointer",
+    padding: "3px 8px",
+    borderRadius: 5,
+    border: "1px solid var(--color-brand, #2563EB)",
+    backgroundColor: "transparent",
+    whiteSpace: "nowrap" as const,
+  }), []);
+
+  // Memoized handlers
+  const handleSelectChange = useCallback((ticketId: string, value: string) => {
+    if (value) atribuir(ticketId, value);
+  }, [atribuir]);
+
+  const handleCancelAtribuir = useCallback(() => {
+    setAtribuindo(null);
+  }, []);
+
+  const handleAtribuirClick = useCallback((ticketId: string) => {
+    setAtribuindo(ticketId);
+  }, []);
 
   if (lista.length === 0) {
     return (
-      <p
-        style={{
-          fontSize: 13,
-          color: "var(--color-text-muted)",
-          padding: "16px",
-        }}
-      >
+      <p style={containerStyle}>
         Nenhum chamado sem atendente.
       </p>
     );
@@ -90,10 +159,7 @@ export function TicketsSemAtribuir({
         <div
           key={t.id}
           className="flex items-start gap-3"
-          style={{
-            padding: "10px 16px",
-            borderBottom: "0.5px solid var(--color-border)",
-          }}
+          style={itemStyle}
         >
           {/* Info do ticket */}
           <div className="flex-1 min-w-0">
@@ -171,27 +237,14 @@ export function TicketsSemAtribuir({
                 <select
                   autoFocus
                   defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) atribuir(t.id, e.target.value);
-                  }}
+                  onChange={(e) => handleSelectChange(t.id, e.target.value)}
                   disabled={salvando === t.id}
-                  style={{
-                    fontSize: 11,
-                    padding: "3px 6px",
-                    height: 26,
-                    borderRadius: 5,
-                    border: "1px solid var(--color-border)",
-                    backgroundColor: "var(--color-bg-primary)",
-                    color: "var(--color-text)",
-                    cursor: "pointer",
-                    outline: "none",
-                    maxWidth: 140,
-                  }}
+                  style={selectStyle}
                 >
                   <option value="" disabled>
                     Selecionar...
                   </option>
-                  {usuarios.map((u) => (
+                  {usuariosAtivos.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.nome}
                     </option>
@@ -201,7 +254,7 @@ export function TicketsSemAtribuir({
                   <Loader2 size={13} className="animate-spin text-gray-400" />
                 ) : (
                   <button
-                    onClick={() => setAtribuindo(null)}
+                    onClick={handleCancelAtribuir}
                     style={{
                       fontSize: 10,
                       color: "var(--color-text-muted)",
@@ -215,19 +268,9 @@ export function TicketsSemAtribuir({
               </>
             ) : (
               <button
-                onClick={() => setAtribuindo(t.id)}
+                onClick={() => handleAtribuirClick(t.id)}
                 className="flex items-center gap-1"
-                style={{
-                  fontSize: 11,
-                  color: "var(--color-brand, #2563EB)",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  padding: "3px 8px",
-                  borderRadius: 5,
-                  border: "1px solid var(--color-brand, #2563EB)",
-                  backgroundColor: "transparent",
-                  whiteSpace: "nowrap",
-                }}
+                style={buttonStyle}
               >
                 <UserPlus size={11} />
                 Atribuir
@@ -238,4 +281,6 @@ export function TicketsSemAtribuir({
       ))}
     </div>
   );
-}
+});
+
+export { TicketsSemAtribuirComponent as TicketsSemAtribuir };

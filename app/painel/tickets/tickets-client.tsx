@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -93,19 +93,79 @@ const SLA_BG: Record<SlaStatus, string> = {
   none: "transparent",
 };
 
+// Cache para otimizar cálculos custosos
+const slaCache = new Map<string, { status: SlaStatus; timestamp: number }>();
+const dateFormatCache = new Map<string, string>();
+const tempoAbertoCache = new Map<string, { valor: string; timestamp: number }>();
+const tempoRelativoCache = new Map<string, { valor: string; timestamp: number }>();
+
+function formatarDataMemoizada(data: string): string {
+  if (!dateFormatCache.has(data)) {
+    dateFormatCache.set(data, format(new Date(data), "dd/MM/yyyy HH:mm", { locale: ptBR }));
+  }
+  return dateFormatCache.get(data)!;
+}
+
+function tempoAbertoMemoizado(criadoEm: string): string {
+  const agora = Date.now();
+  const cached = tempoAbertoCache.get(criadoEm);
+
+  // Cache válido por 30 segundos
+  if (cached && agora - cached.timestamp < 30000) {
+    return cached.valor;
+  }
+
+  const valor = tempoAberto(criadoEm);
+  tempoAbertoCache.set(criadoEm, { valor, timestamp: agora });
+  return valor;
+}
+
+// Memoizar slaTempoBadge para evitar recálculos
+function slaTempoBadgeMemoizado(t: TicketRow, sla: SlaStatus): string {
+  const cacheKey = `${t.id}_${t.sla_primeira_resp_deadline}_${sla}_${t.criado_em}`;
+  const agora = Date.now();
+  const cached = tempoRelativoCache.get(cacheKey);
+
+  if (cached && agora - cached.timestamp < 30000) {
+    return cached.valor;
+  }
+
+  const valor = slaTempoBadge(t, sla);
+  tempoRelativoCache.set(cacheKey, { valor, timestamp: agora });
+  return valor;
+}
+
 function slaAtendimento(t: TicketRow): SlaStatus {
   if (!t.sla_primeira_resp_deadline) return "none";
   if (t.respondido_em !== null) {
     return t.sla_primeira_resp_ok ? "ok" : "exceeded";
   }
+
+  // Cache baseado em ID + deadline + timestamp atualizado
+  const cacheKey = `${t.id}_${t.sla_primeira_resp_deadline}_${t.atualizado_em}`;
+  const agora = Date.now();
+  const cached = slaCache.get(cacheKey);
+
+  // Cache válido por 30 segundos
+  if (cached && agora - cached.timestamp < 30000) {
+    return cached.status;
+  }
+
   const deadline = new Date(t.sla_primeira_resp_deadline).getTime();
   const now = Date.now();
-  if (now > deadline) return "exceeded";
-  const alerta = t.sla_alerta_pct ?? 70;
-  const criado = new Date(t.criado_em).getTime();
-  const total = deadline - criado;
-  if (now > criado + (total * alerta) / 100) return "warning";
-  return "ok";
+  let status: SlaStatus;
+
+  if (now > deadline) {
+    status = "exceeded";
+  } else {
+    const alerta = t.sla_alerta_pct ?? 70;
+    const criado = new Date(t.criado_em).getTime();
+    const total = deadline - criado;
+    status = now > criado + (total * alerta) / 100 ? "warning" : "ok";
+  }
+
+  slaCache.set(cacheKey, { status, timestamp: agora });
+  return status;
 }
 
 function slaTempoBadge(t: TicketRow, sla: SlaStatus): string {
@@ -186,7 +246,236 @@ interface TicketsClientProps {
   statusCodigo?: string;
 }
 
-export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
+// Componente memoizado para linha da tabela
+const TicketTableRow = React.memo(function TicketTableRow({
+  ticket,
+  onClick,
+}: {
+  ticket: TicketRow & {
+    dataFormatada: string;
+    slaStatus: SlaStatus;
+    tempoAbertoTexto: string;
+    slaBadgeTexto: string;
+  };
+  onClick: () => void;
+}) {
+  return (
+    <tr
+      onClick={onClick}
+      className="tickets-table-row"
+      style={{ borderBottom: "0.5px solid var(--color-border)" }}
+    >
+      {/* Protocolo */}
+      <td className="whitespace-nowrap" style={{ padding: "10px 16px" }}>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--color-brand)",
+            letterSpacing: "0.02em",
+          }}
+        >
+          #{ticket.numero}
+        </span>
+      </td>
+      {/* Assunto */}
+      <td style={{ padding: "10px 16px", maxWidth: 260 }}>
+        <p
+          className="truncate"
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {ticket.titulo}
+        </p>
+        <div className="flex items-center gap-1.5" style={{ marginTop: 2 }}>
+          <span
+            className="capitalize"
+            style={{
+              fontSize: 10,
+              color: "var(--color-text-muted)",
+            }}
+          >
+            {ticket.canal}
+          </span>
+        </div>
+      </td>
+      {/* Departamento */}
+      <td style={{ padding: "10px 16px", maxWidth: 180 }}>
+        <span
+          className="truncate block"
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-secondary)",
+          }}
+          title={ticket.departamento_nome ?? ""}
+        >
+          {ticket.departamento_nome ?? (
+            <span style={{ color: "var(--color-border-hover)" }}>—</span>
+          )}
+        </span>
+      </td>
+      {/* Cliente */}
+      <td style={{ padding: "10px 16px", maxWidth: 140 }}>
+        <span
+          className="truncate block"
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-secondary)",
+          }}
+          title={ticket.cliente_nome ?? ""}
+        >
+          {ticket.cliente_nome ?? (
+            <span style={{ color: "var(--color-border-hover)" }}>—</span>
+          )}
+        </span>
+      </td>
+      {/* Categoria */}
+      <td style={{ padding: "10px 16px", maxWidth: 140 }}>
+        <span
+          className="truncate block"
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-secondary)",
+          }}
+          title={ticket.categoria_nome ?? ""}
+        >
+          {ticket.categoria_nome ?? (
+            <span style={{ color: "var(--color-border-hover)" }}>—</span>
+          )}
+        </span>
+      </td>
+      {/* Data/Hora */}
+      <td className="whitespace-nowrap" style={{ padding: "10px 16px" }}>
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {ticket.dataFormatada}
+        </span>
+      </td>
+      {/* Prioridade */}
+      <td className="whitespace-nowrap" style={{ padding: "10px 16px" }}>
+        <span
+          className="inline-flex items-center"
+          style={{
+            padding: "2px 8px",
+            borderRadius: 20,
+            fontSize: 10,
+            fontWeight: 600,
+            backgroundColor: ticket.prioridade_cor + "20",
+            color: ticket.prioridade_cor,
+          }}
+        >
+          {ticket.prioridade_nome}
+        </span>
+      </td>
+      {/* Situação */}
+      <td className="whitespace-nowrap" style={{ padding: "10px 16px" }}>
+        <span
+          className="inline-flex items-center gap-1"
+          style={{
+            padding: "2px 8px",
+            borderRadius: 20,
+            fontSize: 10,
+            fontWeight: 600,
+            backgroundColor: ticket.status_cor + "20",
+            color: ticket.status_cor,
+          }}
+        >
+          <span
+            className="rounded-full flex-shrink-0"
+            style={{
+              width: 6,
+              height: 6,
+              backgroundColor: ticket.status_cor,
+              display: "inline-block",
+            }}
+          />
+          {ticket.status_nome}
+        </span>
+      </td>
+      {/* Tempo / SLA */}
+      <td className="whitespace-nowrap" style={{ padding: "10px 16px" }}>
+        {ticket.fechado_em && ticket.tempo_trabalho_minutos != null ? (
+          <div className="flex flex-col gap-0.5">
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 500,
+                color: "var(--color-text-muted)",
+              }}
+            >
+              Tempo gasto
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {tempoGasto(ticket.tempo_trabalho_minutos)}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            {ticket.slaStatus !== "none" && (
+              <span
+                className="flex items-center gap-1"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: SLA_COLORS[ticket.slaStatus],
+                  backgroundColor: SLA_BG[ticket.slaStatus],
+                  padding: "1px 6px",
+                  borderRadius: 12,
+                  display: "inline-flex",
+                }}
+                title={
+                  ticket.sla_primeira_resp_deadline
+                    ? `Prazo: ${format(new Date(ticket.sla_primeira_resp_deadline), "dd/MM HH:mm", { locale: ptBR })}`
+                    : ""
+                }
+              >
+                {SLA_LABELS[ticket.slaStatus]}
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {ticket.slaBadgeTexto}
+            </span>
+          </div>
+        )}
+      </td>
+      {/* Atendente */}
+      <td style={{ padding: "10px 16px", maxWidth: 140 }}>
+        <span
+          className="truncate block"
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-secondary)",
+          }}
+          title={ticket.atribuido_nome ?? ""}
+        >
+          {ticket.atribuido_nome ?? (
+            <span style={{ color: "var(--color-border-hover)" }}>—</span>
+          )}
+        </span>
+      </td>
+    </tr>
+  );
+});
+
+export const TicketsClient = React.memo(function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const meus = searchParams.get("meus") === "1";
@@ -194,10 +483,12 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
   const novo = searchParams.get("novo") === "1";
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [primeiroCarregamento, setPrimeiroCarregamento] = useState(true);
   const [busca, setBusca] = useState("");
   const [situacaoMeus, setSituacaoMeus] = useState("aberto");
   const [loading, setLoading] = useState(true);
   const primeiroRender = useRef(true);
+  const loadingRef = useRef(false); // Ref para evitar race conditions
 
   const [painelAberto, setPainelAberto] = useState(novo);
   const [salvando, setSalvando] = useState(false);
@@ -274,6 +565,20 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
         : atendentes,
     [atendentes, atendenteBusca],
   );
+
+  // Memoizar dados processados para otimizar renderização
+  const ticketsOtimizados = useMemo(() => {
+    return tickets.map((ticket) => {
+      const slaStatus = slaAtendimento(ticket);
+      return {
+        ...ticket,
+        dataFormatada: formatarDataMemoizada(ticket.atualizado_em),
+        slaStatus,
+        tempoAbertoTexto: tempoAbertoMemoizado(ticket.criado_em),
+        slaBadgeTexto: slaTempoBadgeMemoizado(ticket, slaStatus),
+      };
+    });
+  }, [tickets]);
   const atendenteRef = useRef<HTMLDivElement>(null);
   const fecharAtendente = useCallback(() => setAtendenteAberto(false), []);
   useEffect(() => {
@@ -291,7 +596,13 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
 
   // Carregar tickets
   const carregar = useCallback(async () => {
+    // Evitar loading desnecessário se já está carregando
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
+
+    let isMounted = true; // Flag para verificar se componente ainda está montado
+
     try {
       const params = new URLSearchParams({ q: busca, pageSize: "50" });
       if (statusCodigo) params.set("status_codigo", statusCodigo);
@@ -301,46 +612,114 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
       }
       if (fila) params.set("fila", "1");
       const res = await fetch(`/api/tickets?${params}`);
+
+      // Só processa se o componente ainda estiver montado
+      if (!isMounted) return;
+
       const data = await res.json();
       setTickets(data.data ?? []);
       setTotal(data.total ?? 0);
+      if (primeiroCarregamento) {
+        setPrimeiroCarregamento(false);
+      }
+    } catch (error) {
+      console.error('[Tickets] Erro ao carregar tickets:', error);
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
+      loadingRef.current = false;
     }
-  }, [busca, statusCodigo, meus, fila, situacaoMeus]);
+
+    // Cleanup function disponível no escopo
+    carregar.cleanup = () => {
+      isMounted = false;
+    };
+  }, [busca, statusCodigo, meus, fila, situacaoMeus, primeiroCarregamento]);
 
   useEffect(() => {
     if (primeiroRender.current) {
       primeiroRender.current = false;
+      // Carregamento inicial imediato sem delay
       carregar();
-      return;
+      return () => {
+        if (carregar.cleanup) {
+          carregar.cleanup();
+        }
+      };
     }
+    // Para mudanças subsequentes (busca, filtros), usar debounce
     const t = setTimeout(carregar, 300);
-    return () => clearTimeout(t);
-  }, [carregar]);
+    return () => {
+      clearTimeout(t);
+      if (carregar.cleanup) {
+        carregar.cleanup();
+      }
+    };
+  }, [busca, statusCodigo, meus, fila, situacaoMeus]); // Dependências diretas ao invés de carregar
 
   // Carregar sessão e opções fixas
   useEffect(() => {
+    let isMounted = true;
+
     async function carregarOpcoes() {
-      const [resMe, resP, resDep, resU] = await Promise.all([
-        fetch("/api/auth/me"),
-        fetch("/api/ticket-prioridades"),
-        fetch("/api/departamentos?pageSize=100"),
-        fetch("/api/usuarios?pageSize=100"),
-      ]);
-      if (resMe.ok) setSessao(await resMe.json());
-      if (resP.ok) setPrioridades(await resP.json());
-      if (resDep.ok) {
-        const d = await resDep.json();
-        setDepartamentos(d.data ?? d);
-      }
-      if (resU.ok) {
-        const d = await resU.json();
-        const lista: Usuario[] = d.data ?? d;
-        setAtendentes(lista.filter((u: Usuario) => u.perfil !== "cliente"));
+      try {
+        const [resMe, resP, resDep, resU] = await Promise.all([
+          fetch("/api/auth/me"),
+          fetch("/api/ticket-prioridades"),
+          fetch("/api/departamentos?pageSize=100"),
+          fetch("/api/usuarios?pageSize=100"),
+        ]);
+
+        if (!isMounted) return;
+
+        if (resMe.ok) setSessao(await resMe.json());
+        if (resP.ok) setPrioridades(await resP.json());
+        if (resDep.ok) {
+          const d = await resDep.json();
+          setDepartamentos(d.data ?? d);
+        }
+        if (resU.ok) {
+          const d = await resU.json();
+          const lista: Usuario[] = d.data ?? d;
+          setAtendentes(lista.filter((u: Usuario) => u.perfil !== "cliente"));
+        }
+      } catch (error) {
+        console.error('[Tickets] Erro ao carregar opções:', error);
       }
     }
+
     carregarOpcoes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Cleanup geral quando componente for desmontado
+  useEffect(() => {
+    return () => {
+      // Reset todos os states para valores iniciais e limpar timers
+      setLoading(false);
+      setTickets([]);
+      setTotal(0);
+      setSessao(null);
+      setPrioridades([]);
+      setDepartamentos([]);
+      setAtendentes([]);
+      setCategorias([]);
+      setSubcategorias([]);
+      setBuscandoSolicitante(false);
+      setCarregandoCats(false);
+      setCarregandoSubs(false);
+      setSalvando(false);
+      setBuscandoCliente(false);
+      setSolicitanteModalAberto(false);
+      setAtendenteAberto(false);
+      setClienteDropdownAberto(false);
+      loadingRef.current = false;
+      primeiroRender.current = true;
+    };
   }, []);
 
   // Cascata departamento → categorias
@@ -684,7 +1063,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-auto">
-          {loading ? (
+          {loading && primeiroCarregamento ? (
             <div
               className="divide-y"
               style={{ borderColor: "var(--color-border)" }}
@@ -715,7 +1094,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
             </div>
           ) : painelAberto ? (
             /* ── Modo compacto: painel aberto ── */
-            tickets.map((t) => (
+            ticketsOtimizados.map((t) => (
               <button
                 key={t.id}
                 onClick={() => router.push(`/painel/tickets/${t.id}`)}
@@ -802,9 +1181,7 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                     }}
                   >
                     {t.atribuido_nome ?? "Não atribuído"} ·{" "}
-                    {format(new Date(t.atualizado_em), "dd/MM HH:mm", {
-                      locale: ptBR,
-                    })}
+                    {t.dataFormatada}
                   </p>
                 </div>
               </button>
@@ -849,253 +1226,12 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
                 </tr>
               </thead>
               <tbody>
-                {tickets.map((t) => (
-                  <tr
+                {ticketsOtimizados.map((t) => (
+                  <TicketTableRow
                     key={t.id}
+                    ticket={t}
                     onClick={() => router.push(`/painel/tickets/${t.id}`)}
-                    className="tickets-table-row"
-                    style={{ borderBottom: "0.5px solid var(--color-border)" }}
-                  >
-                    {/* Protocolo */}
-                    <td
-                      className="whitespace-nowrap"
-                      style={{ padding: "10px 16px" }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color: "var(--color-brand)",
-                          letterSpacing: "0.02em",
-                        }}
-                      >
-                        #{t.numero}
-                      </span>
-                    </td>
-                    {/* Assunto */}
-                    <td style={{ padding: "10px 16px", maxWidth: 260 }}>
-                      <p
-                        className="truncate"
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 500,
-                          color: "var(--color-text-primary)",
-                        }}
-                      >
-                        {t.titulo}
-                      </p>
-                      <div
-                        className="flex items-center gap-1.5"
-                        style={{ marginTop: 2 }}
-                      >
-                        <span
-                          className="capitalize"
-                          style={{
-                            fontSize: 10,
-                            color: "var(--color-text-muted)",
-                          }}
-                        >
-                          {t.canal}
-                        </span>
-                      </div>
-                    </td>
-                    {/* Departamento */}
-                    <td style={{ padding: "10px 16px", maxWidth: 180 }}>
-                      <span
-                        className="truncate block"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-secondary)",
-                        }}
-                        title={t.departamento_nome ?? ""}
-                      >
-                        {t.departamento_nome ?? (
-                          <span style={{ color: "var(--color-border-hover)" }}>
-                            —
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    {/* Cliente */}
-                    <td style={{ padding: "10px 16px", maxWidth: 140 }}>
-                      <span
-                        className="truncate block"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-secondary)",
-                        }}
-                        title={t.cliente_nome ?? ""}
-                      >
-                        {t.cliente_nome ?? (
-                          <span style={{ color: "var(--color-border-hover)" }}>
-                            —
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    {/* Categoria */}
-                    <td style={{ padding: "10px 16px", maxWidth: 140 }}>
-                      <span
-                        className="truncate block"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-secondary)",
-                        }}
-                        title={t.categoria_nome ?? ""}
-                      >
-                        {t.categoria_nome ?? (
-                          <span style={{ color: "var(--color-border-hover)" }}>
-                            —
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    {/* Data/Hora */}
-                    <td
-                      className="whitespace-nowrap"
-                      style={{ padding: "10px 16px" }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-muted)",
-                        }}
-                      >
-                        {format(new Date(t.atualizado_em), "dd/MM/yyyy HH:mm", {
-                          locale: ptBR,
-                        })}
-                      </span>
-                    </td>
-                    {/* Prioridade */}
-                    <td
-                      className="whitespace-nowrap"
-                      style={{ padding: "10px 16px" }}
-                    >
-                      <span
-                        className="inline-flex items-center"
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: 20,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          backgroundColor: t.prioridade_cor + "20",
-                          color: t.prioridade_cor,
-                        }}
-                      >
-                        {t.prioridade_nome}
-                      </span>
-                    </td>
-                    {/* Situação */}
-                    <td
-                      className="whitespace-nowrap"
-                      style={{ padding: "10px 16px" }}
-                    >
-                      <span
-                        className="inline-flex items-center gap-1"
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: 20,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          backgroundColor: t.status_cor + "20",
-                          color: t.status_cor,
-                        }}
-                      >
-                        <span
-                          className="rounded-full flex-shrink-0"
-                          style={{
-                            width: 6,
-                            height: 6,
-                            backgroundColor: t.status_cor,
-                            display: "inline-block",
-                          }}
-                        />
-                        {t.status_nome}
-                      </span>
-                    </td>
-                    {/* Tempo / SLA */}
-                    <td
-                      className="whitespace-nowrap"
-                      style={{ padding: "10px 16px" }}
-                    >
-                      {t.fechado_em && t.tempo_trabalho_minutos != null ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 500,
-                              color: "var(--color-text-muted)",
-                            }}
-                          >
-                            Tempo gasto
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 500,
-                              color: "var(--color-text-secondary)",
-                            }}
-                          >
-                            {tempoGasto(t.tempo_trabalho_minutos)}
-                          </span>
-                        </div>
-                      ) : (
-                        (() => {
-                          const sla = slaAtendimento(t);
-                          return (
-                            <div className="flex flex-col gap-0.5">
-                              {sla !== "none" && (
-                                <span
-                                  className="flex items-center gap-1"
-                                  style={{
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                    color: SLA_COLORS[sla],
-                                    backgroundColor: SLA_BG[sla],
-                                    padding: "1px 6px",
-                                    borderRadius: 12,
-                                    display: "inline-flex",
-                                  }}
-                                  title={
-                                    t.sla_primeira_resp_deadline
-                                      ? `Prazo: ${format(new Date(t.sla_primeira_resp_deadline), "dd/MM HH:mm", { locale: ptBR })}`
-                                      : ""
-                                  }
-                                >
-                                  {SLA_LABELS[sla]}
-                                </span>
-                              )}
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--color-text-secondary)",
-                                }}
-                              >
-                                {slaTempoBadge(t, sla)}
-                              </span>
-                            </div>
-                          );
-                        })()
-                      )}
-                    </td>
-                    {/* Atendente */}
-                    <td style={{ padding: "10px 16px", maxWidth: 140 }}>
-                      <span
-                        className="truncate block"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-secondary)",
-                        }}
-                        title={t.atribuido_nome ?? ""}
-                      >
-                        {t.atribuido_nome ?? (
-                          <span style={{ color: "var(--color-border-hover)" }}>
-                            —
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                  </tr>
+                  />
                 ))}
               </tbody>
             </table>
@@ -1743,4 +1879,4 @@ export function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
       </div>
     </div>
   );
-}
+});

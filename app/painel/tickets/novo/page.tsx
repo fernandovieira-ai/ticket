@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -59,6 +59,8 @@ export default function NovoTicketPage() {
   const router = useRouter();
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [carregandoInicial, setCarregandoInicial] = useState(true);
+  const loadingRef = useRef(false);
   const editorRef = useRef<RichTextEditorRef>(null);
 
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
@@ -106,38 +108,48 @@ export default function NovoTicketPage() {
   const fecharAtendente = useCallback(() => setAtendenteAberto(false), []);
   const fecharSolicitante = useCallback(() => setSolicitanteModalAberto(false), []);
 
+  // Click-outside handlers memoizados
+  const handleAtendenteClickOutside = useCallback((e: MouseEvent) => {
+    if (atendenteRef.current && !atendenteRef.current.contains(e.target as Node)) {
+      fecharAtendente();
+    }
+  }, [fecharAtendente]);
+
+  const handleSolicitanteClickOutside = useCallback((e: MouseEvent) => {
+    if (solicitanteRef.current && !solicitanteRef.current.contains(e.target as Node)) {
+      fecharSolicitante();
+    }
+  }, [fecharSolicitante]);
+
+  const handleClienteClickOutside = useCallback((e: MouseEvent) => {
+    if (clienteRef.current && !clienteRef.current.contains(e.target as Node)) {
+      setClienteDropdownAberto(false);
+    }
+  }, []);
+
   // Click-outside: atendente
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (atendenteRef.current && !atendenteRef.current.contains(e.target as Node)) {
-        fecharAtendente();
-      }
+    if (atendenteAberto) {
+      document.addEventListener("mousedown", handleAtendenteClickOutside);
+      return () => document.removeEventListener("mousedown", handleAtendenteClickOutside);
     }
-    if (atendenteAberto) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [atendenteAberto, fecharAtendente]);
+  }, [atendenteAberto, handleAtendenteClickOutside]);
 
   // Click-outside: solicitante
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (solicitanteRef.current && !solicitanteRef.current.contains(e.target as Node)) {
-        fecharSolicitante();
-      }
+    if (solicitanteModalAberto) {
+      document.addEventListener("mousedown", handleSolicitanteClickOutside);
+      return () => document.removeEventListener("mousedown", handleSolicitanteClickOutside);
     }
-    if (solicitanteModalAberto) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [solicitanteModalAberto, fecharSolicitante]);
+  }, [solicitanteModalAberto, handleSolicitanteClickOutside]);
 
   // Click-outside: cliente
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (clienteRef.current && !clienteRef.current.contains(e.target as Node)) {
-        setClienteDropdownAberto(false);
-      }
+    if (clienteDropdownAberto) {
+      document.addEventListener("mousedown", handleClienteClickOutside);
+      return () => document.removeEventListener("mousedown", handleClienteClickOutside);
     }
-    if (clienteDropdownAberto) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [clienteDropdownAberto]);
+  }, [clienteDropdownAberto, handleClienteClickOutside]);
 
   // Busca de solicitante com debounce
   useEffect(() => {
@@ -146,21 +158,37 @@ export default function NovoTicketPage() {
       setSolicitanteResultados([]);
       return;
     }
+
+    let isMounted = true;
     const t = setTimeout(async () => {
+      if (!isMounted) return;
+
       setBuscandoSolicitante(true);
       try {
         const res = await fetch(
           `/api/usuarios?perfil=cliente&q=${encodeURIComponent(solicitanteBusca)}&pageSize=20`,
         );
+
+        if (!isMounted) return;
+
         if (res.ok) {
           const d = await res.json();
           setSolicitanteResultados(d.data ?? []);
         }
+      } catch (error) {
+        console.error('[NovoTicket] Erro ao buscar solicitantes:', error);
       } finally {
-        setBuscandoSolicitante(false);
+        if (isMounted) {
+          setBuscandoSolicitante(false);
+        }
       }
     }, 300);
-    return () => clearTimeout(t);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(t);
+      setBuscandoSolicitante(false);
+    };
   }, [solicitanteBusca, solicitanteModalAberto]);
 
   // Busca de cliente com debounce — só quando não há clientes vinculados ao solicitante
@@ -170,22 +198,38 @@ export default function NovoTicketPage() {
       setClienteResultados([]);
       return;
     }
+
+    let isMounted = true;
     const t = setTimeout(async () => {
+      if (!isMounted) return;
+
       setBuscandoCliente(true);
       try {
         const res = await fetch(
           `/api/clientes?q=${encodeURIComponent(clienteBusca)}&pageSize=15`,
         );
+
+        if (!isMounted) return;
+
         if (res.ok) {
           const d = await res.json();
           setClienteResultados(d.data ?? []);
           if ((d.data ?? []).length > 0) setClienteDropdownAberto(true);
         }
+      } catch (error) {
+        console.error('[NovoTicket] Erro ao buscar clientes:', error);
       } finally {
-        setBuscandoCliente(false);
+        if (isMounted) {
+          setBuscandoCliente(false);
+        }
       }
     }, 300);
-    return () => clearTimeout(t);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(t);
+      setBuscandoCliente(false);
+    };
   }, [clienteBusca, clienteNomeSelecionado, solicitanteClientes]);
 
   function selecionarCliente(c: Cliente) {
@@ -238,33 +282,110 @@ export default function NovoTicketPage() {
     limparCliente();
   }
 
-  const usuariosFiltrados = usuarios.filter((u) =>
-    u.nome.toLowerCase().includes(atendenteBusca.toLowerCase()),
+  // Memoized arrays e cálculos
+  const usuariosFiltrados = useMemo(() =>
+    usuarios.filter((u) =>
+      u.nome.toLowerCase().includes(atendenteBusca.toLowerCase()),
+    ),
+    [usuarios, atendenteBusca]
   );
 
-  const atendenteNome =
-    usuarios.find((u) => u.id === form.atribuido_a)?.nome ?? null;
+  const atendenteNome = useMemo(() =>
+    usuarios.find((u) => u.id === form.atribuido_a)?.nome ?? null,
+    [usuarios, form.atribuido_a]
+  );
+
+  const prioridadesOptions = useMemo(() =>
+    prioridades.map((p) => ({ id: p.id, nome: p.nome, cor: p.cor })),
+    [prioridades]
+  );
+
+  const departamentosOptions = useMemo(() =>
+    departamentos.map((d) => ({ id: d.id, nome: d.nome })),
+    [departamentos]
+  );
+
+  const categoriasOptions = useMemo(() =>
+    categorias.map((c) => ({ id: c.id, nome: c.nome })),
+    [categorias]
+  );
+
+  const subcategoriasOptions = useMemo(() =>
+    subcategorias.map((s) => ({ id: s.id, nome: s.nome })),
+    [subcategorias]
+  );
 
   useEffect(() => {
-    async function carregar() {
-      const [resP, resDep, resU] = await Promise.all([
-        fetch("/api/ticket-prioridades"),
-        fetch("/api/departamentos?pageSize=100"),
-        fetch("/api/usuarios?pageSize=200"),
-      ]);
-      if (resP.ok) setPrioridades(await resP.json());
-      if (resDep.ok) {
-        const d = await resDep.json();
-        setDepartamentos(d.data ?? d);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    let isMounted = true;
+
+    const carregar = async () => {
+      try {
+        const [resP, resDep, resU] = await Promise.all([
+          fetch("/api/ticket-prioridades"),
+          fetch("/api/departamentos?pageSize=100"),
+          fetch("/api/usuarios?pageSize=200"),
+        ]);
+
+        if (!isMounted) return;
+
+        if (resP.ok) {
+          const prioData = await resP.json();
+          setPrioridades(prioData);
+        }
+
+        if (resDep.ok) {
+          const depData = await resDep.json();
+          setDepartamentos(depData.data ?? depData);
+        }
+
+        if (resU.ok) {
+          const usuData = await resU.json();
+          setUsuarios(
+            (usuData.data ?? []).filter((u: Usuario) => u.perfil !== "cliente"),
+          );
+        }
+      } catch (error) {
+        console.error('[NovoTicket] Erro ao carregar dados:', error);
+      } finally {
+        if (isMounted) {
+          setCarregandoInicial(false);
+        }
+        loadingRef.current = false;
       }
-      if (resU.ok) {
-        const d = await resU.json();
-        setUsuarios(
-          (d.data ?? []).filter((u: Usuario) => u.perfil !== "cliente"),
-        );
-      }
-    }
+    };
+
     carregar();
+
+    return () => {
+      isMounted = false;
+      loadingRef.current = false;
+    };
+  }, []);
+
+  // Cleanup geral quando componente for desmontado
+  useEffect(() => {
+    return () => {
+      // Reset todos os states e referências
+      setCarregandoInicial(false);
+      setCarregandoCats(false);
+      setCarregandoSubs(false);
+      setSalvando(false);
+      setErro("");
+      setPrioridades([]);
+      setDepartamentos([]);
+      setCategorias([]);
+      setSubcategorias([]);
+      setUsuarios([]);
+      setBuscandoSolicitante(false);
+      setBuscandoCliente(false);
+      setSolicitanteModalAberto(false);
+      setAtendenteAberto(false);
+      setClienteDropdownAberto(false);
+      loadingRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -272,38 +393,89 @@ export default function NovoTicketPage() {
       setCategorias([]);
       setSubcategorias([]);
       setForm((f) => ({ ...f, categoria_id: "", subcategoria_id: "" }));
+      setCarregandoCats(false);
       return;
     }
+
     setCarregandoCats(true);
-    fetch(`/api/categorias?departamento_id=${form.departamento_id}&pageSize=100`)
-      .then((r) => r.json())
-      .then((d) => {
-        setCategorias(d.data ?? d);
-        setSubcategorias([]);
-        setForm((f) => ({ ...f, categoria_id: "", subcategoria_id: "" }));
-      })
-      .catch(() => {})
-      .finally(() => setCarregandoCats(false));
+    let isMounted = true;
+
+    const timer = setTimeout(async () => {
+      if (!isMounted) return;
+
+      try {
+        const response = await fetch(`/api/categorias?departamento_id=${form.departamento_id}&pageSize=100`);
+
+        if (!isMounted) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          setCategorias(data.data ?? data);
+          setSubcategorias([]);
+          setForm((f) => ({ ...f, categoria_id: "", subcategoria_id: "" }));
+        }
+      } catch (error) {
+        console.error('[NovoTicket] Erro ao carregar categorias:', error);
+      } finally {
+        if (isMounted) {
+          setCarregandoCats(false);
+        }
+      }
+    }, 150);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      setCarregandoCats(false);
+    };
   }, [form.departamento_id]);
 
   useEffect(() => {
     if (!form.categoria_id) {
       setSubcategorias([]);
       setForm((f) => ({ ...f, subcategoria_id: "" }));
+      setCarregandoSubs(false);
       return;
     }
+
     setCarregandoSubs(true);
-    fetch(`/api/subcategorias?categoria_id=${form.categoria_id}&pageSize=100`)
-      .then((r) => r.json())
-      .then((d) => {
-        setSubcategorias(d.data ?? d);
-        setForm((f) => ({ ...f, subcategoria_id: "" }));
-      })
-      .catch(() => {})
-      .finally(() => setCarregandoSubs(false));
+    let isMounted = true;
+
+    const timer = setTimeout(async () => {
+      if (!isMounted) return;
+
+      try {
+        const response = await fetch(`/api/subcategorias?categoria_id=${form.categoria_id}&pageSize=100`);
+
+        if (!isMounted) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          setSubcategorias(data.data ?? data);
+          setForm((f) => ({ ...f, subcategoria_id: "" }));
+        }
+      } catch (error) {
+        console.error('[NovoTicket] Erro ao carregar subcategorias:', error);
+      } finally {
+        if (isMounted) {
+          setCarregandoSubs(false);
+        }
+      }
+    }, 150);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      setCarregandoSubs(false);
+    };
   }, [form.categoria_id]);
 
-  async function salvar(e: React.FormEvent) {
+  // Memoized handlers
+  const handleFormChange = useCallback((field: string, value: any) => {
+    setForm((f) => ({ ...f, [field]: value }));
+  }, []);
+
+  const salvar = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.titulo.trim()) {
       setErro("Assunto é obrigatório");
@@ -341,6 +513,18 @@ export default function NovoTicketPage() {
     } finally {
       setSalvando(false);
     }
+  }, [form, router]);
+
+  // Early return para loading inicial
+  if (carregandoInicial) {
+    return (
+      <div className="max-w-2xl flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-3 text-gray-600">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>Carregando formulário...</span>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -374,7 +558,7 @@ export default function NovoTicketPage() {
           </Label>
           <Input
             value={form.titulo}
-            onChange={(e) => setForm((f) => ({ ...f, titulo: e.target.value }))}
+            onChange={(e) => handleFormChange('titulo', e.target.value)}
             placeholder="Descreva brevemente o problema..."
             className="h-9"
           />
@@ -388,7 +572,7 @@ export default function NovoTicketPage() {
           <RichTextEditor
             ref={editorRef}
             value={form.descricao}
-            onChange={(html) => setForm((f) => ({ ...f, descricao: html }))}
+            onChange={(html) => handleFormChange('descricao', html)}
             placeholder="Detalhe o problema, passos para reproduzir, impacto..."
             disabled={salvando}
           />
@@ -474,15 +658,13 @@ export default function NovoTicketPage() {
             </Label>
             <Select
               value={form.prioridade_id}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, prioridade_id: v ?? "" }))
-              }
+              onValueChange={(v) => handleFormChange('prioridade_id', v ?? "")}
             >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Selecionar..." />
               </SelectTrigger>
               <SelectContent>
-                {prioridades.map((p) => (
+                {prioridadesOptions.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     <span className="flex items-center gap-2">
                       <span
@@ -681,15 +863,13 @@ export default function NovoTicketPage() {
             </Label>
             <Select
               value={form.departamento_id}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, departamento_id: v ?? "" }))
-              }
+              onValueChange={(v) => handleFormChange('departamento_id', v ?? "")}
             >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Selecionar..." />
               </SelectTrigger>
               <SelectContent>
-                {departamentos.map((d) => (
+                {departamentosOptions.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     {d.nome}
                   </SelectItem>
@@ -716,15 +896,13 @@ export default function NovoTicketPage() {
             ) : (
               <Select
                 value={form.categoria_id}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, categoria_id: v ?? "" }))
-                }
+                onValueChange={(v) => handleFormChange('categoria_id', v ?? "")}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {categorias.map((c) => (
+                  {categoriasOptions.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nome}
                     </SelectItem>
@@ -752,15 +930,13 @@ export default function NovoTicketPage() {
             ) : (
               <Select
                 value={form.subcategoria_id}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, subcategoria_id: v ?? "" }))
-                }
+                onValueChange={(v) => handleFormChange('subcategoria_id', v ?? "")}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {subcategorias.map((s) => (
+                  {subcategoriasOptions.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.nome}
                     </SelectItem>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo, memo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,7 +11,26 @@ import { Headphones, Loader2 } from 'lucide-react'
 const CADASTRO_BG = '/api/assets/cadastro-bg.jpg'
 const LOGO = '/api/assets/logo.png'
 
-export default function ClienteCadastroPage() {
+// Format functions memoized
+const formatCnpj = (value: string): string => {
+  return value
+    .replace(/\D/g, '')
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2')
+    .slice(0, 18)
+}
+
+const formatTelefone = (value: string): string => {
+  return value
+    .replace(/\D/g, '')
+    .replace(/^(\d{2})(\d)/, '($1) $2')
+    .replace(/(\d{5})(\d{4})$/, '$1-$2')
+    .slice(0, 15)
+}
+
+const ClienteCadastroPageComponent = memo(function ClienteCadastroPage() {
   const router = useRouter()
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
@@ -26,34 +45,58 @@ export default function ClienteCadastroPage() {
   const [bgError, setBgError] = useState(false)
   const [logoError, setLogoError] = useState(false)
 
-  function formatCnpj(value: string) {
-    return value
-      .replace(/\D/g, '')
-      .replace(/^(\d{2})(\d)/, '$1.$2')
-      .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-      .replace(/\.(\d{3})(\d)/, '.$1/$2')
-      .replace(/(\d{4})(\d)/, '$1-$2')
-      .slice(0, 18)
-  }
+  // Memoized handlers
+  const handleInputChange = useCallback((field: string, value: string) => {
+    switch (field) {
+      case 'telefone':
+        setTelefone(formatTelefone(value))
+        break
+      case 'cnpj':
+        setCnpj(formatCnpj(value))
+        break
+      case 'nome':
+        setNome(value)
+        break
+      case 'email':
+        setEmail(value)
+        break
+      case 'password':
+        setPassword(value)
+        break
+      case 'confirmPassword':
+        setConfirmPassword(value)
+        break
+      case 'filial':
+        setFilial(value)
+        break
+      case 'grupoWhatsapp':
+        setGrupoWhatsapp(value)
+        break
+    }
+  }, [])
 
-  function formatTelefone(value: string) {
-    return value
-      .replace(/\D/g, '')
-      .replace(/^(\d{2})(\d)/, '($1) $2')
-      .replace(/(\d{5})(\d{4})$/, '$1-$2')
-      .slice(0, 15)
-  }
+  // Memoized form data object
+  const formData = useMemo(() => ({
+    nome,
+    telefone,
+    email,
+    password,
+    confirmPassword,
+    filial,
+    grupoWhatsapp,
+    cnpj
+  }), [nome, telefone, email, password, confirmPassword, filial, grupoWhatsapp, cnpj])
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
-    if (password.length < 6) {
+    if (formData.password.length < 6) {
       setError('A senha deve ter no mínimo 6 caracteres.')
       return
     }
 
-    if (password !== confirmPassword) {
+    if (formData.password !== formData.confirmPassword) {
       setError('As senhas não coincidem.')
       return
     }
@@ -64,7 +107,15 @@ export default function ClienteCadastroPage() {
       const res = await fetch('/api/auth/cliente/cadastro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, telefone, email, password, filial, grupoWhatsapp, cnpj }),
+        body: JSON.stringify({
+          nome: formData.nome,
+          telefone: formData.telefone,
+          email: formData.email,
+          password: formData.password,
+          filial: formData.filial,
+          grupoWhatsapp: formData.grupoWhatsapp,
+          cnpj: formData.cnpj
+        }),
       })
 
       const data = await res.json()
@@ -81,7 +132,19 @@ export default function ClienteCadastroPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [formData, router])
+
+  // Memoized inline styles and values
+  const buttonContent = useMemo(() => {
+    return loading ? (
+      <>
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        Criando conta...
+      </>
+    ) : (
+      'Criar Conta'
+    )
+  }, [loading])
 
   return (
     <div className="min-h-screen flex">
@@ -147,7 +210,7 @@ export default function ClienteCadastroPage() {
                     type="text"
                     placeholder="Informe seu nome"
                     value={nome}
-                    onChange={e => setNome(e.target.value)}
+                    onChange={e => handleInputChange('nome', e.target.value)}
                     required
                     autoComplete="name"
                     className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
@@ -160,7 +223,7 @@ export default function ClienteCadastroPage() {
                     type="tel"
                     placeholder="Telefone de contato"
                     value={telefone}
-                    onChange={e => setTelefone(formatTelefone(e.target.value))}
+                    onChange={e => handleInputChange('telefone', e.target.value)}
                     autoComplete="tel"
                     className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                   />
@@ -175,7 +238,7 @@ export default function ClienteCadastroPage() {
                   type="email"
                   placeholder="Informe seu email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => handleInputChange('email', e.target.value)}
                   required
                   autoComplete="email"
                   className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
@@ -191,7 +254,7 @@ export default function ClienteCadastroPage() {
                     type="password"
                     placeholder="Sua senha"
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={e => handleInputChange('password', e.target.value)}
                     required
                     autoComplete="new-password"
                     className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
@@ -204,7 +267,7 @@ export default function ClienteCadastroPage() {
                     type="password"
                     placeholder="Repita a senha"
                     value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
+                    onChange={e => handleInputChange('confirmPassword', e.target.value)}
                     required
                     autoComplete="new-password"
                     className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
@@ -222,7 +285,7 @@ export default function ClienteCadastroPage() {
                   type="text"
                   placeholder=""
                   value={filial}
-                  onChange={e => setFilial(e.target.value)}
+                  onChange={e => handleInputChange('filial', e.target.value)}
                   className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                 />
               </div>
@@ -235,7 +298,7 @@ export default function ClienteCadastroPage() {
                   type="text"
                   placeholder=""
                   value={grupoWhatsapp}
-                  onChange={e => setGrupoWhatsapp(e.target.value)}
+                  onChange={e => handleInputChange('grupoWhatsapp', e.target.value)}
                   className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                 />
               </div>
@@ -248,7 +311,7 @@ export default function ClienteCadastroPage() {
                   type="text"
                   placeholder=""
                   value={cnpj}
-                  onChange={e => setCnpj(formatCnpj(e.target.value))}
+                  onChange={e => handleInputChange('cnpj', e.target.value)}
                   className="h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                 />
               </div>
@@ -264,14 +327,7 @@ export default function ClienteCadastroPage() {
                 disabled={loading}
                 className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold mt-2"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Criando conta...
-                  </>
-                ) : (
-                  'Criar Conta'
-                )}
+                {buttonContent}
               </Button>
             </form>
 
@@ -295,4 +351,6 @@ export default function ClienteCadastroPage() {
       </div>
     </div>
   )
-}
+})
+
+export default ClienteCadastroPageComponent

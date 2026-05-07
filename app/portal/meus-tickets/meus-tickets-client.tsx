@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -43,6 +43,50 @@ interface TicketRow {
 const CODIGOS_ABERTOS = ["aberto", "em_andamento", "aguardando"];
 const CODIGOS_FECHADOS = ["finalizado", "cancelado"];
 
+// Estilos estáticos para evitar recriação
+const ESTILOS = {
+  container: { minHeight: "calc(100vh - 56px)" },
+  toolbar: {
+    padding: "12px 20px",
+    borderBottom: "1px solid #e5e7eb",
+    backgroundColor: "#ffffff",
+  },
+  botaoNovo: { padding: "8px 14px", minWidth: 180 },
+  iconNovo: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  textoNovo: { fontSize: 12, fontWeight: 600, lineHeight: 1.3 },
+  subtextoNovo: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.7)",
+    lineHeight: 1.2,
+  },
+  busca: { minWidth: 200, maxWidth: 360 },
+  iconBusca: { left: 10, width: 13, height: 13, color: "#9ca3af" },
+  inputBusca: { fontSize: 13 },
+  headerTabela: {
+    borderBottom: "1px solid #e5e7eb",
+    backgroundColor: "#f9fafb",
+  },
+  thTabela: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: "#9ca3af",
+    padding: "8px 16px",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.06em",
+  },
+  tdPadding: { padding: "10px 16px" },
+  numeroTicket: { fontSize: 13, fontWeight: 700, color: "#111827" },
+  tituloTicket: { fontSize: 13, fontWeight: 500, color: "#111827" },
+  operador: { fontSize: 12, fontWeight: 600, color: "#374151", textTransform: "uppercase" as const },
+  operadorVazio: { color: "#d1d5db", fontWeight: 400, textTransform: "none" as const },
+  dataTexto: { fontSize: 11, color: "#6b7280" },
+};
+
 interface ClienteOpcao {
   id: string;
   nome_razao: string;
@@ -71,10 +115,37 @@ function tempoRelativo(data: string): string {
   return `${diffMin} min`;
 }
 
+// Cache para formatação de datas - evita recálculos
+const dataCache = new Map<string, string>();
+const tempoRelativoCache = new Map<string, { valor: string; timestamp: number }>();
+
+function formatarDataMemoizada(data: string): string {
+  const key = data;
+  if (!dataCache.has(key)) {
+    dataCache.set(key, format(new Date(data), "dd/MM/yyyy HH:mm", { locale: ptBR }));
+  }
+  return dataCache.get(key)!;
+}
+
+function tempoRelativoMemoizado(data: string): string {
+  const key = data;
+  const agora = Date.now();
+  const cached = tempoRelativoCache.get(key);
+
+  // Cache válido por 1 minuto
+  if (cached && agora - cached.timestamp < 60000) {
+    return cached.valor;
+  }
+
+  const valor = tempoRelativo(data);
+  tempoRelativoCache.set(key, { valor, timestamp: agora });
+  return valor;
+}
+
 /* ------------------------------------------------------------------ */
 /* Componente                                                           */
 /* ------------------------------------------------------------------ */
-export function MeusTicketsClient() {
+export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
   const router = useRouter();
   const editorRef = useRef<RichTextEditorRef>(null);
 
@@ -83,6 +154,8 @@ export function MeusTicketsClient() {
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [aba, setAba] = useState<"abertos" | "fechados">("abertos");
+  const loadingRef = useRef(false); // Ref para evitar race conditions
+  const [primeiroCarregamento, setPrimeiroCarregamento] = useState(true);
 
   /* dialog novo ticket */
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -99,22 +172,66 @@ export function MeusTicketsClient() {
 
   /* carregar tickets */
   const carregar = useCallback(async () => {
+    // Evitar loading desnecessário se já está carregando
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
+
+    let isMounted = true; // Flag para verificar se componente ainda está montado
+
     try {
       const params = new URLSearchParams({ pageSize: "200" });
       const res = await fetch(`/api/tickets?${params}`);
+
+      // Só processa se o componente ainda estiver montado
+      if (!isMounted) return;
+
       const data = await res.json();
       const lista = (data.data ?? []) as TicketRow[];
       lista.sort((a, b) => Number(b.numero) - Number(a.numero));
       setTickets(lista);
+      if (primeiroCarregamento) {
+        setPrimeiroCarregamento(false);
+      }
+    } catch (error) {
+      console.error('[MeusTickets] Erro ao carregar tickets:', error);
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
+      loadingRef.current = false;
     }
-  }, []);
+
+    // Cleanup function disponível no escopo
+    carregar.cleanup = () => {
+      isMounted = false;
+    };
+  }, [primeiroCarregamento]);
 
   useEffect(() => {
     carregar();
-  }, [carregar]);
+
+    // Cleanup quando componente for desmontado
+    return () => {
+      if (carregar.cleanup) {
+        carregar.cleanup();
+      }
+      loadingRef.current = false;
+    };
+  }, []); // Sem dependências - carrega apenas uma vez no mount
+
+  // Cleanup geral quando componente for desmontado
+  useEffect(() => {
+    return () => {
+      // Reset todos os states para valores iniciais
+      setLoading(false);
+      setTickets([]);
+      setMensagemSelecionada(null);
+      setNovaMensagem("");
+      setEnviandoMensagem(false);
+      loadingRef.current = false;
+    };
+  }, []);
 
   /* filtros client-side — memoizados para evitar recálculo a cada render */
   const { ticketsFiltrados, totalAbertos, totalFechados } = useMemo(() => {
@@ -516,7 +633,7 @@ export function MeusTicketsClient() {
 
             {/* Tabela */}
             <div className="flex-1 overflow-auto bg-gray-50">
-              {loading ? (
+              {loading && primeiroCarregamento ? (
                 <div className="flex justify-center items-center h-full py-20">
                   <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                 </div>
@@ -631,9 +748,7 @@ export function MeusTicketsClient() {
                           style={{ padding: "10px 16px" }}
                         >
                           <span style={{ fontSize: 11, color: "#6b7280" }}>
-                            {format(new Date(t.criado_em), "dd/MM/yyyy HH:mm", {
-                              locale: ptBR,
-                            })}
+                            {formatarDataMemoizada(t.criado_em)}
                           </span>
                         </td>
                         <td
@@ -641,7 +756,7 @@ export function MeusTicketsClient() {
                           style={{ padding: "10px 16px" }}
                         >
                           <span style={{ fontSize: 11, color: "#6b7280" }}>
-                            {tempoRelativo(t.atualizado_em)}
+                            {tempoRelativoMemoizado(t.atualizado_em)}
                           </span>
                         </td>
                         <td
@@ -684,4 +799,4 @@ export function MeusTicketsClient() {
       </div>
     </>
   );
-}
+});

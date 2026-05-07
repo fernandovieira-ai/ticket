@@ -1,9 +1,8 @@
-import { Suspense } from "react";
-import { TicketsServer } from "./tickets-server";
-
-export default function TicketsPage() {
+// Loading específico para a página de tickets - mais rápido que Suspense
+export default function TicketsLoading() {
   return (
     <div className="h-full">
+      {/* Header estático - sem loading */}
       <div
         className="-mx-6 -mt-6 mb-0"
         style={{
@@ -33,22 +32,20 @@ export default function TicketsPage() {
           Gerencie todos os chamados de suporte
         </p>
       </div>
-      <div className="h-[calc(100vh-10rem)]">
-        <Suspense
-          fallback={
-            <div
-              style={{
-                color: "var(--color-text-muted)",
-                fontSize: 13,
-                padding: 24,
-              }}
-            >
-              Carregando...
-            </div>
-          }
-        >
-          <TicketsServer />
-        </Suspense>
+
+      {/* Skeleton otimizado - mais rápido de renderizar */}
+      <div className="p-6 space-y-4">
+        <div className="flex gap-4">
+          <div className="h-10 w-64 bg-gray-100 rounded animate-pulse" />
+          <div className="h-10 w-32 bg-gray-100 rounded animate-pulse" />
+        </div>
+
+        {/* Skeleton mais leve - menos elementos */}
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 bg-gray-50 border rounded animate-pulse" />
+          ))}
+        </div>
       </div>
     </div>
   );

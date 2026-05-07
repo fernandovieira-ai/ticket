@@ -244,6 +244,13 @@ const formVazio: {
 
 interface TicketsClientProps {
   statusCodigo?: string;
+  ticketsIniciais?: { data: TicketRow[]; total: number };
+  opcoesPadrao?: {
+    status: any[];
+    prioridades: any[];
+    usuarios: any[];
+  };
+  session?: any;
 }
 
 // Componente memoizado para linha da tabela
@@ -475,18 +482,23 @@ const TicketTableRow = React.memo(function TicketTableRow({
   );
 });
 
-export const TicketsClient = React.memo(function TicketsClient({ statusCodigo }: TicketsClientProps = {}) {
+export const TicketsClient = React.memo(function TicketsClient({
+  statusCodigo,
+  ticketsIniciais,
+  opcoesPadrao,
+  session,
+}: TicketsClientProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const meus = searchParams.get("meus") === "1";
   const fila = searchParams.get("fila") === "1";
   const novo = searchParams.get("novo") === "1";
-  const [tickets, setTickets] = useState<TicketRow[]>([]);
-  const [total, setTotal] = useState(0);
+  const [tickets, setTickets] = useState<TicketRow[]>(ticketsIniciais?.data || []);
+  const [total, setTotal] = useState(ticketsIniciais?.total || 0);
   const [primeiroCarregamento, setPrimeiroCarregamento] = useState(true);
   const [busca, setBusca] = useState("");
   const [situacaoMeus, setSituacaoMeus] = useState("aberto");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!ticketsIniciais?.data?.length);
   const primeiroRender = useRef(true);
   const loadingRef = useRef(false); // Ref para evitar race conditions
 

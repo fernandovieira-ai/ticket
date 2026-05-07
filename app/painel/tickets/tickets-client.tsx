@@ -630,11 +630,6 @@ export const TicketsClient = React.memo(function TicketsClient({ statusCodigo }:
       }
       loadingRef.current = false;
     }
-
-    // Cleanup function disponível no escopo
-    carregar.cleanup = () => {
-      isMounted = false;
-    };
   }, [busca, statusCodigo, meus, fila, situacaoMeus, primeiroCarregamento]);
 
   useEffect(() => {

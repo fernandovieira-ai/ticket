@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const ticketDir = join(process.cwd(), "public", "uploads", "tickets", ticketId);
+    // Usa volume persistente no Railway ou public local
+    const ticketDir = process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "tickets", ticketId)
+      : join(process.cwd(), "public", "uploads", "tickets", ticketId);
     console.log("[DEBUG] Verificando diretório:", ticketDir);
 
     const files = await readdir(ticketDir).catch(() => []);

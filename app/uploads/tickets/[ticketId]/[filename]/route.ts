@@ -65,14 +65,10 @@ export async function GET(
     return new NextResponse("Tipo de arquivo não permitido", { status: 403 });
   }
 
-  const filePath = join(
-    process.cwd(),
-    "public",
-    "uploads",
-    "tickets",
-    safeTicketId,
-    safeFilename,
-  );
+  // Usa volume persistente no Railway ou public local
+  const filePath = process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "tickets", safeTicketId, safeFilename)
+    : join(process.cwd(), "public", "uploads", "tickets", safeTicketId, safeFilename);
   console.log('[ATTACHMENT] FilePath:', filePath);
 
   try {

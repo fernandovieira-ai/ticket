@@ -194,13 +194,10 @@ export async function POST(
     }
 
     const files = formData.getAll("arquivos") as File[];
-    const uploadDir = path.join(
-      process.cwd(),
-      "public",
-      "uploads",
-      "tickets",
-      id,
-    );
+    // Usa volume persistente no Railway ou public local
+    const uploadDir = process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "tickets", id)
+      : path.join(process.cwd(), "public", "uploads", "tickets", id);
     await mkdir(uploadDir, { recursive: true });
 
     for (const file of files) {

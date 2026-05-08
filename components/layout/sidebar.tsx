@@ -225,14 +225,16 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeMenu, setActiveMenu] = useState<string | null>(() => {
-    // Inicializar estado a partir do localStorage se disponível
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem("sidebar_active");
-    }
-    return null;
-  });
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
+
+  // Carregar estado do localStorage após hidratação
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar_active");
+    if (saved) {
+      setActiveMenu(saved);
+    }
+  }, []);
 
   const toggleMenu = useCallback((id: string) => {
     const next = activeMenu === id ? null : id;

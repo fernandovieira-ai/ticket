@@ -241,42 +241,75 @@ export default function TicketPainelPage() {
     carregar();
   }, [carregar]);
 
-  // Carrega todas as opções estáticas em paralelo — um único useEffect elimina a cascata
   useEffect(() => {
-    async function carregarOpcoes() {
-      const [resS, resP, resMe, resU, resD, resC] = await Promise.all([
-        fetch("/api/ticket-status"),
-        fetch("/api/ticket-prioridades"),
-        fetch("/api/auth/me"),
-        fetch("/api/usuarios?pageSize=100"),
-        fetch("/api/departamentos?pageSize=100"),
-        fetch("/api/categorias?pageSize=100"),
-      ]);
-      if (resS.ok) setStatusOpcoes(await resS.json());
-      if (resP.ok) setPrioridadeOpcoes(await resP.json());
-      if (resMe.ok) {
-        const d = await resMe.json();
-        setPerfilUsuario(d.perfil ?? null);
-      }
-      if (resU.ok) {
-        const data = await resU.json();
-        setUsuarios(
-          (data.data ?? []).filter(
-            (u: UsuarioOpcao) => u.perfil !== "cliente" && u.ativo !== false,
-          ),
-        );
-      }
-      if (resD.ok) {
-        const data = await resD.json();
-        setDepartamentos(data.data ?? []);
-      }
-      if (resC.ok) {
-        const data = await resC.json();
-        setCategorias(data.data ?? []);
-      }
-    }
-    carregarOpcoes();
+    if (!ticket?.cliente_id) return;
+    fetch(`/api/clientes/${ticket.cliente_id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d)
+          setClienteDetalhe({
+            email: d.email,
+            telefone: d.telefone,
+            documento: d.documento,
+            segmento: d.segmento,
+          });
+      })
+      .catch(() => {});
+  }, [ticket?.cliente_id]);
+
+  // Carrega perfil do usuário (essencial)
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setPerfilUsuario(data.perfil ?? null);
+      })
+      .catch(() => {});
   }, []);
+
+  // Carrega opções sob demanda quando necessário
+  const carregarOpcoesStatusPrioridade = useCallback(async () => {
+    if (statusOpcoes.length > 0 && prioridadeOpcoes.length > 0) return;
+
+    const [resS, resP] = await Promise.all([
+      fetch("/api/ticket-status"),
+      fetch("/api/ticket-prioridades"),
+    ]);
+    if (resS.ok && statusOpcoes.length === 0) setStatusOpcoes(await resS.json());
+    if (resP.ok && prioridadeOpcoes.length === 0) setPrioridadeOpcoes(await resP.json());
+  }, [statusOpcoes.length, prioridadeOpcoes.length]);
+
+  const carregarUsuariosEDepartamentos = useCallback(async () => {
+    if (usuarios.length > 0 && departamentos.length > 0) return;
+
+    const [resU, resD] = await Promise.all([
+      fetch("/api/usuarios?pageSize=100"),
+      fetch("/api/departamentos?pageSize=100"),
+    ]);
+
+    if (resU.ok && usuarios.length === 0) {
+      const data = await resU.json();
+      setUsuarios(
+        (data.data ?? []).filter(
+          (u: UsuarioOpcao) => u.perfil !== "cliente" && u.ativo !== false,
+        ),
+      );
+    }
+    if (resD.ok && departamentos.length === 0) {
+      const data = await resD.json();
+      setDepartamentos(data.data ?? []);
+    }
+  }, [usuarios.length, departamentos.length]);
+
+  const carregarCategorias = useCallback(async () => {
+    if (categorias.length > 0) return;
+
+    const res = await fetch("/api/categorias?pageSize=100");
+    if (res.ok) {
+      const data = await res.json();
+      setCategorias(data.data ?? []);
+    }
+  }, [categorias.length]);
 
   // Carrega subcategorias ao mudar categoria no modal de edição
   useEffect(() => {
@@ -292,6 +325,11 @@ export default function TicketPainelPage() {
 
   function abrirModalEditar() {
     if (!ticket) return;
+    // Carrega opções necessárias para edição
+    carregarUsuariosEDepartamentos();
+    carregarCategorias();
+    carregarOpcoesStatusPrioridade();
+
     setEditarTitulo(ticket.titulo);
     setEditarDepartamentoId(ticket.departamento_id ?? "");
     setEditarCategoriaId(ticket.categoria_id ?? "");
@@ -382,21 +420,6 @@ export default function TicketPainelPage() {
     if (ticket?.canal === "whatsapp") setEnviarViaWhatsapp(true);
   }, [ticket?.canal]);
 
-  useEffect(() => {
-    if (!ticket?.cliente_id) return;
-    fetch(`/api/clientes/${ticket.cliente_id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d)
-          setClienteDetalhe({
-            email: d.email,
-            telefone: d.telefone,
-            documento: d.documento,
-            segmento: d.segmento,
-          });
-      })
-      .catch(() => {});
-  }, [ticket?.cliente_id]);
 
   async function transferirTicket() {
     setTransferindo(true);
@@ -672,6 +695,7 @@ export default function TicketPainelPage() {
               <button
                 type="button"
                 onClick={() => {
+                  carregarUsuariosEDepartamentos();
                   setTransferirTipo("atendente");
                   setTransferirAtendente(ticket.atribuido_a ?? "");
                   setTransferirDepartamento(ticket.departamento_id ?? "");
@@ -928,6 +952,13 @@ export default function TicketPainelPage() {
                   <Link
                     href={`/painel/clientes/${ticket.cliente_id}`}
                     className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                    onMouseEnter={() => {
+                      // Prefetch dados do cliente no hover
+                      if (ticket.cliente_id) {
+                        fetch(`/api/clientes/${ticket.cliente_id}`, { priority: 'high' as any }).catch(() => {});
+                        fetch(`/api/clientes/${ticket.cliente_id}/contatos`, { priority: 'high' as any }).catch(() => {});
+                      }
+                    }}
                   >
                     {ticket.cliente_nome ?? "—"}
                   </Link>
@@ -985,7 +1016,10 @@ export default function TicketPainelPage() {
                 <p className="text-[11px] text-gray-400 mb-0.5">Status</p>
                 <button
                   type="button"
-                  onClick={() => setStatusAberto(true)}
+                  onClick={() => {
+                    carregarOpcoesStatusPrioridade();
+                    setStatusAberto(true);
+                  }}
                   className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity"
                   style={{
                     color: ticket.status_cor,
@@ -1004,7 +1038,10 @@ export default function TicketPainelPage() {
                 <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
                 <button
                   type="button"
-                  onClick={() => setPrioridadeAberta(true)}
+                  onClick={() => {
+                    carregarOpcoesStatusPrioridade();
+                    setPrioridadeAberta(true);
+                  }}
                   className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity"
                   style={{
                     color: ticket.prioridade_cor,

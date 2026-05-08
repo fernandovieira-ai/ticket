@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Users,
@@ -224,16 +224,17 @@ interface SidebarProps {
 export function Sidebar({ perfil, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const router = useRouter();
+  const [activeMenu, setActiveMenu] = useState<string | null>(() => {
+    // Inicializar estado a partir do localStorage se disponível
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem("sidebar_active");
+    }
+    return null;
+  });
   const [logoError, setLogoError] = useState(false);
 
-  // Persistir estado no localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("sidebar_active");
-    if (saved) setActiveMenu(saved);
-  }, []);
-
-  function toggleMenu(id: string) {
+  const toggleMenu = useCallback((id: string) => {
     const next = activeMenu === id ? null : id;
     setActiveMenu(next);
     if (next) {
@@ -241,14 +242,36 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
     } else {
       localStorage.removeItem("sidebar_active");
     }
-  }
+  }, [activeMenu]);
 
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+    } catch (error) {
+      // Fallback se o fetch falhar
+      window.location.href = "/login";
+    }
+  }, [router]);
 
-  const isAdmin = ["admin", "supervisor"].includes(perfil);
+  const clearActiveMenu = useCallback(() => {
+    setActiveMenu(null);
+    localStorage.removeItem("sidebar_active");
+  }, []);
+
+  const isAdmin = useMemo(() => ["admin", "supervisor"].includes(perfil), [perfil]);
+
+  // Memoizar filtro de menu para evitar recálculos
+  const filteredMenu = useMemo(() => {
+    return MENU.filter(item => !item.adminOnly || isAdmin);
+  }, [isAdmin]);
+
+  // Memoizar cálculo de path ativo
+  const activePathInfo = useMemo(() => {
+    const currentSearch = searchParams.toString();
+    const currentFull = currentSearch ? `${pathname}?${currentSearch}` : pathname;
+    return { currentFull, pathname };
+  }, [pathname, searchParams]);
 
   return (
     <div className="flex h-full">
@@ -309,10 +332,8 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
           <Link
             href="/painel/dashboard"
             title="Dashboard"
-            onClick={() => {
-              setActiveMenu(null);
-              localStorage.removeItem("sidebar_active");
-            }}
+            onClick={clearActiveMenu}
+            prefetch
             className={cn(
               "sidebar-menu-btn w-full flex flex-col items-center justify-center py-2 rounded-lg",
               pathname === "/painel/dashboard" && "active",
@@ -331,11 +352,10 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
             </span>
           </Link>
 
-          {MENU.map((item) => {
-            if (item.adminOnly && !isAdmin) return null;
+          {filteredMenu.map((item) => {
             const isActive = activeMenu === item.id;
             const hasActivePath = item.items.some(
-              (sub) => sub.href && pathname.startsWith(sub.href.split("?")[0]),
+              (sub) => sub.href && activePathInfo.pathname.startsWith(sub.href.split("?")[0]),
             );
 
             return (
@@ -421,9 +441,8 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
           </div>
         </div>
 
-        {MENU.map((item) => {
+        {filteredMenu.map((item) => {
           if (item.id !== activeMenu) return null;
-          if (item.adminOnly && !isAdmin) return null;
 
           return (
             <div key={item.id} className="py-3">
@@ -458,15 +477,12 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                     </p>
                   );
                 }
-                const currentSearch = searchParams.toString();
-                const currentFull = currentSearch
-                  ? `${pathname}?${currentSearch}`
-                  : pathname;
-                const isActive = sub.href && currentFull === sub.href;
+                const isActive = sub.href && activePathInfo.currentFull === sub.href;
                 return (
                   <Link
                     key={sub.href}
                     href={sub.href}
+                    prefetch
                     className={cn(
                       "sidebar-submenu-link flex items-center gap-2 transition-colors",
                       isActive && "active",

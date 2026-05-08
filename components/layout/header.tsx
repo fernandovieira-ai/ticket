@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Bell } from "lucide-react";
 
@@ -11,17 +13,26 @@ interface HeaderProps {
 }
 
 export function Header({ nome, avatarUrl }: HeaderProps) {
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
+  const router = useRouter();
 
-  const initials = nome
-    .split(" ")
-    .slice(0, 2)
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+    } catch (error) {
+      // Fallback se o fetch falhar
+      window.location.href = "/login";
+    }
+  }, [router]);
+
+  const initials = useMemo(() => {
+    return nome
+      .split(" ")
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
+  }, [nome]);
 
   return (
     <header

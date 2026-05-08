@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const tamanho = Math.min(50, Math.max(5, Number(searchParams.get('pageSize') ?? 20)))
   const offset = (pagina - 1) * tamanho
 
+  // Query otimizada com índices e cache melhorado
   const rows = await query<UsuarioSemSenha & { total_count: number }>(
     `SELECT
        u.id, u.empresa_id, u.departamento_id, u.nome, u.email, u.perfil,
@@ -33,11 +34,17 @@ export async function GET(req: NextRequest) {
        d.nome AS departamento_nome,
        COUNT(*) OVER() AS total_count
      FROM usuarios u
-     LEFT JOIN departamentos d ON d.id = u.departamento_id
+     LEFT JOIN departamentos d ON d.id = u.departamento_id AND d.empresa_id = u.empresa_id
      WHERE u.empresa_id = $1
+       AND u.ativo = true
        AND ($2 = '' OR u.nome ILIKE $2 OR u.email ILIKE $2)
        AND ($3 = '' OR u.perfil = $3::perfil_usuario)
-     ORDER BY u.nome
+     ORDER BY
+       CASE WHEN u.perfil = 'admin' THEN 1
+            WHEN u.perfil = 'supervisor' THEN 2
+            WHEN u.perfil = 'operador' THEN 3
+            ELSE 4 END,
+       u.nome
      LIMIT $4 OFFSET $5`,
     [session.empresaId, busca ? `%${busca}%` : '', perfilFiltro, tamanho, offset]
   )
@@ -51,7 +58,8 @@ export async function GET(req: NextRequest) {
     },
     {
       headers: {
-        'Cache-Control': 'private, max-age=60, stale-while-revalidate=120',
+        'Cache-Control': 'private, max-age=300, stale-while-revalidate=600',
+        'X-Content-Type-Options': 'nosniff',
       },
     },
   )

@@ -66,14 +66,22 @@ export async function POST(
   if (files.length === 0)
     return NextResponse.json({ error: "Nenhum arquivo enviado" }, { status: 400 });
 
-  const uploadDir = path.join(
-    process.cwd(),
-    "public",
-    "uploads",
-    "tickets",
-    id,
-  );
-  await mkdir(uploadDir, { recursive: true });
+  // Usa volume persistente no Railway ou public local
+  const uploadDir = process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "tickets", id)
+    : path.join(process.cwd(), "public", "uploads", "tickets", id);
+
+  // Criar diretório com tratamento de erro
+  try {
+    await mkdir(uploadDir, { recursive: true });
+    console.log(`[UPLOAD-TICKET] Diretório criado/verificado: ${uploadDir}`);
+  } catch (error) {
+    console.error(`[UPLOAD-TICKET] Erro ao criar diretório ${uploadDir}:`, error);
+    return NextResponse.json(
+      { error: "Erro ao preparar diretório de upload" },
+      { status: 500 }
+    );
+  }
 
   const salvos: Array<{
     id: string;
@@ -90,7 +98,10 @@ export async function POST(
     const ext = path.extname(file.name).replace(/[^a-zA-Z0-9.]/g, "");
     const safeName = `${randomUUID()}${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(uploadDir, safeName), buffer);
+    const filePath = path.join(uploadDir, safeName);
+
+    await writeFile(filePath, buffer);
+    console.log(`[UPLOAD-TICKET] Arquivo salvo: ${file.name} -> ${safeName} (${file.size} bytes)`);
 
     const url = `/uploads/tickets/${id}/${safeName}`;
     const [row] = await query<{ id: string }>(

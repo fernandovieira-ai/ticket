@@ -75,6 +75,25 @@ export function ClientesClient() {
   const [erro, setErro] = useState("");
   const [form, setForm] = useState(formVazio);
 
+  // Cache para prefetch - evita requests duplicados
+  const prefetchedClientes = useRef(new Set<string>());
+
+  // Prefetch dados do cliente para melhorar performance de navegação
+  const prefetchCliente = useCallback((clienteId: string) => {
+    if (prefetchedClientes.current.has(clienteId)) return;
+
+    prefetchedClientes.current.add(clienteId);
+
+    // Prefetch dados do cliente em background
+    Promise.all([
+      fetch(`/api/clientes/${clienteId}`, { priority: 'high' as any }),
+      fetch(`/api/clientes/${clienteId}/contatos`, { priority: 'high' as any }),
+    ]).catch(() => {
+      // Remove do cache se falhou para tentar novamente
+      prefetchedClientes.current.delete(clienteId);
+    });
+  }, []);
+
   function handleDocumentoChange(value: string) {
     const digits = value.replace(/\D/g, "").slice(0, 14);
     let novoTipo: Tipo = form.tipo;

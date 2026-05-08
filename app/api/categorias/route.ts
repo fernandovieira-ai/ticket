@@ -47,12 +47,19 @@ export async function GET(req: NextRequest) {
   );
 
   const total = rows[0]?.total ?? 0;
-  return NextResponse.json({
-    data: rows,
-    total: Number(total),
-    page,
-    pageSize,
-  });
+  return NextResponse.json(
+    {
+      data: rows,
+      total: Number(total),
+      page,
+      pageSize,
+    },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=120, stale-while-revalidate=300",
+      },
+    },
+  );
 }
 
 const createSchema = z.object({

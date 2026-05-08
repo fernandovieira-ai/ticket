@@ -546,6 +546,30 @@ export const TicketsClient = React.memo(function TicketsClient({
   const clienteRef = useRef<HTMLDivElement>(null);
   const solicitanteRef = useRef<HTMLDivElement>(null);
 
+  // Cache para prefetch - evita requests duplicados
+  const prefetchedTickets = useRef(new Set<string>());
+
+  // Prefetch dados do ticket para melhorar performance de navegação
+  const prefetchTicket = useCallback((ticketId: string) => {
+    if (prefetchedTickets.current.has(ticketId)) return;
+
+    prefetchedTickets.current.add(ticketId);
+
+    // Prefetch dados principais do ticket em background
+    Promise.all([
+      fetch(`/api/tickets/${ticketId}`, { priority: 'high' as any }),
+      fetch(`/api/tickets/${ticketId}/mensagens`, { priority: 'high' as any }),
+      // Prefetch opções estáticas se ainda não carregadas
+      fetch('/api/ticket-status'),
+      fetch('/api/ticket-prioridades'),
+      fetch('/api/usuarios?pageSize=100'),
+      fetch('/api/departamentos?pageSize=100'),
+    ]).catch(() => {
+      // Remove do cache se falhou para tentar novamente
+      prefetchedTickets.current.delete(ticketId);
+    });
+  }, []);
+
   // Click-outside para solicitante
   const fecharSolicitante = useCallback(
     () => setSolicitanteModalAberto(false),
@@ -1105,7 +1129,10 @@ export const TicketsClient = React.memo(function TicketsClient({
             ticketsOtimizados.map((t) => (
               <button
                 key={t.id}
-                onClick={() => router.push(`/painel/tickets/${t.id}`)}
+                onClick={() => {
+                  prefetchTicket(t.id);
+                  router.push(`/painel/tickets/${t.id}`);
+                }}
                 className="tickets-row-compact w-full flex items-start gap-3 text-left group"
                 style={{
                   padding: "10px 16px",
@@ -1238,7 +1265,10 @@ export const TicketsClient = React.memo(function TicketsClient({
                   <TicketTableRow
                     key={t.id}
                     ticket={t}
-                    onClick={() => router.push(`/painel/tickets/${t.id}`)}
+                    onClick={() => {
+                      prefetchTicket(t.id);
+                      router.push(`/painel/tickets/${t.id}`);
+                    }}
                   />
                 ))}
               </tbody>

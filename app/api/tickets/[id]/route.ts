@@ -20,7 +20,7 @@ const atualizarTicketSchema = z.object({
 
 // GET /api/tickets/[id]
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await getSession();
@@ -28,6 +28,9 @@ export async function GET(
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   const { id } = await params;
+  const { searchParams } = req.nextUrl;
+  const includeMessages = searchParams.get("includeMessages") === "true";
+  const includeClient = searchParams.get("includeClient") === "true";
 
   const ticket = await queryOne<{
     id: string;
@@ -69,7 +72,7 @@ export async function GET(
        t.aberto_por, uab.nome AS aberto_por_nome,
        t.departamento_id, d.nome AS departamento_nome,
        t.categoria_id, cat.nome AS categoria_nome,
-       t.subcategoria_id, sub.nome AS subcategoria_nome,
+       t.subcategoria_id, NULL AS subcategoria_nome,
        t.criado_em, t.atualizado_em,
        t.sla_primeira_resp_deadline, t.sla_resolucao_deadline, tp.sla_alerta_pct
      FROM tickets t
@@ -80,7 +83,6 @@ export async function GET(
      JOIN usuarios uab ON uab.id = t.aberto_por
      LEFT JOIN departamentos d ON d.id = t.departamento_id
      LEFT JOIN categorias cat ON cat.id = t.categoria_id
-     LEFT JOIN subcategorias sub ON sub.id = t.subcategoria_id
      WHERE t.id = $1`,
     [id],
   );
@@ -98,7 +100,88 @@ export async function GET(
     }
   }
 
-  return NextResponse.json(ticket);
+  // Preparar resposta otimizada
+  const response: any = { ...ticket };
+
+  // Incluir mensagens se solicitado
+  if (includeMessages) {
+    const mensagens = await query<{
+      id: string;
+      corpo: string;
+      interna: boolean;
+      criado_em: Date;
+      autor_id: string;
+      autor_nome: string;
+      autor_perfil: string;
+      autor_avatar: string | null;
+    }>(
+      `SELECT m.id, m.corpo, m.interna, m.criado_em,
+              u.id as autor_id, u.nome as autor_nome, u.perfil as autor_perfil, u.avatar_url as autor_avatar
+       FROM mensagens m
+       JOIN usuarios u ON u.id = m.autor_id
+       WHERE m.ticket_id = $1
+         AND m.empresa_id = $2
+       ORDER BY m.criado_em ASC`,
+      [id, session.empresaId]
+    );
+
+    // Buscar anexos para todas as mensagens em uma query (apenas se há mensagens)
+    const anexos = mensagens.length > 0 ? await query<{
+      id: string;
+      mensagem_id: string;
+      nome: string;
+      url: string;
+      tamanho: number | null;
+      mime_type: string | null;
+    }>(
+      `SELECT id, mensagem_id, nome, url, tamanho, mime_type
+       FROM anexos
+       WHERE mensagem_id = ANY($1::uuid[])`,
+      [mensagens.map(m => m.id)]
+    ) : [];
+
+    // Agrupar anexos por mensagem
+    const anexosPorMensagem = anexos.reduce((acc, anexo) => {
+      if (!acc[anexo.mensagem_id]) acc[anexo.mensagem_id] = [];
+      acc[anexo.mensagem_id].push({
+        id: anexo.id,
+        nome: anexo.nome,
+        url: anexo.url,
+        tamanho: anexo.tamanho,
+        mime_type: anexo.mime_type,
+      });
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    // Adicionar anexos às mensagens
+    response.mensagens = mensagens.map(m => ({
+      ...m,
+      anexos: anexosPorMensagem[m.id] || [],
+    }));
+  }
+
+  // Incluir dados do cliente se solicitado
+  if (includeClient && ticket.cliente_id) {
+    const cliente = await queryOne<{
+      email: string | null;
+      telefone: string | null;
+      documento: string | null;
+      segmento: string | null;
+    }>(
+      `SELECT email, telefone, documento, segmento
+       FROM clientes
+       WHERE id = $1 AND empresa_id = $2`,
+      [ticket.cliente_id, session.empresaId]
+    );
+    if (cliente) {
+      response.cliente_detalhe = cliente;
+    }
+  }
+
+  // Adicionar cache headers para melhor performance
+  const res = NextResponse.json(response);
+  res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+  return res;
 }
 
 // PATCH /api/tickets/[id]

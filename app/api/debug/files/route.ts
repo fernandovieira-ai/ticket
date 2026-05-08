@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[DEBUG] Erro:", error);
     return NextResponse.json({
-      error: error.message,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
       ticketId,
       cwd: process.cwd()
     });

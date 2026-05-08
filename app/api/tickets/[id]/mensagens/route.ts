@@ -198,7 +198,18 @@ export async function POST(
     const uploadDir = process.env.RAILWAY_VOLUME_MOUNT_PATH
       ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "tickets", id)
       : path.join(process.cwd(), "public", "uploads", "tickets", id);
-    await mkdir(uploadDir, { recursive: true });
+
+    // Criar diretório com tratamento de erro
+    try {
+      await mkdir(uploadDir, { recursive: true });
+      console.log(`[UPLOAD] Diretório criado/verificado: ${uploadDir}`);
+    } catch (error) {
+      console.error(`[UPLOAD] Erro ao criar diretório ${uploadDir}:`, error);
+      return NextResponse.json(
+        { error: "Erro ao preparar diretório de upload" },
+        { status: 500 }
+      );
+    }
 
     for (const file of files) {
       // Validações de segurança

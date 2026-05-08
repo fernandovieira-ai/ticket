@@ -75,16 +75,33 @@ export async function GET(
     await access(filePath);
     console.log('[ATTACHMENT] Arquivo acessível, lendo...');
     const file = await readFile(filePath);
-    console.log('[ATTACHMENT] Arquivo lido, tamanho:', file.length);
+    console.log('[ATTACHMENT] Arquivo lido com sucesso, tamanho:', file.length);
+
     return new NextResponse(file, {
       headers: {
         "Content-Type": mimeType,
         "Cache-Control": "private, max-age=3600",
         "Content-Disposition": `inline; filename="${safeFilename}"`,
+        "Content-Length": file.length.toString(),
+        // Headers de segurança
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY"
       },
     });
   } catch (error) {
-    console.log('[ATTACHMENT] Erro ao acessar arquivo:', error);
-    return new NextResponse("Not found", { status: 404 });
+    console.error('[ATTACHMENT] Erro detalhado:', {
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+      filePath,
+      ticketId: safeTicketId,
+      filename: safeFilename,
+      timestamp: new Date().toISOString()
+    });
+
+    return new NextResponse("Arquivo não encontrado", {
+      status: 404,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8"
+      }
+    });
   }
 }

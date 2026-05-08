@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Headphones, Loader2, Mail, Lock } from 'lucide-react'
+import { Headphones, Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 
 // Para trocar a imagem do portal do cliente, coloque: /public/login-bg-portal.jpg
 // Para trocar a imagem do painel admin, coloque: /public/login-bg.jpg
@@ -13,14 +13,41 @@ import { Headphones, Loader2, Mail, Lock } from 'lucide-react'
 const LOGIN_BG = '/api/assets/login-bg-portal.jpg'
 const LOGO = '/api/assets/logo.png'
 
+const LS_EMAIL = 'drfh_cliente_remember_email'
+const LS_PWD = 'drfh_cliente_remember_pwd'
+const LS_FLAG = 'drfh_cliente_remember'
+const LS_AUTO = 'drfh_cliente_connect_auto'
+
 export default function ClienteLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [connectAuto, setConnectAuto] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [bgError, setBgError] = useState(false)
   const [logoError, setLogoError] = useState(false)
+
+  // Carregar credenciais salvas ao montar o componente
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem(LS_FLAG)
+    if (saved === '1') {
+      setRememberMe(true)
+      const savedEmail = localStorage.getItem(LS_EMAIL) ?? ''
+      const savedPwd = atob(localStorage.getItem(LS_PWD) ?? '')
+      setEmail(savedEmail)
+      setPassword(savedPwd)
+    }
+
+    // Carregar conectar automatico
+    const savedAuto = localStorage.getItem(LS_AUTO)
+    if (savedAuto === '1') {
+      setConnectAuto(true)
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -31,7 +58,7 @@ export default function ClienteLoginPage() {
       const res = await fetch('/api/auth/cliente/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, connectAuto }),
       })
 
       const data = await res.json()
@@ -39,6 +66,24 @@ export default function ClienteLoginPage() {
       if (!res.ok) {
         setError(data.error ?? 'Erro ao fazer login')
         return
+      }
+
+      // Persiste ou limpa credenciais conforme a flag
+      if (rememberMe) {
+        localStorage.setItem(LS_FLAG, '1')
+        localStorage.setItem(LS_EMAIL, email)
+        localStorage.setItem(LS_PWD, btoa(password))
+      } else {
+        localStorage.removeItem(LS_FLAG)
+        localStorage.removeItem(LS_EMAIL)
+        localStorage.removeItem(LS_PWD)
+      }
+
+      // Persiste conectar automatico
+      if (connectAuto) {
+        localStorage.setItem(LS_AUTO, '1')
+      } else {
+        localStorage.removeItem(LS_AUTO)
       }
 
       router.push('/portal/meus-tickets')
@@ -127,16 +172,34 @@ export default function ClienteLoginPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Digite sua senha..."
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
                     autoComplete="current-password"
-                    className="pl-10 h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
+                    className="pl-10 pr-10 h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+                />
+                <span className="text-sm text-gray-500">Lembrar acesso</span>
+              </label>
 
               {error && (
                 <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -158,6 +221,18 @@ export default function ClienteLoginPage() {
                   'Entrar'
                 )}
               </Button>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none mt-3">
+                <input
+                  type="checkbox"
+                  checked={connectAuto}
+                  onChange={(e) => setConnectAuto(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+                />
+                <span className="text-sm text-gray-500">
+                  Conectar automaticamente
+                </span>
+              </label>
 
               <a
                 href="/cliente/cadastro"

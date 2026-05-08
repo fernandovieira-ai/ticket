@@ -8,6 +8,7 @@ import type { Usuario } from '@/types'
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  connectAuto: z.boolean().optional().default(false),
 })
 
 export async function POST(req: NextRequest) {
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   }
 
-  const { email, password } = parsed.data
+  const { email, password, connectAuto } = parsed.data
   const ip = req.headers.get('x-forwarded-for') ?? null
   const userAgent = req.headers.get('user-agent') ?? null
 
@@ -50,25 +51,35 @@ export async function POST(req: NextRequest) {
   if (!senhaCorreta) {
     const tentativas = usuario.tentativas_login + 1
     const bloqueadoAte = tentativas >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null
-    await query(
-      `UPDATE usuarios SET tentativas_login = $1, bloqueado_ate = $2 WHERE id = $3`,
-      [tentativas, bloqueadoAte, usuario.id]
-    )
-    await query(
-      `INSERT INTO log_acessos (usuario_id, ip, user_agent, sucesso) VALUES ($1, $2, $3, false)`,
-      [usuario.id, ip, userAgent]
-    )
+
+    // Executar queries de falha em paralelo
+    await Promise.all([
+      query(
+        `UPDATE usuarios SET tentativas_login = $1, bloqueado_ate = $2 WHERE id = $3`,
+        [tentativas, bloqueadoAte, usuario.id]
+      ),
+      query(
+        `INSERT INTO log_acessos (usuario_id, ip, user_agent, sucesso) VALUES ($1, $2, $3, false)`,
+        [usuario.id, ip, userAgent]
+      )
+    ])
     return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
   }
 
-  await query(
-    `UPDATE usuarios SET tentativas_login = 0, bloqueado_ate = NULL, ultimo_acesso = NOW() WHERE id = $1`,
-    [usuario.id]
-  )
-  await query(
-    `INSERT INTO log_acessos (usuario_id, ip, user_agent, sucesso) VALUES ($1, $2, $3, true)`,
-    [usuario.id, ip, userAgent]
-  )
+  // Executar queries de sucesso em paralelo (não esperar por elas para responder)
+  const updateQueries = Promise.all([
+    query(
+      `UPDATE usuarios SET tentativas_login = 0, bloqueado_ate = NULL, ultimo_acesso = NOW() WHERE id = $1`,
+      [usuario.id]
+    ),
+    query(
+      `INSERT INTO log_acessos (usuario_id, ip, user_agent, sucesso) VALUES ($1, $2, $3, true)`,
+      [usuario.id, ip, userAgent]
+    )
+  ])
+
+  // Não aguardar as queries de log para responder mais rápido
+  updateQueries.catch(err => console.error('[Login] Erro ao atualizar logs:', err))
 
   const payload = {
     sub: usuario.id,
@@ -85,8 +96,27 @@ export async function POST(req: NextRequest) {
     user: { id: usuario.id, nome: usuario.nome, email: usuario.email, perfil: usuario.perfil },
   })
 
-  response.cookies.set('access_token', accessToken, { httpOnly: true, path: '/', sameSite: 'lax', maxAge: 900 })
-  response.cookies.set('refresh_token', refreshToken, { httpOnly: true, path: '/', sameSite: 'lax', maxAge: 604800 })
+  // Adicionar headers de segurança e performance
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+
+  // Definir tempos de vida dos cookies baseado na opção "conectar automatico"
+  const accessTokenMaxAge = connectAuto ? 86400 : 900 // 24 horas ou 15 minutos
+  const refreshTokenMaxAge = connectAuto ? 2592000 : 604800 // 30 dias ou 7 dias
+
+  response.cookies.set('access_token', accessToken, {
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax',
+    maxAge: accessTokenMaxAge
+  })
+  response.cookies.set('refresh_token', refreshToken, {
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax',
+    maxAge: refreshTokenMaxAge
+  })
 
   return response
 }

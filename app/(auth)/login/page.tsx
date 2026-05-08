@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Headphones, Loader2, Mail, Lock } from "lucide-react";
+import { Headphones, Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 // Para trocar a imagem do painel esquerdo, substitua: /public/login-bg.jpg
 // Para trocar a logo, substitua: /public/logo.png
@@ -15,11 +15,13 @@ const LOGO = "/api/assets/logo.png";
 const LS_EMAIL = "drfh_remember_email";
 const LS_PWD = "drfh_remember_pwd";
 const LS_FLAG = "drfh_remember";
+const LS_AUTO = "drfh_connect_auto";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [connectAuto, setConnectAuto] = useState(false);
@@ -37,6 +39,12 @@ export default function LoginPage() {
       const savedPwd = atob(localStorage.getItem(LS_PWD) ?? "");
       setEmail(savedEmail);
       setPassword(savedPwd);
+    }
+
+    // Carrega conectar automatico
+    const savedAuto = localStorage.getItem(LS_AUTO);
+    if (savedAuto === "1") {
+      setConnectAuto(true);
     }
   }, []);
 
@@ -81,6 +89,13 @@ export default function LoginPage() {
         localStorage.removeItem(LS_FLAG);
         localStorage.removeItem(LS_EMAIL);
         localStorage.removeItem(LS_PWD);
+      }
+
+      // Persiste conectar automatico
+      if (connectAuto) {
+        localStorage.setItem(LS_AUTO, "1");
+      } else {
+        localStorage.removeItem(LS_AUTO);
       }
 
       router.push("/painel/dashboard");
@@ -174,14 +189,22 @@ export default function LoginPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Digite sua senha..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     autoComplete="current-password"
-                    className="pl-10 h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
+                    className="pl-10 pr-10 h-11 border-gray-200 bg-gray-50/50 focus:bg-white focus:border-blue-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

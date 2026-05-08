@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ClientDate } from "@/components/ui/client-date";
 import {
   ArrowLeft,
   Loader2,
@@ -751,9 +752,10 @@ export default function TicketPainelPage() {
                       <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
                         <span dangerouslySetInnerHTML={{ __html: m.corpo }} />
                         {" · "}
-                        {format(new Date(m.criado_em), "HH:mm", {
-                          locale: ptBR,
-                        })}
+                        <ClientDate
+                          date={m.criado_em}
+                          formatString="HH:mm"
+                        />
                       </span>
                       <div className="flex-1 h-px bg-gray-100" />
                     </div>
@@ -774,11 +776,10 @@ export default function TicketPainelPage() {
                           {m.autor_nome}
                         </span>
                         <span className="text-xs text-gray-400">
-                          {format(
-                            new Date(m.criado_em),
-                            "dd/MM/yyyy 'às' HH:mm",
-                            { locale: ptBR },
-                          )}
+                          <ClientDate
+                            date={m.criado_em}
+                            formatString="dd/MM/yyyy 'às' HH:mm"
+                          />
                           {isOperador && " · Atendente"}
                         </span>
                         {m.interna && (
@@ -1088,9 +1089,11 @@ export default function TicketPainelPage() {
               <div className="mt-3.5">
                 <p className="text-[11px] text-gray-400 mb-0.5">Aberto em</p>
                 <p className="text-sm text-gray-800">
-                  {format(new Date(ticket.criado_em), "dd/MM/yyyy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
+                  <ClientDate
+                    date={ticket.criado_em}
+                    formatString="dd/MM/yyyy 'às' HH:mm"
+                    fallback="Carregando..."
+                  />
                 </p>
               </div>
             </div>
@@ -1121,9 +1124,10 @@ export default function TicketPainelPage() {
                     </span>
                   </p>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    {format(new Date(ticket.criado_em), "HH:mm", {
-                      locale: ptBR,
-                    })}
+                    <ClientDate
+                      date={ticket.criado_em}
+                      formatString="HH:mm"
+                    />
                   </p>
                 </div>
               </div>

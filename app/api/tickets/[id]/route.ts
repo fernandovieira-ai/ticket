@@ -72,7 +72,7 @@ export async function GET(
        t.aberto_por, uab.nome AS aberto_por_nome,
        t.departamento_id, d.nome AS departamento_nome,
        t.categoria_id, cat.nome AS categoria_nome,
-       t.subcategoria_id, NULL AS subcategoria_nome,
+       t.subcategoria_id, subcat.nome AS subcategoria_nome,
        t.criado_em, t.atualizado_em,
        t.sla_primeira_resp_deadline, t.sla_resolucao_deadline, tp.sla_alerta_pct
      FROM tickets t
@@ -83,6 +83,7 @@ export async function GET(
      JOIN usuarios uab ON uab.id = t.aberto_por
      LEFT JOIN departamentos d ON d.id = t.departamento_id
      LEFT JOIN categorias cat ON cat.id = t.categoria_id
+     LEFT JOIN subcategorias subcat ON subcat.id = t.subcategoria_id
      WHERE t.id = $1`,
     [id],
   );

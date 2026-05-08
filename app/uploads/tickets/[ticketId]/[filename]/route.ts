@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFile, access } from "fs/promises";
 import { join, basename, extname } from "path";
 import { getSession } from "@/lib/auth";
-import { queryOne } from "@/lib/db";
 
 const MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -34,50 +33,35 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ ticketId: string; filename: string }> },
 ) {
+  console.log('[ATTACHMENT] Route acessada', new Date().toISOString());
+
   const session = await getSession();
+  console.log('[ATTACHMENT] Session:', session ? 'authenticated' : 'not authenticated');
+
   if (!session) {
+    console.log('[ATTACHMENT] Retornando 401 - não autenticado');
     return new NextResponse("Não autenticado", { status: 401 });
   }
 
   const { ticketId, filename } = await params;
-
-  console.log(`[Upload Route] Serving file: ${ticketId}/${filename} for user: ${session.sub}`);
+  console.log('[ATTACHMENT] Parâmetros:', { ticketId, filename });
 
   // Previne path traversal
   const safeTicketId = basename(ticketId);
   const safeFilename = basename(filename);
+  console.log('[ATTACHMENT] Safe params:', { safeTicketId, safeFilename });
 
   if (!safeTicketId || !safeFilename) {
-    console.log(`[Upload Route] Invalid ticketId or filename`);
+    console.log('[ATTACHMENT] Parâmetros inválidos, retornando 404');
     return new NextResponse("Not found", { status: 404 });
-  }
-
-  // Verificar se o usuário tem acesso ao ticket
-  try {
-    const ticket = await queryOne<{ id: string; aberto_por: string }>(
-      `SELECT id, aberto_por FROM tickets WHERE id = $1 AND empresa_id = $2`,
-      [safeTicketId, session.empresaId],
-    );
-
-    if (!ticket) {
-      console.log(`[Upload Route] Ticket not found or access denied: ${safeTicketId}`);
-      return new NextResponse("Ticket não encontrado", { status: 404 });
-    }
-
-    // Clientes só podem acessar anexos de tickets que eles mesmos abriram
-    if (session.perfil === "cliente" && ticket.aberto_por !== session.sub) {
-      console.log(`[Upload Route] Client access denied for ticket: ${safeTicketId}`);
-      return new NextResponse("Acesso negado", { status: 403 });
-    }
-  } catch (error) {
-    console.error(`[Upload Route] Database error:`, error);
-    return new NextResponse("Erro interno", { status: 500 });
   }
 
   const ext = extname(safeFilename).toLowerCase();
   const mimeType = MIME[ext];
+  console.log('[ATTACHMENT] Extension e MIME:', { ext, mimeType });
+
   if (!mimeType) {
-    console.log(`[Upload Route] File type not allowed: ${ext}`);
+    console.log('[ATTACHMENT] MIME type não permitido, retornando 403');
     return new NextResponse("Tipo de arquivo não permitido", { status: 403 });
   }
 
@@ -89,13 +73,13 @@ export async function GET(
     safeTicketId,
     safeFilename,
   );
-
-  console.log(`[Upload Route] Trying to serve file from: ${filePath}`);
+  console.log('[ATTACHMENT] FilePath:', filePath);
 
   try {
     await access(filePath);
+    console.log('[ATTACHMENT] Arquivo acessível, lendo...');
     const file = await readFile(filePath);
-    console.log(`[Upload Route] Successfully served file: ${safeFilename} (${file.length} bytes)`);
+    console.log('[ATTACHMENT] Arquivo lido, tamanho:', file.length);
     return new NextResponse(file, {
       headers: {
         "Content-Type": mimeType,
@@ -104,7 +88,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error(`[Upload Route] File not found or error reading: ${filePath}`, error);
-    return new NextResponse("Arquivo não encontrado", { status: 404 });
+    console.log('[ATTACHMENT] Erro ao acessar arquivo:', error);
+    return new NextResponse("Not found", { status: 404 });
   }
 }

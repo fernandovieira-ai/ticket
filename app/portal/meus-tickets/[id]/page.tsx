@@ -165,6 +165,9 @@ export default function TicketClientePage() {
         const d = await res.json();
         toast.error(d.error ?? "Erro ao encerrar chamado.");
       }
+    } catch (error) {
+      console.error("Erro na requisição:", error);
+      toast.error("Erro de conexão com o servidor.");
     } finally {
       setEncerrando(false);
     }

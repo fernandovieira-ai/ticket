@@ -674,7 +674,10 @@ export default function TicketPainelPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setFinalizarAberto(true)}
+                  onClick={() => {
+                    carregarOpcoesStatusPrioridade();
+                    setFinalizarAberto(true);
+                  }}
                   title="Finalizar chamado"
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 border border-green-300 bg-white hover:bg-green-50 hover:border-green-500 rounded-md px-2.5 py-1.5 transition-colors"
                 >

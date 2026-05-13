@@ -9,7 +9,18 @@ export async function GET() {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
     }
 
-    const debug = {
+    const debug: {
+      timestamp: string;
+      tests: Array<{
+        test: string;
+        success: boolean;
+        hasRows?: boolean;
+        rowCount?: number;
+        sampleData?: any[];
+        error?: string;
+        stack?: string;
+      }>;
+    } = {
       timestamp: new Date().toISOString(),
       tests: []
     };

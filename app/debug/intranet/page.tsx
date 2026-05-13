@@ -12,7 +12,7 @@ export default async function DebugIntranetPage() {
       error = `HTTP ${response.status}: ${await response.text()}`;
     }
   } catch (e) {
-    error = e.message;
+    error = e instanceof Error ? e.message : String(e);
   }
 
   return (

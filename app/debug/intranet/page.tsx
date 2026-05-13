@@ -1,13 +1,26 @@
-import { NextResponse } from 'next/server';
+interface DebugTest {
+  test: string;
+  success: boolean;
+  hasRows?: boolean;
+  rowCount?: number;
+  sampleData?: any[];
+  error?: string;
+  stack?: string;
+}
+
+interface DebugData {
+  timestamp: string;
+  tests: DebugTest[];
+}
 
 export default async function DebugIntranetPage() {
-  let debugData = null;
-  let error = null;
+  let debugData: DebugData | null = null;
+  let error: string | null = null;
 
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/debug/intranet`);
     if (response.ok) {
-      debugData = await response.json();
+      debugData = await response.json() as DebugData;
     } else {
       error = `HTTP ${response.status}: ${await response.text()}`;
     }
@@ -29,7 +42,7 @@ export default async function DebugIntranetPage() {
       {debugData && (
         <div>
           <h2>📊 Resultados dos Testes:</h2>
-          {debugData.tests.map((test, index) => (
+          {debugData.tests.map((test: DebugTest, index: number) => (
             <div
               key={index}
               style={{
@@ -46,9 +59,9 @@ export default async function DebugIntranetPage() {
 
               {test.success ? (
                 <div>
-                  <p><strong>Tem .rows:</strong> {String(test.hasRows)}</p>
-                  <p><strong>Quantidade de registros:</strong> {test.rowCount}</p>
-                  {test.sampleData.length > 0 && (
+                  <p><strong>Tem .rows:</strong> {String(test.hasRows ?? false)}</p>
+                  <p><strong>Quantidade de registros:</strong> {test.rowCount ?? 0}</p>
+                  {(test.sampleData && test.sampleData.length > 0) && (
                     <details>
                       <summary>📄 Dados de exemplo</summary>
                       <pre style={{ backgroundColor: 'white', padding: '10px', overflow: 'auto' }}>
@@ -59,13 +72,15 @@ export default async function DebugIntranetPage() {
                 </div>
               ) : (
                 <div>
-                  <p><strong>Erro:</strong> {test.error}</p>
-                  <details>
-                    <summary>📋 Stack trace</summary>
-                    <pre style={{ backgroundColor: 'white', padding: '10px', overflow: 'auto', fontSize: '12px' }}>
-                      {test.stack}
-                    </pre>
-                  </details>
+                  <p><strong>Erro:</strong> {test.error || 'Erro desconhecido'}</p>
+                  {test.stack && (
+                    <details>
+                      <summary>📋 Stack trace</summary>
+                      <pre style={{ backgroundColor: 'white', padding: '10px', overflow: 'auto', fontSize: '12px' }}>
+                        {test.stack}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
             </div>

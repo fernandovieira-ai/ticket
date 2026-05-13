@@ -2,6 +2,21 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { intranetQueries } from '@/lib/db-unified';
 
+interface DebugTest {
+  test: string;
+  success: boolean;
+  hasRows?: boolean;
+  rowCount?: number;
+  sampleData?: any[];
+  error?: string;
+  stack?: string;
+}
+
+interface DebugData {
+  timestamp: string;
+  tests: DebugTest[];
+}
+
 export async function GET() {
   try {
     const session = await getSession();
@@ -9,18 +24,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
     }
 
-    const debug: {
-      timestamp: string;
-      tests: Array<{
-        test: string;
-        success: boolean;
-        hasRows?: boolean;
-        rowCount?: number;
-        sampleData?: any[];
-        error?: string;
-        stack?: string;
-      }>;
-    } = {
+    const debug: DebugData = {
       timestamp: new Date().toISOString(),
       tests: []
     };

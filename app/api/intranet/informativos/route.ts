@@ -9,7 +9,7 @@ export async function GET() {
   const result = await query(
     "SELECT * FROM intranet.informativos ORDER BY criado_em DESC"
   );
-  return NextResponse.json(result.rows);
+  return NextResponse.json(result);
 }
 
 export async function POST(req: Request) {
@@ -35,5 +35,5 @@ export async function POST(req: Request) {
     [titulo.trim(), descricao.trim(), dta_validade || null]
   );
 
-  return NextResponse.json(result.rows[0], { status: 201 });
+  return NextResponse.json(result[0], { status: 201 });
 }

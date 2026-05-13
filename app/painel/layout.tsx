@@ -27,7 +27,18 @@ export default async function PainelLayout({
   const perfil = session?.perfil ?? "admin";
   const nome = session?.nome ?? "Dev";
   const email = session?.email ?? "dev@local";
+  const usuarioId = session?.sub;
   const empresaId = session?.empresaId;
+
+  // Busca avatar_url do usuário logado
+  let avatarUrl: string | null = null;
+  if (usuarioId) {
+    const u = await queryOne<{ avatar_url: string | null }>(
+      "SELECT avatar_url FROM usuarios WHERE id = $1",
+      [usuarioId]
+    );
+    avatarUrl = u?.avatar_url ?? null;
+  }
 
   // Cache logo por 5 minutos — evita query no DB a cada navegação
   let logoUrl: string | null = null;
@@ -56,7 +67,7 @@ export default async function PainelLayout({
       <Sidebar perfil={perfil} logoUrl={logoUrl} />
       <main className="flex-1 overflow-y-auto bg-white">
         <div className="page-header">
-          <Header nome={nome} email={email} titulo="DigitalRF Help" />
+          <Header nome={nome} email={email} titulo="DigitalRF Help" avatarUrl={avatarUrl} />
         </div>
         <div className="page-body">
           {children}

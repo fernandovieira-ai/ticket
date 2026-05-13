@@ -26,6 +26,7 @@ import {
   Table2,
   Columns,
   Check,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -146,6 +147,9 @@ function UsuariosClientComponent({
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [erro, setErro] = useState("");
   const [form, setForm] = useState(formVazio);
+  const [uploadandoAvatar, setUploadandoAvatar] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // fecha menu de colunas ao clicar fora
   useEffect(() => {
@@ -241,10 +245,44 @@ function UsuariosClientComponent({
     return () => clearTimeout(t);
   }, [carregar]);
 
+  async function uploadAvatar(file: File) {
+    if (!selecionado) return;
+    setUploadandoAvatar(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/usuarios/${selecionado.id}/avatar`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error ?? "Erro ao enviar foto"); return; }
+      setAvatarPreview(data.url);
+      setSelecionado((prev) => prev ? { ...prev, avatar_url: data.url } : prev);
+      setUsuarios((prev) => prev.map((u) => u.id === selecionado.id ? { ...u, avatar_url: data.url } : u));
+      toast.success("Foto atualizada!");
+    } finally {
+      setUploadandoAvatar(false);
+    }
+  }
+
+  async function removerAvatar() {
+    if (!selecionado) return;
+    setUploadandoAvatar(true);
+    try {
+      const res = await fetch(`/api/usuarios/${selecionado.id}/avatar`, { method: "DELETE" });
+      if (!res.ok) { toast.error("Erro ao remover foto"); return; }
+      setAvatarPreview(null);
+      setSelecionado((prev) => prev ? { ...prev, avatar_url: null } : prev);
+      setUsuarios((prev) => prev.map((u) => u.id === selecionado.id ? { ...u, avatar_url: null } : u));
+      toast.success("Foto removida!");
+    } finally {
+      setUploadandoAvatar(false);
+    }
+  }
+
   function abrirNovo() {
     setModo("criar");
     setSelecionado(null);
     setForm(formVazio);
+    setAvatarPreview(null);
     setDeptsVinculados([]);
     setDeptParaAdicionar("");
     setClientesVinculados([]);
@@ -258,6 +296,7 @@ function UsuariosClientComponent({
   function abrirUsuario(u: UsuarioComDept) {
     setModo("editar");
     setSelecionado(u);
+    setAvatarPreview(u.avatar_url ?? null);
     setForm({
       nome: u.nome,
       email: u.email,
@@ -661,11 +700,14 @@ function UsuariosClientComponent({
                       : "hover:bg-gray-50"
                   } ${!u.ativo ? "opacity-50" : ""}`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-bold text-white">
-                      {initials}
-                    </span>
-                  </div>
+                  {u.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={u.avatar_url} alt={u.nome} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-white">{initials}</span>
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <p
                       className={`text-sm font-medium truncate ${selecionado?.id === u.id && painelAberto ? "text-blue-700" : "text-gray-900"}`}
@@ -730,11 +772,14 @@ function UsuariosClientComponent({
                         {colunasVisiveis.has("nome") && (
                           <td className="px-4 py-2.5 whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-                                <span className="text-[10px] font-bold text-white">
-                                  {initials}
-                                </span>
-                              </div>
+                              {u.avatar_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={u.avatar_url} alt={u.nome} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                                  <span className="text-[10px] font-bold text-white">{initials}</span>
+                                </div>
+                              )}
                               <span className="font-medium text-gray-900 truncate max-w-[160px]">
                                 {u.nome}
                               </span>
@@ -891,6 +936,72 @@ function UsuariosClientComponent({
               {/* ── ABA: DADOS ── */}
               {aba === "dados" && (
                 <>
+                  {/* Foto de perfil */}
+                  {modo === "editar" && (
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                        Foto de perfil
+                      </Label>
+                      <div className="flex items-center gap-4">
+                        {/* Avatar atual */}
+                        <div className="relative flex-shrink-0">
+                          {avatarPreview ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={avatarPreview}
+                              alt={form.nome}
+                              className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xl">
+                              {form.nome.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase() || "?"}
+                            </div>
+                          )}
+                          {uploadandoAvatar && (
+                            <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                              <Loader2 className="w-5 h-5 animate-spin text-white" />
+                            </div>
+                          )}
+                        </div>
+                        {/* Botões */}
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) uploadAvatar(f);
+                              e.target.value = "";
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={uploadandoAvatar}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                          >
+                            <Camera size={12} />
+                            {avatarPreview ? "Alterar foto" : "Enviar foto"}
+                          </button>
+                          {avatarPreview && (
+                            <button
+                              type="button"
+                              onClick={removerAvatar}
+                              disabled={uploadandoAvatar}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50"
+                            >
+                              <X size={12} />
+                              Remover
+                            </button>
+                          )}
+                          <p className="text-[10px] text-gray-400">PNG, JPG ou WebP. Máx 2MB.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                       Nome / Usuário <span className="text-red-500">*</span>

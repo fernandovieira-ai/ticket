@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { getSession } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+
+function avatarDir() {
+  return process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "avatars")
+    : join(process.cwd(), "public", "uploads", "avatars");
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,11 +44,21 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const uploadDir = join(process.cwd(), "public", "uploads", "avatars");
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(join(uploadDir, filename), buffer);
+    const dir = avatarDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, filename), buffer);
 
     const url = `/uploads/avatars/${filename}`;
+
+    // Remove foto antiga
+    const old = await queryOne<{ avatar_url: string | null }>(
+      "SELECT avatar_url FROM usuarios WHERE id = $1",
+      [session.sub]
+    );
+    if (old?.avatar_url) {
+      const oldFile = old.avatar_url.split("/").pop();
+      if (oldFile) unlink(join(dir, oldFile)).catch(() => {});
+    }
 
     await query("UPDATE usuarios SET avatar_url = $1 WHERE id = $2", [
       url,

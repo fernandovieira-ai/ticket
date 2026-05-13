@@ -1,0 +1,144 @@
+import { Pool } from 'pg';
+
+// Pool unificado (drfticket com schemas public + intranet)
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
+
+// Função principal para consultas no banco unificado (schema public)
+export async function query(text: string, params?: any[]) {
+  try {
+    const result = await db.query(text, params);
+    return result;
+  } catch (error) {
+    console.error('❌ Erro na query:', error);
+    throw error;
+  }
+}
+
+// Função para consultas na intranet (schema intranet)
+export async function queryIntranet(text: string, params?: any[]) {
+  try {
+    // Se a query já inclui o schema intranet, use como está
+    // Caso contrário, adicione o prefixo intranet. automaticamente
+    const finalText = text.includes('intranet.') ? text :
+                     text.replace(/FROM\s+(\w+)/gi, 'FROM intranet.$1')
+                          .replace(/INTO\s+(\w+)/gi, 'INTO intranet.$1')
+                          .replace(/UPDATE\s+(\w+)/gi, 'UPDATE intranet.$1')
+                          .replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1');
+
+    const result = await db.query(finalText, params);
+    return result;
+  } catch (error) {
+    console.error('❌ Erro na query do schema intranet:', error);
+    throw error;
+  }
+}
+
+// Helper functions para consultas comuns da intranet
+export const intranetQueries = {
+  // Informativos
+  getInformativos: () =>
+    query('SELECT * FROM intranet.informativos ORDER BY criado_em DESC'),
+
+  getInformativosAtivos: () =>
+    query('SELECT * FROM intranet.informativos WHERE dta_validade >= CURRENT_DATE OR dta_validade IS NULL ORDER BY criado_em DESC'),
+
+  // Plantão
+  getPlantao: () =>
+    query('SELECT * FROM intranet.plantao ORDER BY dtainicio DESC'),
+
+  getPlantaoAberto: () =>
+    query("SELECT * FROM intranet.plantao WHERE ind_finalizado = 'N' ORDER BY dtainicio DESC"),
+
+  // FAQ
+  getFaq: () =>
+    query('SELECT id, nom_sistema, des_assunto, des_erro, des_resolucao, usuario_cadastro, criado_em, (imagem IS NOT NULL OR caminho_arquivo IS NOT NULL) AS tem_imagem FROM intranet.faq ORDER BY criado_em DESC'),
+
+  getFaqBySistema: (sistema: string) =>
+    query('SELECT id, nom_sistema, des_assunto, des_erro, des_resolucao, usuario_cadastro, criado_em, (imagem IS NOT NULL OR caminho_arquivo IS NOT NULL) AS tem_imagem FROM intranet.faq WHERE nom_sistema = $1 ORDER BY criado_em DESC', [sistema]),
+
+  getSistemas: () =>
+    query('SELECT * FROM intranet.sistemas ORDER BY nom_sistema'),
+
+  // Contratos
+  getContratos: () =>
+    query('SELECT * FROM intranet.contratos ORDER BY empresa'),
+
+  // DTEF
+  getDtef: () =>
+    query('SELECT * FROM intranet.dtef ORDER BY loja'),
+
+  // AnyDesk
+  getAnydeskAcessos: () =>
+    query('SELECT * FROM intranet.anydesk_acessos ORDER BY rede, unidade'),
+
+  // Dados Restritos
+  getDadosRestritos: () =>
+    query('SELECT id, projeto, descricao, criado_por, criado_em FROM intranet.dados_restritos ORDER BY criado_em DESC'),
+
+  // Config
+  getConfig: (chave?: string) => {
+    if (chave) {
+      return query('SELECT * FROM intranet.config WHERE chave = $1', [chave]);
+    }
+    return query('SELECT * FROM intranet.config ORDER BY chave');
+  },
+
+  // Stats para dashboard
+  getDashboardStats: async () => {
+    const stats = await query(`
+      SELECT
+        (SELECT count(*) FROM intranet.informativos WHERE dta_validade >= CURRENT_DATE OR dta_validade IS NULL) as informativos_ativos,
+        (SELECT count(*) FROM intranet.plantao WHERE ind_finalizado = 'N') as plantoes_abertos,
+        (SELECT count(*) FROM intranet.faq) as total_faq,
+        (SELECT count(*) FROM intranet.contratos) as total_contratos,
+        (SELECT count(*) FROM intranet.dtef) as total_dtef,
+        (SELECT count(*) FROM intranet.anydesk_acessos) as total_anydesk,
+        (SELECT count(*) FROM intranet.dados_restritos) as total_dados_restritos
+    `);
+    return stats.rows[0];
+  }
+};
+
+// Função para testar conectividade com ambos os schemas
+export async function testConnection() {
+  try {
+    console.log('🔗 Testando conectividade com banco unificado...');
+
+    // Testar schema public (DigitalRF-Help)
+    await db.query('SELECT 1 FROM usuarios LIMIT 1');
+    console.log('✅ Schema public (DigitalRF-Help) acessível');
+
+    // Testar schema intranet
+    await db.query('SELECT 1 FROM intranet.informativos LIMIT 1');
+    console.log('✅ Schema intranet acessível');
+
+    // Testar algumas consultas específicas
+    const stats = await intranetQueries.getDashboardStats();
+    console.log(`📊 Stats intranet: ${stats.informativos_ativos} informativos, ${stats.plantoes_abertos} plantões abertos, ${stats.total_faq} FAQs`);
+
+    return {
+      success: true,
+      schemas: ['public', 'intranet'],
+      stats
+    };
+  } catch (error) {
+    console.error('❌ Erro ao testar conectividade:', error);
+    return { success: false, error };
+  }
+}
+
+// Fechar conexão
+export async function closeConnection() {
+  try {
+    await db.end();
+    console.log('🔌 Conexão de banco fechada');
+  } catch (error) {
+    console.error('❌ Erro ao fechar conexão:', error);
+  }
+}
+
+// Export the main database pool for direct access when needed
+export { db };

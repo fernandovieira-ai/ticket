@@ -339,3 +339,64 @@
 .page-body {
   padding: 24px;
 }
+
+/* ── Botão Novo Plantão com cores da sidebar ── */
+.btn-novo-plantao {
+  background-color: #0E1326;
+  color: #FFFFFF;
+  transition: all 0.2s ease;
+  height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+.btn-novo-plantao:hover {
+  background-color: #A3E635;
+  color: #0E1326;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(163, 230, 53, 0.3);
+}
+
+/* HTML dentro de descrições de informativos */
+.informativo-descricao br {
+  display: block;
+  margin-bottom: 2px;
+}
+.informativo-descricao strong, .informativo-descricao b {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.informativo-descricao ul, .informativo-descricao ol {
+  padding-left: 1.2em;
+  margin: 4px 0;
+}
+
+/* HTML dentro das mensagens do mural */
+.mural-msg-body br {
+  display: block;
+  margin-bottom: 4px;
+}
+.mural-msg-body strong, .mural-msg-body b {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.mural-msg-body a {
+  color: #6d28d9;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.mural-msg-body a:hover {
+  color: #4c1d95;
+}
+.mural-msg-body ul, .mural-msg-body ol {
+  padding-left: 1.4em;
+  margin: 6px 0;
+}
+.mural-msg-body p {
+  margin-bottom: 4px;
+}

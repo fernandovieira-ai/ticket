@@ -11,6 +11,8 @@ import { Suspense } from "react";
 import { query } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { TicketsSemAtribuir } from "./tickets-sem-atribuir";
+import { SenhaLZT } from "./senha-lzt";
+import { MuralRecados } from "./mural-recados";
 
 // Sempre renderiza no servidor a cada request (DB não acessível no build do Railway)
 export const dynamic = "force-dynamic";
@@ -44,13 +46,21 @@ interface UsuarioSolicitacoes {
   usuario_nome: string;
   total: number;
 }
-
+interface InformativoDash {
+  id: number;
+  titulo: string;
+  descricao: string;
+  dta_validade: string | null;
+  criado_em: string;
+}
 async function DashboardContent({
   empresaId,
   nome,
+  perfil,
 }: {
   empresaId: string;
   nome: string;
+  perfil: string;
 }) {
   const [
     abertos,
@@ -61,6 +71,7 @@ async function DashboardContent({
     porPrioridade,
     porUsuario,
     solicitacoesPorUsuario,
+    informativosAtivos,
   ] = await Promise.all([
     // Abertos
     query<StatRow>(
@@ -149,6 +160,14 @@ async function DashboardContent({
          GROUP BY u.nome
          ORDER BY total DESC`,
       [empresaId],
+    ),
+    // Informativos ativos da intranet
+    query<InformativoDash>(
+      `SELECT id, titulo, descricao, dta_validade, criado_em
+         FROM intranet.informativos
+         WHERE dta_validade >= CURRENT_DATE OR dta_validade IS NULL
+         ORDER BY criado_em DESC
+         LIMIT 5`,
     ),
   ]);
 
@@ -475,10 +494,16 @@ async function DashboardContent({
               )}
             </div>
           </div>
+
+          {/* Mural de Recados */}
+          <MuralRecados usuarioNome={nome} usuarioPerfil={perfil} />
         </div>
 
         {/* Painel lateral */}
         <div className="space-y-4">
+          {/* Senha LZT */}
+          <SenhaLZT />
+
           {/* Por prioridade */}
           <div
             style={{
@@ -621,6 +646,84 @@ async function DashboardContent({
                 Fila de Tickets
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
+              <Link
+                href="/painel/intranet/informativos"
+                className="dash-action-secondary flex items-center justify-between w-full rounded-lg transition-colors"
+                style={{
+                  padding: "7px 12px",
+                  backgroundColor: "var(--color-bg-secondary)",
+                  color: "var(--color-text-secondary)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                Gerenciar Informativos
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Informativos ativos */}
+          <div
+            style={{
+              backgroundColor: "var(--color-bg-primary)",
+              border: "0.5px solid var(--color-border)",
+              borderRadius: 14,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              className="flex items-center justify-between"
+              style={{ padding: "12px 16px", borderBottom: "0.5px solid var(--color-border)" }}
+            >
+              <p
+                style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}
+              >
+                📢 Informativos
+              </p>
+              <Link
+                href="/painel/intranet/informativos"
+                style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 500 }}
+              >
+                Ver todos →
+              </Link>
+            </div>
+            <div style={{ padding: "10px 12px" }} className="space-y-2">
+              {informativosAtivos.length === 0 ? (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)", padding: "4px 0" }}>
+                  Nenhum informativo ativo.
+                </p>
+              ) : (
+                informativosAtivos.map((inf) => (
+                  <div
+                    key={inf.id}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      backgroundColor: "var(--color-bg-secondary)",
+                      border: "0.5px solid var(--color-border)",
+                    }}
+                  >
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 3 }}>
+                      {inf.titulo}
+                    </p>
+                    <p
+                      className="informativo-descricao"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--color-text-muted)",
+                        lineHeight: 1.6,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: inf.descricao }}
+                    />
+                    {inf.dta_validade && (
+                      <p style={{ fontSize: 10, color: "var(--color-text-muted)", marginTop: 4 }}>
+                        Válido até {new Date(inf.dta_validade + "T00:00:00").toLocaleDateString("pt-BR")}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -634,6 +737,7 @@ export default async function DashboardPage() {
   const empresaId =
     session?.empresaId ?? "00000000-0000-0000-0000-000000000001";
   const nome = session?.nome ?? "Dev";
+  const perfil = session?.perfil ?? "";
 
   return (
     <Suspense
@@ -660,7 +764,7 @@ export default async function DashboardPage() {
         </div>
       }
     >
-      <DashboardContent empresaId={empresaId} nome={nome} />
+      <DashboardContent empresaId={empresaId} nome={nome} perfil={perfil} />
     </Suspense>
   );
 }

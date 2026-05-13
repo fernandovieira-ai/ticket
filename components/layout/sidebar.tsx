@@ -33,6 +33,13 @@ import {
   LayoutDashboard,
   ChevronDown,
   ChevronRight,
+  FileText,
+  Calendar,
+  HelpCircle,
+  Key,
+  Monitor,
+  Shield,
+  Globe,
 } from "lucide-react";
 
 interface SubItem {
@@ -187,6 +194,50 @@ const MENU: MenuItem[] = [
         label: "Base de Conhecimento",
         href: "/painel/whatsapp/base-conhecimento",
         icon: <Bot size={13} />,
+      },
+    ],
+  },
+  {
+    id: "intranet",
+    icon: Globe,
+    label: "Intranet",
+    adminOnly: true,
+    items: [
+      {
+        label: "Informativos",
+        href: "/painel/intranet/informativos",
+        icon: <FileText size={13} />,
+      },
+      {
+        label: "Plantão",
+        href: "/painel/intranet/plantao",
+        icon: <Calendar size={13} />,
+      },
+      {
+        label: "FAQ",
+        href: "/painel/intranet/faq",
+        icon: <HelpCircle size={13} />,
+      },
+      {
+        label: "Contratos",
+        href: "/painel/intranet/contratos",
+        icon: <Building size={13} />,
+      },
+      { label: "Acessos", href: "", separator: true },
+      {
+        label: "DTEF",
+        href: "/painel/intranet/dtef",
+        icon: <Key size={13} />,
+      },
+      {
+        label: "AnyDesk",
+        href: "/painel/intranet/anydesk",
+        icon: <Monitor size={13} />,
+      },
+      {
+        label: "Dados Restritos",
+        href: "/painel/intranet/dados-restritos",
+        icon: <Shield size={13} />,
       },
     ],
   },

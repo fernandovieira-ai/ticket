@@ -31,11 +31,11 @@ export async function PUT(
     [titulo.trim(), descricao.trim(), dta_validade || null, id]
   );
 
-  if (result.rows.length === 0) {
+  if (result.length === 0) {
     return NextResponse.json({ error: "Informativo não encontrado" }, { status: 404 });
   }
 
-  return NextResponse.json(result.rows[0]);
+  return NextResponse.json(result[0]);
 }
 
 export async function DELETE(
@@ -52,7 +52,7 @@ export async function DELETE(
     [id]
   );
 
-  if (result.rows.length === 0) {
+  if (result.length === 0) {
     return NextResponse.json({ error: "Informativo não encontrado" }, { status: 404 });
   }
 

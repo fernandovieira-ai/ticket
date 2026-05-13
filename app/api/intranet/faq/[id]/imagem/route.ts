@@ -75,7 +75,11 @@ export async function GET(
     const buf = Buffer.isBuffer(row.imagem)
       ? row.imagem
       : Buffer.from(row.imagem as unknown as ArrayBuffer);
-    return new NextResponse(buf, {
+
+    // Converte Buffer para ArrayBuffer para NextResponse
+    const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+
+    return new NextResponse(arrayBuffer, {
       headers: {
         "Content-Type": contentType,
         "Content-Length": String(buf.length),

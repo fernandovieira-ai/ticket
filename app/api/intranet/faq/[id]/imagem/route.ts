@@ -120,8 +120,11 @@ export async function POST(
     [id]
   );
   if (existing?.caminho_arquivo) {
+    const oldPath = existing.caminho_arquivo.startsWith("/")
+      ? existing.caminho_arquivo
+      : join(faqImgDir(), basename(existing.caminho_arquivo));
     try {
-      await unlink(existing.caminho_arquivo);
+      await unlink(oldPath);
     } catch {
       // ignora se não existir
     }
@@ -137,10 +140,10 @@ export async function POST(
   const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(filePath, buffer);
 
-  // Salva caminho, limpa bytea antigo
+  // Salva apenas o filename no DB (não o path absoluto), limpa bytea antigo
   await query(
     "UPDATE intranet.faq SET caminho_arquivo = $1, tipo_arquivo = $2, imagem = NULL WHERE id = $3",
-    [filePath, file.type, id]
+    [filename, file.type, id]
   );
 
   return NextResponse.json({ ok: true, filename });
@@ -162,8 +165,11 @@ export async function DELETE(
   );
 
   if (row?.caminho_arquivo) {
+    const fullPath = row.caminho_arquivo.startsWith("/")
+      ? row.caminho_arquivo
+      : join(faqImgDir(), basename(row.caminho_arquivo));
     try {
-      await unlink(row.caminho_arquivo);
+      await unlink(fullPath);
     } catch {
       // ignora se arquivo não existir no disco
     }

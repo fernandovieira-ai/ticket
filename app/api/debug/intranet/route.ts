@@ -40,8 +40,8 @@ export async function GET() {
       debug.tests.push({
         test: 'getInformativos',
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
 
@@ -60,8 +60,8 @@ export async function GET() {
       debug.tests.push({
         test: 'getPlantao',
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
 
@@ -80,8 +80,8 @@ export async function GET() {
       debug.tests.push({
         test: 'getFaq',
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
 
@@ -100,8 +100,8 @@ export async function GET() {
       debug.tests.push({
         test: 'getAnydeskAcessos',
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
 
@@ -110,8 +110,8 @@ export async function GET() {
   } catch (globalError) {
     return NextResponse.json({
       error: 'Erro global no debug',
-      message: globalError.message,
-      stack: globalError.stack
+      message: globalError instanceof Error ? globalError.message : String(globalError),
+      stack: globalError instanceof Error ? globalError.stack : undefined
     }, { status: 500 });
   }
 }

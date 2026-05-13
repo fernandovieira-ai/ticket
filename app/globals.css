@@ -56,18 +56,18 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #0ea5e9;
+  --primary: #0E1326;
   --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: #64748b;
-  --accent: #e0f2fe;
-  --accent-foreground: #0284c7;
+  --accent: #e8eaf0;
+  --accent-foreground: #0E1326;
   --destructive: #ef4444;
   --border: #e2e8f0;
   --input: #e2e8f0;
-  --ring: #0ea5e9;
+  --ring: #0E1326;
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
@@ -76,12 +76,12 @@
   --radius: 0.625rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #0c1a27;
-  --sidebar-primary: #0ea5e9;
+  --sidebar-primary: #0E1326;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f0f4f8;
   --sidebar-accent-foreground: #0c1a27;
   --sidebar-border: #e2e8f0;
-  --sidebar-ring: #0ea5e9;
+  --sidebar-ring: #0E1326;
 
   /* ── Design Tokens – Digital RF Sistema de Tickets ── */
 
@@ -103,9 +103,9 @@
   --color-text-muted: #94a3b8;
 
   /* Marca */
-  --color-brand: #0ea5e9;
-  --color-brand-hover: #0284c7;
-  --color-brand-light: #e0f2fe;
+  --color-brand: #0E1326;
+  --color-brand-hover: #1a2540;
+  --color-brand-light: #e8eaf0;
 
   /* Status: Aberto */
   --color-open-bg: #dcfce7;
@@ -139,6 +139,34 @@
 
   /* Transição padrão */
   --transition: 120ms ease;
+
+  /* Sidebar - Paleta Roxa */
+  --sidebar-bg: #3B1A78;
+  --sidebar-bg-gradient: linear-gradient(180deg, #0E1326 0%, #0E1326 100%);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* Hierarquia de texto do menu */
+  --nav-parent: #FFFFFF;
+  --nav-parent-icon: rgba(255, 255, 255, 0.7);
+  --nav-child: rgba(255, 255, 255, 0.72);
+  --nav-child-active: #FFFFFF;
+  --nav-muted: rgba(255, 255, 255, 0.5);
+  --nav-section: rgba(255, 255, 255, 0.45);
+
+  /* Estados */
+  --nav-active-bg: #A3E635;
+  --nav-active-text: #0E1326;
+  --nav-active-accent: #0E1326;
+  --nav-child-active-bg: #A3E635;
+  --nav-child-active-text: #0E1326;
+  --nav-hover-bg: #A3E635;
+
+  /* Trilho do submenu */
+  --nav-rail: rgba(255, 255, 255, 0.18);
+
+  /* Separadores internos */
+  --nav-divider: rgba(255, 255, 255, 0.08);
 }
 
 .dark {
@@ -192,6 +220,13 @@
 /* ── Hover states para Server Components (sem event handlers) ── */
 .dash-kpi-card:hover {
   border-color: var(--color-border-hover) !important;
+}
+.nav-item-hover:hover {
+  background-color: #A3E635 !important;
+  color: #0E1326 !important;
+}
+.nav-item-hover:hover svg {
+  color: #0E1326 !important;
 }
 .dash-ticket-row:hover {
   background-color: var(--color-bg-secondary);
@@ -291,4 +326,16 @@
 .sidebar-submenu-link.active {
   background-color: var(--color-brand-light);
   color: var(--color-brand);
+}
+
+/* Layout adjustments for ERP style */
+.page-header {
+  padding: 16px 24px;
+  border-bottom: 0.5px solid var(--color-border);
+  background-color: var(--color-bg-primary);
+  position: sticky; top: 0; z-index: 10;
+}
+
+.page-body {
+  padding: 24px;
 }

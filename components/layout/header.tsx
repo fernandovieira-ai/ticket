@@ -35,14 +35,7 @@ export function Header({ nome, avatarUrl }: HeaderProps) {
   }, [nome]);
 
   return (
-    <header
-      className="flex items-center justify-between flex-shrink-0"
-      style={{
-        height: 52,
-        backgroundColor: "var(--color-bg-primary)",
-        borderBottom: "0.5px solid var(--color-border)",
-        padding: "0 24px",
-      }}
+    <header className="flex items-center justify-between w-full"
     >
       {/* Usuário */}
       <div className="flex items-center gap-3">

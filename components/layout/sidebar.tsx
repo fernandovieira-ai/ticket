@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,8 @@ import {
   Activity,
   LogOut,
   LayoutDashboard,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 interface SubItem {
@@ -42,16 +44,23 @@ interface SubItem {
 
 interface MenuItem {
   id: string;
-  icon: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
-  items: SubItem[];
+  items?: SubItem[];
+  href?: string;
   adminOnly?: boolean;
 }
 
 const MENU: MenuItem[] = [
   {
+    id: "dashboard",
+    icon: LayoutDashboard,
+    label: "Dashboard",
+    href: "/painel/dashboard"
+  },
+  {
     id: "cadastros",
-    icon: <Users size={16} strokeWidth={1.5} />,
+    icon: Users,
     label: "Cadastros",
     items: [
       {
@@ -83,7 +92,7 @@ const MENU: MenuItem[] = [
   },
   {
     id: "tickets",
-    icon: <ClipboardList size={16} strokeWidth={1.5} />,
+    icon: ClipboardList,
     label: "Tickets",
     items: [
       { label: "Todos", href: "/painel/tickets", icon: <List size={13} /> },
@@ -127,7 +136,7 @@ const MENU: MenuItem[] = [
   },
   {
     id: "solicitacoes",
-    icon: <Wrench size={16} strokeWidth={1.5} />,
+    icon: Wrench,
     label: "Solicitações",
     items: [
       {
@@ -139,7 +148,7 @@ const MENU: MenuItem[] = [
   },
   {
     id: "relatorios",
-    icon: <BarChart2 size={16} strokeWidth={1.5} />,
+    icon: BarChart2,
     label: "Relatórios",
     items: [
       {
@@ -156,7 +165,7 @@ const MENU: MenuItem[] = [
   },
   {
     id: "whatsapp",
-    icon: <MessageCircle size={16} strokeWidth={1.5} />,
+    icon: MessageCircle,
     label: "WhatsApp",
     items: [
       {
@@ -183,8 +192,8 @@ const MENU: MenuItem[] = [
   },
   {
     id: "configuracoes",
-    icon: <Settings size={16} strokeWidth={1.5} />,
-    label: "Config.",
+    icon: Settings,
+    label: "Configurações",
     adminOnly: true,
     items: [
       {
@@ -225,77 +234,71 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
 
-  // Carregar estado do localStorage após hidratação
-  useEffect(() => {
-    const saved = localStorage.getItem("sidebar_active");
-    if (saved) {
-      setActiveMenu(saved);
-    }
-  }, []);
+  // Estado de menus expandidos, inicializado com base no path atual
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    MENU.forEach(item => {
+      if (item.items) {
+        const hasActivePath = item.items.some(sub => {
+          if (!sub.href) return false;
+          const currentSearch = searchParams.toString();
+          const currentFull = currentSearch ? `${pathname}?${currentSearch}` : pathname;
+          return currentFull === sub.href || pathname.startsWith(sub.href.split("?")[0]);
+        });
+        if (hasActivePath) {
+          initial[item.id] = true;
+        }
+      }
+    });
+    return initial;
+  });
 
-  const toggleMenu = useCallback((id: string) => {
-    const next = activeMenu === id ? null : id;
-    setActiveMenu(next);
-    if (next) {
-      localStorage.setItem("sidebar_active", next);
-    } else {
-      localStorage.removeItem("sidebar_active");
-    }
-  }, [activeMenu]);
+  const toggleGroup = useCallback((id: string) => {
+    setExpandedMenus(prev => ({ ...prev, [id]: !prev[id] }));
+  }, []);
 
   const handleLogout = useCallback(async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
     } catch (error) {
-      // Fallback se o fetch falhar
       window.location.href = "/login";
     }
   }, [router]);
 
-  const clearActiveMenu = useCallback(() => {
-    setActiveMenu(null);
-    localStorage.removeItem("sidebar_active");
-  }, []);
-
   const isAdmin = useMemo(() => ["admin", "supervisor"].includes(perfil), [perfil]);
 
-  // Memoizar filtro de menu para evitar recálculos
   const filteredMenu = useMemo(() => {
     return MENU.filter(item => !item.adminOnly || isAdmin);
   }, [isAdmin]);
 
-  // Memoizar cálculo de path ativo
-  const activePathInfo = useMemo(() => {
+  const isActive = useCallback((href?: string) => {
+    if (!href) return false;
     const currentSearch = searchParams.toString();
     const currentFull = currentSearch ? `${pathname}?${currentSearch}` : pathname;
-    return { currentFull, pathname };
+    return currentFull === href;
   }, [pathname, searchParams]);
 
+  const isChildActive = useCallback((children?: SubItem[]) => {
+    return children?.some((c) => isActive(c.href)) ?? false;
+  }, [isActive]);
+
   return (
-    <div className="flex h-full">
-      {/* Coluna de ícones (56px) */}
+    <aside
+      className="flex flex-col w-64 h-screen overflow-y-auto"
+      style={{
+        backgroundImage: "var(--sidebar-bg-gradient)",
+        boxShadow: "var(--sidebar-shadow)",
+      }}
+    >
+      {/* Header / Logo */}
       <div
-        className="h-full flex flex-col items-center py-0"
-        style={{
-          width: 56,
-          backgroundColor: "var(--color-bg-primary)",
-          borderRight: "0.5px solid var(--color-border)",
-          flexShrink: 0,
-        }}
+        className="px-5 py-4 border-b"
+        style={{ borderColor: "var(--sidebar-border)" }}
       >
-        {/* Logo DR */}
-        <div
-          className="flex items-center justify-center flex-shrink-0"
-          style={{
-            height: 52,
-            width: "100%",
-            borderBottom: "0.5px solid var(--color-border)",
-          }}
-        >
+        <div className="flex items-center gap-2">
           {logoUrl && !logoError ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -307,213 +310,150 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
             />
           ) : (
             <div
-              className="flex items-center justify-center"
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                backgroundColor: "var(--color-brand)",
-              }}
+              className="w-8 h-8 rounded-md flex items-center justify-center text-white text-sm font-semibold"
+              style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
             >
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "#FFFFFF",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                DR
-              </span>
+              DR
             </div>
           )}
-        </div>
-
-        <div className="flex-1 flex flex-col gap-1 w-full px-1.5 py-2">
-          {/* Dashboard */}
-          <Link
-            href="/painel/dashboard"
-            title="Dashboard"
-            onClick={clearActiveMenu}
-            prefetch
-            className={cn(
-              "sidebar-menu-btn w-full flex flex-col items-center justify-center py-2 rounded-lg",
-              pathname === "/painel/dashboard" && "active",
-            )}
-          >
-            <LayoutDashboard size={16} strokeWidth={1.5} />
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 500,
-                marginTop: 2,
-                lineHeight: 1,
-              }}
-            >
-              Dashboard
-            </span>
-          </Link>
-
-          {filteredMenu.map((item) => {
-            const isActive = activeMenu === item.id;
-            const hasActivePath = item.items.some(
-              (sub) => sub.href && activePathInfo.pathname.startsWith(sub.href.split("?")[0]),
-            );
-
-            return (
-              <button
-                key={item.id}
-                onClick={() => toggleMenu(item.id)}
-                title={item.label}
-                className={cn(
-                  "sidebar-menu-btn w-full flex flex-col items-center justify-center py-2 rounded-lg cursor-pointer",
-                  isActive && "active",
-                  !isActive && hasActivePath && "has-active-path",
-                )}
-              >
-                {item.icon}
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 500,
-                    marginTop: 2,
-                    lineHeight: 1,
-                  }}
-                >
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Logout */}
-        <button
-          onClick={handleLogout}
-          title="Sair"
-          className="sidebar-logout-btn flex items-center justify-center rounded-lg mb-2"
-          style={{ width: 36, height: 36 }}
-        >
-          <LogOut size={16} strokeWidth={1.5} />
-        </button>
-      </div>
-
-      {/* Painel lateral retrátil (210px) */}
-      <div
-        className={cn(
-          "h-full overflow-hidden transition-[width] duration-200",
-          activeMenu ? "w-[210px]" : "w-0",
-        )}
-        style={{
-          backgroundColor: "var(--color-bg-primary)",
-          borderRight: activeMenu ? "0.5px solid var(--color-border)" : "none",
-          flexShrink: 0,
-        }}
-      >
-        {/* Cabeçalho */}
-        <div
-          className="flex items-center gap-2 flex-shrink-0"
-          style={{
-            height: 52,
-            padding: "0 16px",
-            borderBottom: "0.5px solid var(--color-border)",
-          }}
-        >
-          <div className="min-w-0">
+          <div>
             <p
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: "var(--color-text-primary)",
-                whiteSpace: "nowrap",
-                letterSpacing: "-0.3px",
-              }}
+              className="text-[15px] font-medium leading-tight"
+              style={{ color: "var(--nav-parent)" }}
             >
               DigitalRF Help
             </p>
-            <p
-              style={{
-                fontSize: 10,
-                color: "var(--color-text-muted)",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <p className="text-[11px] leading-tight" style={{ color: "var(--nav-muted)" }}>
               Sistema de Tickets
             </p>
           </div>
         </div>
+      </div>
 
+      {/* Menu */}
+      <nav className="flex-1 px-3 py-3 space-y-0.5">
         {filteredMenu.map((item) => {
-          if (item.id !== activeMenu) return null;
+          const Icon = item.icon;
+          const hasChildren = item.items && item.items.length > 0;
+          const expanded = expandedMenus[item.id] ?? false;
+          const active = isActive(item.href);
+          const childActive = isChildActive(item.items);
 
-          return (
-            <div key={item.id} className="py-3">
-              <p
+          // Item simples (sem submenu)
+          if (!hasChildren) {
+            return (
+              <Link
+                key={item.id}
+                href={item.href ?? "#"}
+                className={cn(
+                  "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition-colors",
+                  !active && "nav-item-hover"
+                )}
                 style={{
-                  fontSize: 10,
+                  backgroundColor: active ? "var(--nav-active-bg)" : undefined,
+                  color: active ? "var(--nav-active-text)" : "var(--nav-parent)",
                   fontWeight: 600,
-                  color: "var(--color-text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  padding: "0 16px",
-                  marginBottom: 6,
                 }}
               >
-                {item.label}
-              </p>
-              {item.items.map((sub, i) => {
-                if (sub.separator) {
-                  return (
-                    <p
-                      key={`sep-${i}`}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: "var(--color-text-muted)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                        padding: "12px 16px 4px",
-                      }}
-                    >
-                      {sub.label}
-                    </p>
-                  );
-                }
-                const isActive = sub.href && activePathInfo.currentFull === sub.href;
-                return (
-                  <Link
-                    key={sub.href}
-                    href={sub.href}
-                    prefetch
-                    className={cn(
-                      "sidebar-submenu-link flex items-center gap-2 transition-colors",
-                      isActive && "active",
-                    )}
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: 12.5,
-                      fontWeight: isActive ? 600 : 400,
-                      borderRadius: 6,
-                      margin: "1px 8px",
-                    }}
-                  >
-                    <span
-                      style={{
-                        opacity: isActive ? 1 : 0.6,
-                        flexShrink: 0,
-                        color: isActive ? "var(--color-brand)" : "inherit",
-                      }}
-                    >
-                      {sub.icon}
-                    </span>
-                    {sub.label}
-                  </Link>
-                );
-              })}
+                <Icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          }
+
+          // Item com submenu
+          return (
+            <div key={item.id}>
+              <button
+                onClick={() => toggleGroup(item.id)}
+                className={cn(
+                  "flex items-center justify-between w-full px-2.5 py-2 rounded-md text-[13px] transition-colors",
+                  !childActive && "nav-item-hover"
+                )}
+                style={{
+                  color: "var(--nav-parent)",
+                  fontWeight: 600,
+                }}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Icon className="w-4 h-4" />
+                  {item.label}
+                </span>
+                {expanded ? (
+                  <ChevronDown
+                    className="w-3.5 h-3.5"
+                    style={{ color: "var(--nav-muted)" }}
+                  />
+                ) : (
+                  <ChevronRight
+                    className="w-3.5 h-3.5"
+                    style={{ color: "var(--nav-muted)" }}
+                  />
+                )}
+              </button>
+
+              {/* Submenu com trilho vertical */}
+              {expanded && (
+                <div
+                  className="ml-3.5 pl-3.5 py-0.5 mb-1"
+                  style={{ borderLeft: "1.5px solid var(--nav-rail)" }}
+                >
+                  {item.items!.map((child, i) => {
+                    if (child.separator) {
+                      return (
+                        <div
+                          key={`sep-${i}`}
+                          className="px-2.5 mb-1 text-[10px] uppercase tracking-wider font-medium mt-3"
+                          style={{ color: "var(--nav-section)" }}
+                        >
+                          {child.label}
+                        </div>
+                      );
+                    }
+
+                    if (!child.href) return null;
+
+                    const childIsActive = isActive(child.href);
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={cn(
+                          "block px-2.5 py-1.5 rounded-md text-[13px] transition-colors",
+                          !childIsActive && "nav-item-hover"
+                        )}
+                        style={{
+                          backgroundColor: childIsActive
+                            ? "var(--nav-child-active-bg)"
+                            : undefined,
+                          color: childIsActive
+                            ? "var(--nav-child-active-text)"
+                            : "var(--nav-child)",
+                          fontWeight: childIsActive ? 500 : 400,
+                        }}
+                      >
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
+      </nav>
+
+      {/* Rodapé — logout */}
+      <div style={{ borderTop: "1px solid var(--sidebar-border)", padding: "12px 8px" }}>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium w-full nav-item-hover transition-colors"
+          style={{ color: "var(--nav-parent)" }}
+        >
+          <LogOut className="w-4 h-4" />
+          Sair
+        </button>
       </div>
-    </div>
+    </aside>
   );
 }

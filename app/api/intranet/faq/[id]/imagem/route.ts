@@ -76,10 +76,10 @@ export async function GET(
       ? row.imagem
       : Buffer.from(row.imagem as unknown as ArrayBuffer);
 
-    // Converte Buffer para ArrayBuffer para NextResponse
-    const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    // Usa Uint8Array que é compatível com BodyInit
+    const uint8Array = new Uint8Array(buf);
 
-    return new NextResponse(arrayBuffer, {
+    return new NextResponse(uint8Array, {
       headers: {
         "Content-Type": contentType,
         "Content-Length": String(buf.length),

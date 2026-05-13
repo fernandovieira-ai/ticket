@@ -8,6 +8,8 @@ const pool = new Pool({
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
   allowExitOnIdle: false,
+  // Limita qualquer query a 10s — evita spinner infinito na página
+  options: "--statement_timeout=10000",
 });
 
 // Previne crash do processo em erros de pool (conexão perdida em background)

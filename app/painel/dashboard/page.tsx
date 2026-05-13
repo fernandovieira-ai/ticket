@@ -14,6 +14,7 @@ import { TicketsSemAtribuir } from "./tickets-sem-atribuir";
 
 // Sempre renderiza no servidor a cada request (DB não acessível no build do Railway)
 export const dynamic = "force-dynamic";
+export const maxDuration = 15;
 
 interface StatRow {
   total: number;

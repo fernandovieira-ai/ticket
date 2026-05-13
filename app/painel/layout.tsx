@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 
 // Sempre renderiza no servidor a cada request (DB não acessível no build do Railway)
 export const dynamic = "force-dynamic";
+export const maxDuration = 15; // cap de 15s para evitar spinner infinito
 
 export default async function PainelLayout({
   children,

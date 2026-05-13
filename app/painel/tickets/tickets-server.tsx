@@ -28,6 +28,7 @@ interface TicketRow {
 }
 
 // Server component que carrega dados iniciais
+export const maxDuration = 15;
 export async function TicketsServer() {
   const session = await getSession();
 

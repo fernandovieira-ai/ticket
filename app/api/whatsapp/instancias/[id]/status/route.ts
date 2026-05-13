@@ -26,7 +26,7 @@ export async function GET(
   try {
     const res = await fetch(
       `${evo.url}/instance/connectionState/${encodeURIComponent(row.nome_instancia)}`,
-      { headers: { apikey: evo.key } }
+      { headers: { apikey: evo.key }, signal: AbortSignal.timeout(5000) }
     );
 
     if (!res.ok) {
@@ -58,7 +58,7 @@ export async function GET(
       try {
         const profileRes = await fetch(
           `${evo.url}/instance/fetchInstances`,
-          { headers: { apikey: evo.key } }
+          { headers: { apikey: evo.key }, signal: AbortSignal.timeout(5000) }
         );
         if (profileRes.ok) {
           const instances = await profileRes.json();

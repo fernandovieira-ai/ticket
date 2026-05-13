@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
     );
 
     const total = empresas.length;
-    return NextResponse.json({ data: empresas, total });
+    const res = NextResponse.json({ data: empresas, total });
+    res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
+    return res;
   } catch (err) {
     console.error("[GET /api/empresas]", err);
     const msg = err instanceof Error ? err.message : "Erro interno";

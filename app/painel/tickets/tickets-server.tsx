@@ -102,8 +102,8 @@ async function carregarTicketsIniciais(session: any) {
       total: tickets.length,
     };
 
-    // Cache por 30 segundos
-    serverCache.set(cacheKey, result, 30000);
+    // Cache por 90 segundos
+    serverCache.set(cacheKey, result, 90000);
     return result;
   } catch (error) {
     console.error('[TicketsServer] Erro ao carregar tickets:', error);

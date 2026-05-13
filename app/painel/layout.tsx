@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { queryOne } from "@/lib/db";
+import { serverCache } from "@/lib/server-cache";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -27,17 +28,27 @@ export default async function PainelLayout({
   const email = session?.email ?? "dev@local";
   const empresaId = session?.empresaId;
 
-  const empresa = empresaId
-    ? await queryOne<{ logo_url: string | null }>(
+  // Cache logo por 5 minutos — evita query no DB a cada navegação
+  let logoUrl: string | null = null;
+  if (empresaId) {
+    const cacheKey = `logo_${empresaId}`;
+    const cached = serverCache.get<string | null>(cacheKey);
+    if (cached !== null) {
+      logoUrl = cached;
+    } else {
+      const empresa = await queryOne<{ logo_url: string | null }>(
         "SELECT logo_url FROM empresas WHERE id = $1",
         [empresaId],
-      )
-    : bypassAuth
-      ? await queryOne<{ logo_url: string | null }>(
-          "SELECT logo_url FROM empresas LIMIT 1",
-        )
-      : null;
-  const logoUrl = empresa?.logo_url ?? null;
+      );
+      logoUrl = empresa?.logo_url ?? null;
+      serverCache.set(cacheKey, logoUrl, 5 * 60 * 1000);
+    }
+  } else if (bypassAuth) {
+    const empresa = await queryOne<{ logo_url: string | null }>(
+      "SELECT logo_url FROM empresas LIMIT 1",
+    );
+    logoUrl = empresa?.logo_url ?? null;
+  }
 
   return (
     <div className="flex h-screen" style={{ backgroundColor: "var(--color-bg-root)" }}>

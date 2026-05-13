@@ -61,12 +61,14 @@ export async function GET(req: NextRequest) {
       ],
     );
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       data: rows,
       total: rows[0]?.total_count ?? 0,
       page: pagina,
       pageSize: tamanho,
     });
+    res.headers.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+    return res;
   } catch (err) {
     console.error("[GET /api/clientes]", err);
     const msg = err instanceof Error ? err.message : "Erro interno";

@@ -24,5 +24,7 @@ export async function GET() {
     [session.empresaId],
   );
 
-  return NextResponse.json(tipos);
+  const res = NextResponse.json(tipos);
+  res.headers.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
+  return res;
 }

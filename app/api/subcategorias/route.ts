@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
   )
 
   const total = rows[0]?.total ?? 0
-  return NextResponse.json({ data: rows, total: Number(total), page, pageSize })
+  const res = NextResponse.json({ data: rows, total: Number(total), page, pageSize })
+  res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120')
+  return res
 }
 
 const createSchema = z.object({

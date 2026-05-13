@@ -235,7 +235,10 @@ export function EmpresaClient() {
             {/* BotÃ£o Nova Empresa */}
             <button
               onClick={abrirNova}
-              className="w-full flex items-center justify-between bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-3.5 mb-4 transition-colors group"
+              className="w-full flex items-center justify-between text-white rounded-xl px-4 py-3.5 mb-4 transition-colors group"
+              style={{ backgroundColor: "#0E1326" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1a2540")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#0E1326")}
             >
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
@@ -246,7 +249,7 @@ export function EmpresaClient() {
                     Nova empresa
                   </p>
                   {!painelAberto && (
-                    <p className="text-xs text-blue-200 leading-tight">
+                    <p className="text-xs leading-tight" style={{ color: "rgba(255,255,255,0.6)" }}>
                       Cadastrar no sistema
                     </p>
                   )}
@@ -254,7 +257,8 @@ export function EmpresaClient() {
               </div>
               <ChevronRight
                 size={16}
-                className="text-blue-200 group-hover:translate-x-0.5 transition-transform flex-shrink-0"
+                className="group-hover:translate-x-0.5 transition-transform flex-shrink-0"
+                style={{ color: "rgba(255,255,255,0.6)" }}
               />
             </button>
 
@@ -289,11 +293,11 @@ export function EmpresaClient() {
                   onClick={() => abrirEmpresa(e)}
                   className={`w-full flex items-center gap-3 px-5 py-3 text-left border-b border-gray-50 transition-colors group ${
                     selecionada?.id === e.id && painelAberto
-                      ? "bg-blue-50 border-r-2 border-r-blue-500"
+                      ? "bg-slate-100 border-r-2 border-r-[#0E1326]"
                       : "hover:bg-gray-50"
                   } ${!e.ativo ? "opacity-50" : ""}`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#e8eaf0" }}>
                     {e.logo_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -306,7 +310,7 @@ export function EmpresaClient() {
                         }}
                       />
                     ) : (
-                      <span className="text-xs font-bold text-blue-600">
+                      <span className="text-xs font-bold" style={{ color: "#0E1326" }}>
                         {e.nome.charAt(0).toUpperCase()}
                       </span>
                     )}
@@ -315,7 +319,7 @@ export function EmpresaClient() {
                     <p
                       className={`text-sm font-medium truncate ${
                         selecionada?.id === e.id && painelAberto
-                          ? "text-blue-700"
+                          ? "text-[#0E1326]"
                           : "text-gray-900"
                       }`}
                     >
@@ -351,7 +355,7 @@ export function EmpresaClient() {
               {/* CabeÃ§alho */}
               <div className="flex items-start justify-between px-6 py-5 bg-white border-b border-gray-100">
                 <div>
-                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#0E1326" }}>
                     {modo === "criar" ? "NOVA EMPRESA" : "EDITANDO EMPRESA"}
                   </p>
                   <h2 className="text-lg font-bold text-gray-900 leading-tight">

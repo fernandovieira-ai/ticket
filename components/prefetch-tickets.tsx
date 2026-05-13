@@ -3,47 +3,33 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 
-// Componente que prefetch dados de tickets quando usuário navega
+// Prefetch de dados para acelerar a próxima navegação
 export function PrefetchTickets() {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Prefetch tickets se estivermos próximos da página de tickets
-    if (pathname.includes('painel') && !pathname.includes('tickets')) {
-      // Prefetch discreto em background
-      fetch('/api/tickets?pageSize=20', {
-        priority: 'low',
-      }).catch(() => {
-        // Ignore erros de prefetch
-      });
+    // No dashboard ou em qualquer tela que não seja tickets, faz prefetch da lista
+    if (pathname === '/painel/dashboard' || !pathname.includes('tickets')) {
+      fetch('/api/tickets?pageSize=20').catch(() => {});
+    }
+    // Em tickets, faz prefetch de clientes (ação comum: abrir cliente)
+    if (pathname.includes('/painel/tickets')) {
+      fetch('/api/clientes?pageSize=50').catch(() => {});
     }
   }, [pathname]);
 
-  return null; // Componente invisível
+  return null;
 }
 
-// Hook para optimistic loading
+// Hook para prefetch ao passar o mouse sobre um item
 export function useOptimisticTickets() {
   const prefetchTicketDetails = (ticketId: string) => {
-    // Prefetch dados do ticket específico
-    fetch(`/api/tickets/${ticketId}`, {
-      priority: 'low',
-    }).catch(() => {
-      // Ignore erros de prefetch
-    });
+    fetch(`/api/tickets/${ticketId}`).catch(() => {});
   };
 
   const prefetchTicketList = () => {
-    // Prefetch lista atualizada
-    fetch('/api/tickets?pageSize=50', {
-      priority: 'low',
-    }).catch(() => {
-      // Ignore erros de prefetch
-    });
+    fetch('/api/tickets?pageSize=50').catch(() => {});
   };
 
-  return {
-    prefetchTicketDetails,
-    prefetchTicketList,
-  };
+  return { prefetchTicketDetails, prefetchTicketList };
 }

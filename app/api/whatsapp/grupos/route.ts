@@ -46,10 +46,12 @@ export async function GET(req: NextRequest) {
     [session.empresaId]
   );
 
-  return NextResponse.json(
+  const res = NextResponse.json(
     rows.map((r) => ({
       ...r,
       interacoes_abertas: parseInt(r.interacoes_abertas),
     }))
   );
+  res.headers.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+  return res;
 }

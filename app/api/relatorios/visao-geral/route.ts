@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
       ),
     ]);
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     kpis: kpisRows[0] ?? {
       total: 0, abertos: 0, em_andamento: 0,
       resolvidos_hoje: 0, violacoes_sla: 0,
@@ -116,4 +116,6 @@ export async function GET(req: NextRequest) {
     por_categoria: porCategoria,
     top_clientes:  topClientes,
   });
+  res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
+  return res;
 }

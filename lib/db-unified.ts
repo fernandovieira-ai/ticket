@@ -3,7 +3,13 @@ import { Pool } from 'pg';
 // Pool unificado (drfticket com schemas public + intranet)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  max: 10,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 8000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
+  allowExitOnIdle: false,
+  options: "--statement_timeout=10000",
 });
 
 // Função principal para consultas no banco unificado (schema public)

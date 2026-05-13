@@ -105,11 +105,11 @@ export default async function IntranetHomePage() {
                   <div className="text-2xl font-bold text-primary">
                     {module.count}
                   </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={module.href}>
+                  <Link href={module.href}>
+                    <Button variant="outline" size="sm">
                       Acessar
-                    </Link>
-                  </Button>
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>

@@ -27,12 +27,12 @@ export default async function ContratosPage() {
             Gestão de contratos e parcerias empresariais
           </p>
         </div>
-        <Button asChild>
-          <Link href="/painel/intranet/contratos/novo">
+        <Link href="/painel/intranet/contratos/novo">
+          <Button>
             <Plus className="h-4 w-4 mr-2" />
             Novo Contrato
-          </Link>
-        </Button>
+          </Button>
+        </Link>
       </div>
 
       {/* Busca e Filtros */}
@@ -116,16 +116,16 @@ export default async function ContratosPage() {
                   Criado em: {new Date(contrato.criado_em).toLocaleDateString('pt-BR')}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/painel/intranet/contratos/${contrato.id}`}>
+                  <Link href={`/painel/intranet/contratos/${contrato.id}`}>
+                    <Button variant="outline" size="sm">
                       Visualizar
-                    </Link>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/painel/intranet/contratos/${contrato.id}/editar`}>
+                    </Button>
+                  </Link>
+                  <Link href={`/painel/intranet/contratos/${contrato.id}/editar`}>
+                    <Button variant="outline" size="sm">
                       Editar
-                    </Link>
-                  </Button>
+                    </Button>
+                  </Link>
                 </div>
               </div>
             </CardContent>
@@ -140,12 +140,12 @@ export default async function ContratosPage() {
               <p className="text-muted-foreground mb-4">
                 Comece adicionando seu primeiro contrato
               </p>
-              <Button asChild>
-                <Link href="/painel/intranet/contratos/novo">
+              <Link href="/painel/intranet/contratos/novo">
+                <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Adicionar Contrato
-                </Link>
-              </Button>
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         )}

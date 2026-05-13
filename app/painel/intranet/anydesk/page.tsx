@@ -27,12 +27,12 @@ export default async function AnydeskPage() {
             Gestão de acessos remotos e credenciais AnyDesk
           </p>
         </div>
-        <Button asChild>
-          <Link href="/painel/intranet/anydesk/novo">
+        <Link href="/painel/intranet/anydesk/novo">
+          <Button>
             <Plus className="h-4 w-4 mr-2" />
             Novo Acesso
-          </Link>
-        </Button>
+          </Button>
+        </Link>
       </div>
 
       {/* Busca */}
@@ -119,16 +119,16 @@ export default async function AnydeskPage() {
                     Criado: {new Date(acesso.criado_em).toLocaleDateString('pt-BR')}
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/anydesk/${acesso.id}`}>
+                    <Link href={`/painel/intranet/anydesk/${acesso.id}`}>
+                      <Button variant="outline" size="sm">
                         Conectar
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/anydesk/${acesso.id}/editar`}>
+                      </Button>
+                    </Link>
+                    <Link href={`/painel/intranet/anydesk/${acesso.id}/editar`}>
+                      <Button variant="outline" size="sm">
                         Editar
-                      </Link>
-                    </Button>
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -144,12 +144,12 @@ export default async function AnydeskPage() {
               <p className="text-muted-foreground mb-4">
                 Comece adicionando seu primeiro acesso remoto
               </p>
-              <Button asChild>
-                <Link href="/painel/intranet/anydesk/novo">
+              <Link href="/painel/intranet/anydesk/novo">
+                <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Adicionar Acesso
-                </Link>
-              </Button>
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         )}

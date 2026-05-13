@@ -27,12 +27,12 @@ export default async function DtefPage() {
             Gestão de senhas e acessos DTEF
           </p>
         </div>
-        <Button asChild>
-          <Link href="/painel/intranet/dtef/novo">
+        <Link href="/painel/intranet/dtef/novo">
+          <Button>
             <Plus className="h-4 w-4 mr-2" />
             Novo Acesso DTEF
-          </Link>
-        </Button>
+          </Button>
+        </Link>
       </div>
 
       {/* Busca */}
@@ -101,16 +101,16 @@ export default async function DtefPage() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/dtef/${item.id}`}>
+                    <Link href={`/painel/intranet/dtef/${item.id}`}>
+                      <Button variant="outline" size="sm">
                         Visualizar
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/dtef/${item.id}/editar`}>
+                      </Button>
+                    </Link>
+                    <Link href={`/painel/intranet/dtef/${item.id}/editar`}>
+                      <Button variant="outline" size="sm">
                         Editar
-                      </Link>
-                    </Button>
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -126,12 +126,12 @@ export default async function DtefPage() {
               <p className="text-muted-foreground mb-4">
                 Comece adicionando seu primeiro acesso DTEF
               </p>
-              <Button asChild>
-                <Link href="/painel/intranet/dtef/novo">
+              <Link href="/painel/intranet/dtef/novo">
+                <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Adicionar Acesso DTEF
-                </Link>
-              </Button>
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         )}

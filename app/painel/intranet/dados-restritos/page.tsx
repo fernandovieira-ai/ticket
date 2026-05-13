@@ -27,12 +27,12 @@ export default async function DadosRestritosPage() {
             Gestão de informações confidenciais e dados protegidos
           </p>
         </div>
-        <Button asChild className="bg-gray-700 hover:bg-gray-800">
-          <Link href="/painel/intranet/dados-restritos/novo">
+        <Link href="/painel/intranet/dados-restritos/novo">
+          <Button className="bg-gray-700 hover:bg-gray-800">
             <Plus className="h-4 w-4 mr-2" />
             Novo Registro
-          </Link>
-        </Button>
+          </Button>
+        </Link>
       </div>
 
       {/* Aviso de Segurança */}
@@ -117,17 +117,17 @@ export default async function DadosRestritosPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/dados-restritos/${item.id}`}>
+                    <Link href={`/painel/intranet/dados-restritos/${item.id}`}>
+                      <Button variant="outline" size="sm">
                         <Shield className="h-4 w-4 mr-1" />
                         Acessar
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/painel/intranet/dados-restritos/${item.id}/editar`}>
+                      </Button>
+                    </Link>
+                    <Link href={`/painel/intranet/dados-restritos/${item.id}/editar`}>
+                      <Button variant="outline" size="sm">
                         Editar
-                      </Link>
-                    </Button>
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -143,12 +143,12 @@ export default async function DadosRestritosPage() {
               <p className="text-muted-foreground mb-4">
                 Nenhum dado restrito foi cadastrado ainda
               </p>
-              <Button asChild className="bg-gray-700 hover:bg-gray-800">
-                <Link href="/painel/intranet/dados-restritos/novo">
+              <Link href="/painel/intranet/dados-restritos/novo">
+                <Button className="bg-gray-700 hover:bg-gray-800">
                   <Plus className="h-4 w-4 mr-2" />
                   Criar Registro
-                </Link>
-              </Button>
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         )}

@@ -1,11 +1,11 @@
-import { queryIntranetSource } from "@/lib/db-unified";
+import { query } from "@/lib/db-unified";
 
 async function analyzeIntranetSchema() {
   console.log("📋 Analisando estrutura do banco da Intranet...\n");
 
   try {
     // Listar todas as tabelas do schema drfintra
-    const tablesResult = await queryIntranetSource(`
+    const tablesResult = await query(`
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'drfintra'
@@ -26,13 +26,13 @@ async function analyzeIntranetSchema() {
       console.log("=" .repeat(50));
 
       // Contar registros
-      const countResult = await queryIntranetSource(`
+      const countResult = await query(`
         SELECT COUNT(*) as count FROM drfintra.${tableName}
       `);
       console.log(`📊 Registros: ${countResult.rows[0].count}`);
 
       // Estrutura das colunas
-      const columnsResult = await queryIntranetSource(`
+      const columnsResult = await query(`
         SELECT
           column_name,
           data_type,
@@ -56,7 +56,7 @@ async function analyzeIntranetSchema() {
       // Sample de dados se tiver registros
       if (countResult.rows[0].count > 0) {
         try {
-          const sampleResult = await queryIntranetSource(`
+          const sampleResult = await query(`
             SELECT * FROM drfintra.${tableName} LIMIT 2
           `);
 

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryIntranet } from '@/lib/db-unified';
 import { getSession } from '@/lib/auth';
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     // Verificar autenticação
     const session = await getSession();
     if (!session) {
@@ -27,7 +28,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       SET dtainicio = $1, dtafinal = $2, analista = $3, dia_semana = $4, observacao = $5, ind_finalizado = $6
       WHERE id = $7
       RETURNING id
-    `, [dtainicio, dtafinal, analista, dia_semana || null, observacao || null, ind_finalizado || 'N', params.id]);
+    `, [dtainicio, dtafinal, analista, dia_semana || null, observacao || null, ind_finalizado || 'N', id]);
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Plantão não encontrado' }, { status: 404 });
@@ -47,8 +48,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     // Verificar autenticação
     const session = await getSession();
     if (!session) {
@@ -58,7 +60,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Deletar plantão
     const result = await queryIntranet(`
       DELETE FROM plantao WHERE id = $1 RETURNING id
-    `, [params.id]);
+    `, [id]);
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Plantão não encontrado' }, { status: 404 });

@@ -742,9 +742,30 @@ export default function TicketPainelPage() {
           }),
         });
         if (!statusResponse.ok) {
-          const statusError = await statusResponse.json();
-          alert(`Erro ao finalizar ticket: ${statusError.error || 'Erro desconhecido'}`);
+          const contentType = statusResponse.headers.get('content-type');
+          let errorMessage = `HTTP ${statusResponse.status} - ${statusResponse.statusText}`;
+
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              const statusError = await statusResponse.json();
+              errorMessage = statusError.error || errorMessage;
+            } catch {
+              errorMessage += ' (resposta JSON inválida)';
+            }
+          } else {
+            const textResponse = await statusResponse.text();
+            errorMessage += ` - ${textResponse.substring(0, 100)}`;
+          }
+
+          alert(`Erro ao finalizar ticket: ${errorMessage}`);
           return;
+        }
+
+        // Check if response has content before trying to parse JSON
+        const contentType = statusResponse.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await statusResponse.json();
+          console.log('Ticket finalizado com sucesso:', result);
         }
       } else {
         alert('Erro: não foi encontrado um status de encerramento configurado');
@@ -805,9 +826,30 @@ export default function TicketPainelPage() {
           body: JSON.stringify({ status_id: statusAberto.id }),
         });
         if (!response.ok) {
-          const error = await response.json();
-          alert(`Erro ao reabrir ticket: ${error.error || 'Erro desconhecido'}`);
+          const contentType = response.headers.get('content-type');
+          let errorMessage = `HTTP ${response.status} - ${response.statusText}`;
+
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              const error = await response.json();
+              errorMessage = error.error || errorMessage;
+            } catch {
+              errorMessage += ' (resposta JSON inválida)';
+            }
+          } else {
+            const textResponse = await response.text();
+            errorMessage += ` - ${textResponse.substring(0, 100)}`;
+          }
+
+          alert(`Erro ao reabrir ticket: ${errorMessage}`);
           return;
+        }
+
+        // Check if response has content before trying to parse JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          console.log('Ticket reaberto com sucesso:', result);
         }
         await carregar();
       } else {

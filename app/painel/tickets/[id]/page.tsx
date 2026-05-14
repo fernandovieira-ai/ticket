@@ -460,24 +460,45 @@ export default function TicketPainelPage() {
 
   // Carrega opções sob demanda quando necessário
   const carregarOpcoesStatusPrioridade = useCallback(async () => {
-    if (statusOpcoes.length > 0 && prioridadeOpcoes.length > 0) return;
+    console.log('🔄 carregarOpcoesStatusPrioridade iniciada');
+    console.log('📊 Status atual:', statusOpcoes.length, 'Prioridades:', prioridadeOpcoes.length);
+
+    if (statusOpcoes.length > 0 && prioridadeOpcoes.length > 0) {
+      console.log('✅ Já carregado, pulando...');
+      return;
+    }
 
     const promises = [];
 
     if (statusOpcoes.length === 0) {
+      console.log('🔄 Carregando status da API...');
       promises.push(
         detailsCache.fetchWithCache(
           'ticket_status_options',
           async () => {
+            console.log('📡 Fazendo fetch para /api/ticket-status...');
             const res = await fetch("/api/ticket-status");
-            return res.ok ? res.json() : [];
+            console.log('📡 Resposta da API:', res.status, res.ok);
+
+            if (res.ok) {
+              const data = await res.json();
+              console.log('✅ Dados recebidos:', data);
+              return data;
+            } else {
+              console.error('❌ Erro na API:', res.status, await res.text());
+              return [];
+            }
           },
           600000 // 10min for status options
-        ).then(setStatusOpcoes)
+        ).then((data) => {
+          console.log('💾 Setando statusOpcoes com:', data);
+          setStatusOpcoes(data);
+        })
       );
     }
 
     if (prioridadeOpcoes.length === 0) {
+      console.log('🔄 Carregando prioridades da API...');
       promises.push(
         detailsCache.fetchWithCache(
           'ticket_priority_options',
@@ -490,7 +511,9 @@ export default function TicketPainelPage() {
       );
     }
 
+    console.log('⏳ Aguardando Promise.all com', promises.length, 'promises...');
     await Promise.all(promises);
+    console.log('✅ Promise.all concluída!');
   }, [statusOpcoes.length, prioridadeOpcoes.length]);
 
   const carregarUsuariosEDepartamentos = useCallback(async () => {

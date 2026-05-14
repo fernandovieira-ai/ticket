@@ -183,6 +183,12 @@ class TicketDetailsCache {
   getPrefetched(ticketId: string): any {
     return this.get(`ticket_details_${ticketId}`);
   }
+
+  // Clear specific cache entry
+  clearCache(key: string): void {
+    this.cache.delete(key);
+    this.requests.delete(key);
+  }
 }
 
 const detailsCache = new TicketDetailsCache();
@@ -650,7 +656,7 @@ export default function TicketPainelPage() {
         }
 
         // Clear messages cache and reload
-        detailsCache.cache.delete(`ticket_messages_${id}`);
+        detailsCache.clearCache(`ticket_messages_${id}`);
         await carregar();
       }
     } finally {
@@ -798,7 +804,7 @@ export default function TicketPainelPage() {
         body: JSON.stringify({ status_id: statusId }),
       });
       // Clear relevant caches
-      detailsCache.cache.delete(`ticket_details_${id}`);
+      detailsCache.clearCache(`ticket_details_${id}`);
       await carregar();
     } finally {
       setSalvandoStatus(false);
@@ -815,7 +821,7 @@ export default function TicketPainelPage() {
         body: JSON.stringify({ prioridade_id: prioridadeId }),
       });
       // Clear relevant caches
-      detailsCache.cache.delete(`ticket_details_${id}`);
+      detailsCache.clearCache(`ticket_details_${id}`);
       await carregar();
     } finally {
       setSalvandoStatus(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -173,6 +173,28 @@ export default function TicketClientePage() {
     }
   }
 
+  // Sistema de cores para avatares (similar ao painel interno)
+  const autorColorMap = useMemo(() => {
+    if (!mensagens || mensagens.length === 0) return {};
+
+    const USER_COLORS = [
+      "#6366f1",
+      "#8b5cf6",
+      "#0d9488",
+      "#f43f5e",
+      "#f97316",
+      "#0891b2",
+      "#10b981",
+      "#ec4899",
+      "#84cc16",
+      "#eab308",
+    ];
+    const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
+    return Object.fromEntries(
+      autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]),
+    );
+  }, [mensagens]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -189,319 +211,345 @@ export default function TicketClientePage() {
   ].filter(Boolean) as string[];
 
   return (
-    <div
-      className="-mx-4 -my-4 flex flex-col bg-gray-50"
-      style={{ minHeight: "calc(100vh - 56px)" }}
-    >
-      {/* container centralizado com margens laterais maiores */}
-      <div className="w-full px-12 py-12 flex flex-col gap-4">
-        {/* ── Card: Header + Mais detalhes ─────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex-shrink-0">
+    <>
+      {/* ═══ LAYOUT PRINCIPAL ═══ */}
+      <div className="flex h-full overflow-hidden">
+        {/* ── Coluna central ── */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           {/* Cabeçalho */}
-          <div className="px-6 pt-5 pb-5 border-b border-gray-100">
-            {/* Breadcrumb + botão voltar */}
-            <nav className="flex items-center gap-2 flex-wrap mb-2">
-              <Link
-                href="/portal/meus-tickets"
-                className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-sky-500 hover:text-sky-600 transition-colors"
-              >
-                <ArrowLeft size={13} />
-                Chamados
-              </Link>
-              {breadcrumbParts.map((part) => (
-                <span key={part} className="flex items-center gap-2">
-                  <span className="text-xs text-gray-300">/</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    {part}
-                  </span>
-                </span>
-              ))}
-            </nav>
-
-            {/* Linha do título */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-gray-900 leading-tight">
-                #{ticket.numero} – {ticket.titulo}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 flex-wrap">
+            <Link
+              href="/portal/meus-tickets"
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0"
+            >
+              <ArrowLeft size={14} />
+              Meus Chamados
+            </Link>
+            <span className="text-gray-200 select-none">|</span>
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <h1 className="text-sm font-semibold text-gray-900 truncate">
+                #{ticket.numero} — {ticket.titulo}
               </h1>
+            </div>
 
-              <div className="flex items-center gap-2 ml-auto flex-shrink-0 flex-wrap">
-                {/* Badge status */}
+            {/* Botões */}
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              <span
+                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border"
+                style={{
+                  color: ticket.status_cor,
+                  borderColor: ticket.status_cor + "55",
+                  backgroundColor: ticket.status_cor + "15",
+                }}
+              >
                 <span
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: ticket.status_cor }}
+                />
+                {ticket.status_nome}
+              </span>
+
+              <span className="text-xs text-gray-400">
+                {format(new Date(ticket.criado_em), "dd/MM/yyyy HH:mm", {
+                  locale: ptBR,
+                })}
+              </span>
+
+              {!ticket.status_encerra && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmEncerrar(true)}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 border border-green-300 bg-white hover:bg-green-50 hover:border-green-500 rounded-md px-2.5 py-1.5 transition-colors"
+                >
+                  <XCircle size={13} />
+                  Encerrar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Mensagens (área scrollável) ── */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="space-y-1 max-w-3xl">
+              {mensagens.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-10">
+                  Nenhuma mensagem ainda.
+                </p>
+              )}
+              {mensagens.map((m) => {
+                const isOperador = m.autor_perfil !== "cliente";
+                const inicial = m.autor_nome?.charAt(0).toUpperCase() ?? "?";
+                const avatarColor = autorColorMap[m.autor_id] ?? "#9ca3af";
+
+                return (
+                  <div key={m.id} className="flex items-start gap-3 py-2.5">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white select-none mt-0.5"
+                      style={{ backgroundColor: avatarColor }}
+                    >
+                      {inicial}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 mb-1.5">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {m.autor_nome}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {format(new Date(m.criado_em), "dd/MM/yyyy 'às' HH:mm", {
+                            locale: ptBR,
+                          })}
+                          {isOperador && " · Atendente"}
+                        </span>
+                      </div>
+                      <div
+                        className={`rounded-lg px-4 py-3 text-sm leading-relaxed ${
+                          isOperador
+                            ? "bg-white border border-gray-200 border-l-[3px] border-l-blue-400"
+                            : "bg-gray-50 border border-gray-100"
+                        }`}
+                      >
+                        <div
+                          className="prose prose-sm max-w-none text-gray-800 [&_p]:my-0.5 [&_ul]:my-1 [&_ol]:my-1"
+                          dangerouslySetInnerHTML={{ __html: m.corpo }}
+                        />
+                      </div>
+                      {m.anexos?.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {m.anexos.map((a) => (
+                            <a
+                              key={a.id}
+                              href={a.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs bg-gray-100 text-blue-600 hover:bg-gray-200 rounded px-2.5 py-1 transition-colors"
+                            >
+                              <Paperclip
+                                size={10}
+                                className="text-gray-400 flex-shrink-0"
+                              />
+                              <span className="max-w-[200px] truncate">
+                                {a.nome}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+          </div>
+
+          {/* ── Formulário de resposta (fixo no rodapé) ── */}
+          {!ticket.status_encerra ? (
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white">
+              <form
+                onSubmit={enviarResposta}
+                className="bg-white px-4 pt-3 pb-2"
+              >
+                <RichTextEditor
+                  ref={editorRef}
+                  value={resposta}
+                  onChange={setResposta}
+                  onAttach={setAttachments}
+                  placeholder="Escreva sua mensagem..."
+                  disabled={enviando}
+                />
+                <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100">
+                  <p className="text-xs text-gray-400">Ctrl+Enter para enviar</p>
+                  <button
+                    type="submit"
+                    disabled={enviando || !resposta.replace(/<[^>]*>/g, "").trim()}
+                    className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {enviando ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    Enviar
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white px-5 py-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-6 py-4 text-center text-sm text-gray-400">
+                Este chamado foi encerrado. Para continuar, abra um novo chamado.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ═══ PAINEL LATERAL ═══ */}
+        <aside className="w-72 border-l border-gray-200 flex-shrink-0 overflow-y-auto bg-white">
+          {/* INFORMAÇÕES */}
+          <div className="px-5 py-4 border-b border-gray-100">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+              Informações
+            </p>
+            <div className="space-y-3.5">
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Protocolo</p>
+                <p className="text-sm font-mono font-medium text-gray-800">
+                  #{ticket.numero}
+                </p>
+              </div>
+
+              {ticket.departamento_nome && (
+                <div>
+                  <p className="text-[11px] text-gray-400 mb-0.5">
+                    Departamento
+                  </p>
+                  <p className="text-sm text-gray-800">
+                    {ticket.departamento_nome}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Categoria</p>
+                <p className="text-sm text-gray-800">
+                  {ticket.categoria_nome ?? "—"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Responsável</p>
+                {ticket.atribuido_nome ? (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                      style={{ backgroundColor: "#3b82f6" }}
+                    >
+                      {ticket.atribuido_nome.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm text-gray-800">
+                      {ticket.atribuido_nome}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Não atribuído</p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Status</p>
+                <span
+                  className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full border"
                   style={{
-                    backgroundColor: ticket.status_cor + "18",
                     color: ticket.status_cor,
-                    border: `1px solid ${ticket.status_cor}30`,
+                    borderColor: ticket.status_cor + "55",
+                    backgroundColor: ticket.status_cor + "15",
                   }}
                 >
                   <span
-                    className="inline-block rounded-full flex-shrink-0"
-                    style={{
-                      width: 7,
-                      height: 7,
-                      backgroundColor: ticket.status_cor,
-                    }}
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: ticket.status_cor }}
                   />
                   {ticket.status_nome}
                 </span>
-
-                {/* Data */}
-                <span className="text-sm text-gray-500">
-                  {format(new Date(ticket.criado_em), "dd/MM/yyyy HH:mm", {
-                    locale: ptBR,
-                  })}
-                </span>
-
-                {/* Botão encerrar */}
-                {!ticket.status_encerra && (
-                  <button
-                    onClick={() => setConfirmEncerrar(true)}
-                    className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-colors"
-                    style={{ backgroundColor: "#16a34a" }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLElement).style.backgroundColor =
-                        "#15803d")
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLElement).style.backgroundColor =
-                        "#16a34a")
-                    }
-                  >
-                    <XCircle size={15} />
-                    Encerrar Chamado
-                  </button>
-                )}
               </div>
-            </div>
-          </div>
 
-          {/* Mais detalhes (colapsível) */}
-          <div>
-            <button
-              onClick={() => setDetalheAberto((v) => !v)}
-              className="w-full flex items-center justify-between px-6 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <span>Mais detalhes</span>
-              {detalheAberto ? (
-                <ChevronUp size={16} />
-              ) : (
-                <ChevronDown size={16} />
-              )}
-            </button>
-            {detalheAberto && (
-              <div className="px-6 pb-5 pt-1 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 border-t border-gray-100">
-                {ticket.departamento_nome && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                      Departamento
-                    </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {ticket.departamento_nome}
-                    </p>
-                  </div>
-                )}
-                {ticket.categoria_nome && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                      Categoria
-                    </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {ticket.categoria_nome}
-                    </p>
-                  </div>
-                )}
-                {ticket.atribuido_nome && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                      Responsável
-                    </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {ticket.atribuido_nome}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                    Prioridade
-                  </p>
-                  <p
-                    className="text-sm font-semibold"
-                    style={{ color: ticket.prioridade_cor }}
-                  >
-                    {ticket.prioridade_nome}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                    Aberto em
-                  </p>
-                  <p className="text-sm font-medium text-gray-800">
-                    {format(
-                      new Date(ticket.criado_em),
-                      "dd/MM/yyyy 'às' HH:mm",
-                      { locale: ptBR },
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-                    Atualizado em
-                  </p>
-                  <p className="text-sm font-medium text-gray-800">
-                    {format(
-                      new Date(ticket.atualizado_em),
-                      "dd/MM/yyyy 'às' HH:mm",
-                      { locale: ptBR },
-                    )}
-                  </p>
-                </div>
-                {anexosTicket.length > 0 && (
-                  <div className="col-span-2 md:col-span-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1.5">
-                      Anexos do chamado
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {anexosTicket.map((a) => (
-                        <a
-                          key={a.id}
-                          href={a.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs rounded-md px-2 py-1 bg-gray-100 text-gray-600 hover:opacity-80 transition-opacity"
-                        >
-                          <Paperclip size={10} />
-                          <span className="max-w-[180px] truncate">{a.nome}</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Card: Mensagens ──────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {mensagens.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-10">
-              Nenhuma mensagem ainda.
-            </p>
-          )}
-          {mensagens.map((m) => {
-            const isCliente = m.autor_perfil === "cliente";
-            return (
-              <div
-                key={m.id}
-                className="flex items-start gap-4 px-6 py-5 border-b border-gray-100 last:border-b-0"
-                style={{
-                  backgroundColor: isCliente ? "#eff6ff" : "#ffffff",
-                }}
-              >
-                {/* Avatar */}
-                <div
-                  className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white select-none"
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Prioridade</p>
+                <span
+                  className="inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border"
                   style={{
-                    backgroundColor: isCliente ? "#0ea5e9" : "#6b7280",
+                    color: ticket.prioridade_cor,
+                    borderColor: ticket.prioridade_cor + "55",
+                    backgroundColor: ticket.prioridade_cor + "15",
                   }}
                 >
-                  {iniciais(m.autor_nome)}
-                </div>
+                  {ticket.prioridade_nome}
+                </span>
+              </div>
+            </div>
+          </div>
 
-                {/* Conteúdo */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span
-                      className="text-sm font-semibold"
-                      style={{ color: isCliente ? "#0369a1" : "#111827" }}
-                    >
-                      {m.autor_nome}
-                    </span>
-                    <span className="text-xs text-gray-400 ml-auto flex-shrink-0">
-                      {format(new Date(m.criado_em), "dd/MM/yyyy HH:mm", {
-                        locale: ptBR,
-                      })}
-                    </span>
-                  </div>
-                  <div
-                    className="text-sm text-gray-700 prose prose-sm max-w-none [&_p]:my-0.5 [&_ul]:my-1 [&_ol]:my-1"
-                    dangerouslySetInnerHTML={{ __html: m.corpo }}
-                  />
-                  {m.anexos?.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {m.anexos.map((a) => (
-                        <a
-                          key={a.id}
-                          href={a.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs rounded-md px-2 py-1 hover:opacity-80 transition-opacity"
-                          style={{
-                            backgroundColor: isCliente ? "#dbeafe" : "#f3f4f6",
-                            color: isCliente ? "#1d4ed8" : "#4b5563",
-                          }}
-                        >
-                          <Paperclip size={10} />
-                          <span className="max-w-[140px] truncate">
-                            {a.nome}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  )}
+          {/* HISTÓRICO */}
+          <div className="px-5 py-4 border-b border-gray-100">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+              Histórico
+            </p>
+            <div className="space-y-3">
+              {ticket.atribuido_nome && (
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 mt-1 flex-shrink-0" />
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Chamado atribuído a{" "}
+                    <span className="font-medium">{ticket.atribuido_nome}</span>
+                  </p>
+                </div>
+              )}
+              <div className="flex items-start gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-green-400 mt-1 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Chamado aberto
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {format(new Date(ticket.criado_em), "dd/MM/yyyy 'às' HH:mm", {
+                      locale: ptBR,
+                    })}
+                  </p>
                 </div>
               </div>
-            );
-          })}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* ── Card: Caixa de resposta ──────────────────────────── */}
-        {!ticket.status_encerra ? (
-          <form
-            onSubmit={enviarResposta}
-            className="bg-white border border-gray-200 rounded-xl px-6 py-5 flex-shrink-0"
-          >
-            <RichTextEditor
-              ref={editorRef}
-              value={resposta}
-              onChange={setResposta}
-              onAttach={setAttachments}
-              placeholder="Responder..."
-              disabled={enviando}
-            />
-            <div className="flex items-center justify-end mt-3">
-              <button
-                type="submit"
-                disabled={enviando || !resposta.replace(/<[^>]*>/g, "").trim()}
-                className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-semibold transition-colors disabled:opacity-50"
-                style={{ backgroundColor: "#111827" }}
-                onMouseEnter={(e) => {
-                  if (!enviando)
-                    (e.currentTarget as HTMLElement).style.backgroundColor =
-                      "#1f2937";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor =
-                    "#111827";
-                }}
-              >
-                {enviando ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                Enviar
-              </button>
+              {ticket.atualizado_em !== ticket.criado_em && (
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-gray-400 mt-1 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Última atualização
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {format(new Date(ticket.atualizado_em), "dd/MM/yyyy 'às' HH:mm", {
+                        locale: ptBR,
+                      })}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-          </form>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 text-center text-sm text-gray-400 flex-shrink-0">
-            Este chamado foi encerrado. Para continuar, abra um novo chamado.
           </div>
-        )}
+
+          {/* ANEXOS DO CHAMADO */}
+          {anexosTicket.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-4">
+                Anexos do chamado
+              </p>
+              <div className="space-y-2">
+                {anexosTicket.map((a) => (
+                  <a
+                    key={a.id}
+                    href={a.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 text-xs rounded-md px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-gray-800 transition-colors group"
+                  >
+                    <Paperclip size={12} className="text-gray-400 group-hover:text-gray-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate font-medium">{a.nome}</p>
+                      {a.tamanho && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {a.tamanho < 1024
+                            ? `${a.tamanho} B`
+                            : a.tamanho < 1024 * 1024
+                              ? `${Math.round(a.tamanho / 1024)} KB`
+                              : `${(a.tamanho / (1024 * 1024)).toFixed(1)} MB`}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
       </div>
-      {/* fim container */}
 
       {/* ── Modal confirmar encerrar ────────────────────────────── */}
       {confirmEncerrar && (
@@ -545,6 +593,6 @@ export default function TicketClientePage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

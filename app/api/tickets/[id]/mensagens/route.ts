@@ -249,7 +249,11 @@ export async function POST(
   }
 
   // Sanitizar caracteres especiais para compatibilidade com LATIN1
-  const corpoSanitizado = corpo.replace(/[^\x00-\x7F]/g, "?");
+  // Converte acentos para letras normais mantendo legibilidade
+  const corpoSanitizado = corpo
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // Remove diacríticos (acentos)
+    .replace(/[^\x00-\x7F]/g, "?"); // Substitui caracteres restantes por ?
 
   const [mensagem] = await query<{ id: string; criado_em: Date }>(
     `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna) VALUES ($1, $2, $3, $4) RETURNING id, criado_em`,

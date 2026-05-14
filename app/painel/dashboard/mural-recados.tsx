@@ -88,6 +88,7 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
   const [paginaCard, setPaginaCard] = useState(1);
   const [paginaModal, setPaginaModal] = useState(1);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [imagemAberta, setImagemAberta] = useState<{ url: string; nome: string } | null>(null);
   const editorRef = useRef<RichTextEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -196,10 +197,9 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
   const totalPaginasCard = Math.max(1, Math.ceil(mensagens.length / CARD_POR_PAG));
   const msgCard = mensagens.slice((paginaCard - 1) * CARD_POR_PAG, paginaCard * CARD_POR_PAG);
 
-  // Paginação modal (mais antiga primeiro)
-  const ordenadas = [...mensagens].reverse();
-  const totalPaginasModal = Math.max(1, Math.ceil(ordenadas.length / MODAL_POR_PAG));
-  const msgModal = ordenadas.slice((paginaModal - 1) * MODAL_POR_PAG, paginaModal * MODAL_POR_PAG);
+  // Paginação modal (mais recente primeiro)
+  const totalPaginasModal = Math.max(1, Math.ceil(mensagens.length / MODAL_POR_PAG));
+  const msgModal = mensagens.slice((paginaModal - 1) * MODAL_POR_PAG, paginaModal * MODAL_POR_PAG);
 
   return (
     <>
@@ -263,8 +263,8 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                     gap: 8,
                     padding: "8px 10px",
                     borderRadius: 10,
-                    backgroundColor: isOwn ? "rgba(109,40,217,0.05)" : "var(--color-bg-secondary)",
-                    border: isOwn ? "0.5px solid rgba(109,40,217,0.15)" : "0.5px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-secondary)",
+                    border: "0.5px solid var(--color-border)",
                   }}
                 >
                   {/* Avatar */}
@@ -305,27 +305,43 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                       dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                     />
                     {(msg.anexos?.length > 0) && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-                        {msg.anexos.map((a, i) => (
-                          <a
+                      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {/* Imagens inline */}
+                        {msg.anexos.filter(a => a.mime_type?.startsWith("image/")).map((a, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
                             key={i}
-                            href={a.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: 4,
-                              fontSize: 11, borderRadius: 5, padding: "3px 8px",
-                              background: "var(--color-bg-secondary)",
-                              border: "0.5px solid var(--color-border)",
-                              color: "#2563eb", textDecoration: "none",
-                            }}
-                          >
-                            <Paperclip style={{ width: 10, height: 10, flexShrink: 0 }} />
-                            <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {a.nome}
-                            </span>
-                          </a>
+                            src={a.url}
+                            alt={a.nome}
+                            style={{ maxWidth: "60%", maxHeight: 120, borderRadius: 6, objectFit: "contain", cursor: "pointer", display: "block" }}
+                            onClick={() => setImagemAberta({ url: a.url, nome: a.nome })}
+                          />
                         ))}
+                        {/* Outros arquivos como chips */}
+                        {msg.anexos.filter(a => !a.mime_type?.startsWith("image/")).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {msg.anexos.filter(a => !a.mime_type?.startsWith("image/")).map((a, i) => (
+                              <a
+                                key={i}
+                                href={a.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: "inline-flex", alignItems: "center", gap: 4,
+                                  fontSize: 11, borderRadius: 5, padding: "3px 8px",
+                                  background: "var(--color-bg-secondary)",
+                                  border: "0.5px solid var(--color-border)",
+                                  color: "#2563eb", textDecoration: "none",
+                                }}
+                              >
+                                <Paperclip style={{ width: 10, height: 10, flexShrink: 0 }} />
+                                <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {a.nome}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     {msg.tem_imagem && (
@@ -477,8 +493,8 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                         gap: 12,
                         padding: "12px 16px",
                         borderRadius: 12,
-                        backgroundColor: isOwn ? "rgba(109,40,217,0.06)" : "var(--color-bg-secondary)",
-                        border: isOwn ? "0.5px solid rgba(109,40,217,0.2)" : "0.5px solid var(--color-border)",
+                        backgroundColor: "var(--color-bg-secondary)",
+                        border: "0.5px solid var(--color-border)",
                       }}
                     >
                       {/* Avatar */}
@@ -515,27 +531,43 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                           dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                         />
                         {(msg.anexos?.length > 0) && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                            {msg.anexos.map((a, i) => (
-                              <a
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                            {/* Imagens inline */}
+                            {msg.anexos.filter(a => a.mime_type?.startsWith("image/")).map((a, i) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
                                 key={i}
-                                href={a.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  display: "inline-flex", alignItems: "center", gap: 5,
-                                  fontSize: 12, borderRadius: 6, padding: "4px 10px",
-                                  background: "var(--color-bg-secondary)",
-                                  border: "0.5px solid var(--color-border)",
-                                  color: "#2563eb", textDecoration: "none",
-                                }}
-                              >
-                                <Paperclip style={{ width: 11, height: 11, flexShrink: 0 }} />
-                                <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {a.nome}
-                                </span>
-                              </a>
+                                src={a.url}
+                                alt={a.nome}
+                                style={{ maxWidth: "60%", maxHeight: 240, borderRadius: 8, objectFit: "contain", cursor: "pointer", display: "block" }}
+                                onClick={() => setImagemAberta({ url: a.url, nome: a.nome })}
+                              />
                             ))}
+                            {/* Outros arquivos como chips */}
+                            {msg.anexos.filter(a => !a.mime_type?.startsWith("image/")).length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {msg.anexos.filter(a => !a.mime_type?.startsWith("image/")).map((a, i) => (
+                                  <a
+                                    key={i}
+                                    href={a.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: 5,
+                                      fontSize: 12, borderRadius: 6, padding: "4px 10px",
+                                      background: "var(--color-bg-secondary)",
+                                      border: "0.5px solid var(--color-border)",
+                                      color: "#2563eb", textDecoration: "none",
+                                    }}
+                                  >
+                                    <Paperclip style={{ width: 11, height: 11, flexShrink: 0 }} />
+                                    <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {a.nome}
+                                    </span>
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         {msg.tem_imagem && (
@@ -577,38 +609,9 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                 value={novaMsg}
                 onChange={setNovaMsg}
                 placeholder="Escreva sua mensagem para o mural..."
-                onAttach={(files) => setAttachments((prev) => [...prev, ...files])}
+                onAttach={(files) => setAttachments(files)}
                 disabled={enviando}
               />
-
-              {/* Arquivos anexados pendentes */}
-              {attachments.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {attachments.map((f, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        background: "var(--color-bg-secondary)",
-                        border: "0.5px solid var(--color-border)",
-                        borderRadius: 6, padding: "4px 10px", fontSize: 12,
-                        color: "var(--color-text-secondary)",
-                      }}
-                    >
-                      <Paperclip style={{ width: 11, height: 11 }} />
-                      <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.name}
-                      </span>
-                      <button
-                        onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", color: "#dc2626" }}
-                      >
-                        <X style={{ width: 11, height: 11 }} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button
@@ -640,6 +643,57 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox de imagem */}
+      {imagemAberta && (
+        <div
+          onClick={() => setImagemAberta(null)}
+          style={{
+            position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.85)",
+            zIndex: 100, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", padding: 24,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imagemAberta.url}
+            alt={imagemAberta.nome}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "90vw", maxHeight: "75vh",
+              borderRadius: 12, objectFit: "contain",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+            }}
+          />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "flex", gap: 12, marginTop: 20 }}
+          >
+            <a
+              href={imagemAberta.url}
+              download={imagemAberta.nome}
+              style={{
+                padding: "9px 22px", borderRadius: 8, border: "none",
+                background: "#16a34a", color: "white",
+                fontSize: 13, fontWeight: 600, cursor: "pointer",
+                textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6,
+              }}
+            >
+              ⬇ Baixar
+            </a>
+            <button
+              onClick={() => setImagemAberta(null)}
+              style={{
+                padding: "9px 22px", borderRadius: 8, border: "none",
+                background: "#dc2626", color: "white",
+                fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              ✕ Fechar
+            </button>
           </div>
         </div>
       )}

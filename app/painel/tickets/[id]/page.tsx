@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -129,6 +129,88 @@ interface SubcategoriaOpcao {
   nome: string;
 }
 
+// Performance cache class for ticket details
+class TicketDetailsCache {
+  private cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+  private requests = new Map<string, Promise<any>>();
+
+  private isExpired(item: { timestamp: number; ttl: number }): boolean {
+    return Date.now() - item.timestamp > item.ttl;
+  }
+
+  get<T>(key: string): T | null {
+    const item = this.cache.get(key);
+    if (!item || this.isExpired(item)) {
+      this.cache.delete(key);
+      return null;
+    }
+    return item.data;
+  }
+
+  set(key: string, data: any, ttlMs = 300000): void { // 5min default
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMs,
+    });
+  }
+
+  async fetchWithCache<T>(key: string, fetcher: () => Promise<T>, ttlMs = 300000): Promise<T> {
+    // Check cache first
+    const cached = this.get<T>(key);
+    if (cached !== null) return cached;
+
+    // Check if request is in flight
+    if (this.requests.has(key)) {
+      return this.requests.get(key);
+    }
+
+    // Make new request
+    const promise = fetcher().then((data) => {
+      this.set(key, data, ttlMs);
+      this.requests.delete(key);
+      return data;
+    }).catch((error) => {
+      this.requests.delete(key);
+      throw error;
+    });
+
+    this.requests.set(key, promise);
+    return promise;
+  }
+
+  // Check for prefetched data from the tickets list
+  getPrefetched(ticketId: string): any {
+    return this.get(`ticket_details_${ticketId}`);
+  }
+}
+
+const detailsCache = new TicketDetailsCache();
+
+// Export prefetch function for use by tickets list
+export function prefetchTicketDetails(ticketId: string): void {
+  // Start prefetching ticket details in the background
+  detailsCache.fetchWithCache(
+    `ticket_details_${ticketId}`,
+    async () => {
+      const res = await fetch(`/api/tickets/${ticketId}`);
+      if (!res.ok) throw new Error('Ticket not found');
+      return res.json();
+    },
+    180000 // 3min
+  ).catch(() => {}); // Silent fail for prefetch
+
+  // Also prefetch messages
+  detailsCache.fetchWithCache(
+    `ticket_messages_${ticketId}`,
+    async () => {
+      const res = await fetch(`/api/tickets/${ticketId}/mensagens`);
+      return res.ok ? res.json() : [];
+    },
+    60000 // 1min
+  ).catch(() => {}); // Silent fail for prefetch
+}
+
 export default function TicketPainelPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -225,91 +307,239 @@ export default function TicketPainelPage() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const carregar = useCallback(async () => {
-    const [resT, resM] = await Promise.all([
-      fetch(`/api/tickets/${id}`),
-      fetch(`/api/tickets/${id}/mensagens`),
-    ]);
-    if (!resT.ok) {
+    try {
+      // Check for prefetched ticket data first
+      const prefetchedTicket = detailsCache.getPrefetched(id);
+      if (prefetchedTicket) {
+        setTicket(prefetchedTicket);
+        setLoading(false);
+      }
+
+      // Load ticket and messages with cache
+      const [ticketData, mensagensData] = await Promise.all([
+        detailsCache.fetchWithCache(
+          `ticket_details_${id}`,
+          async () => {
+            const res = await fetch(`/api/tickets/${id}`);
+            if (!res.ok) throw new Error('Ticket not found');
+            return res.json();
+          },
+          180000 // 3min for ticket details
+        ),
+        detailsCache.fetchWithCache(
+          `ticket_messages_${id}`,
+          async () => {
+            const res = await fetch(`/api/tickets/${id}/mensagens`);
+            return res.ok ? res.json() : [];
+          },
+          60000 // 1min for messages (they change more frequently)
+        )
+      ]);
+
+      setTicket(ticketData);
+      setMensagens(mensagensData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading ticket:', error);
       router.push("/painel/tickets");
-      return;
     }
-    setTicket(await resT.json());
-    setMensagens(await resM.json());
-    setLoading(false);
   }, [id, router]);
 
   useEffect(() => {
     carregar();
+
+    // Background cache warming for commonly needed data
+    setTimeout(() => {
+      // Pre-cache user profile if not already cached
+      detailsCache.fetchWithCache(
+        'user_profile',
+        async () => {
+          const res = await fetch("/api/auth/me");
+          return res.ok ? res.json() : null;
+        },
+        600000
+      ).catch(() => {});
+
+      // Pre-cache status and priority options (frequently used in dropdowns)
+      detailsCache.fetchWithCache(
+        'ticket_status_options',
+        async () => {
+          const res = await fetch("/api/ticket-status");
+          return res.ok ? res.json() : [];
+        },
+        600000
+      ).catch(() => {});
+
+      detailsCache.fetchWithCache(
+        'ticket_priority_options',
+        async () => {
+          const res = await fetch("/api/ticket-prioridades");
+          return res.ok ? res.json() : [];
+        },
+        600000
+      ).catch(() => {});
+    }, 1000); // Start warming after 1 second
   }, [carregar]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (mensagens.length > 0 && bottomRef.current) {
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [mensagens.length]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Enter to submit form
+      if (e.ctrlKey && e.key === "Enter" && !enviando && resposta.replace(/<[^>]*>/g, "").trim()) {
+        e.preventDefault();
+        const event = new Event('submit', { bubbles: true, cancelable: true });
+        formRef.current?.dispatchEvent(event);
+      }
+      // Escape to close modals
+      if (e.key === "Escape") {
+        if (editarAberto) setEditarAberto(false);
+        if (transferirAberto) setTransferirAberto(false);
+        if (finalizarAberto) setFinalizarAberto(false);
+        if (cancelarAberto) setCancelarAberto(false);
+        if (statusAberto) setStatusAberto(false);
+        if (prioridadeAberta) setPrioridadeAberta(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [enviando, resposta, editarAberto, transferirAberto, finalizarAberto, cancelarAberto, statusAberto, prioridadeAberta]);
 
   useEffect(() => {
     if (!ticket?.cliente_id) return;
-    fetch(`/api/clientes/${ticket.cliente_id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d)
-          setClienteDetalhe({
-            email: d.email,
-            telefone: d.telefone,
-            documento: d.documento,
-            segmento: d.segmento,
-          });
-      })
-      .catch(() => {});
+
+    detailsCache.fetchWithCache(
+      `client_details_${ticket.cliente_id}`,
+      async () => {
+        const res = await fetch(`/api/clientes/${ticket.cliente_id}`);
+        return res.ok ? res.json() : null;
+      },
+      300000 // 5min for client details
+    ).then((d) => {
+      if (d) {
+        setClienteDetalhe({
+          email: d.email,
+          telefone: d.telefone,
+          documento: d.documento,
+          segmento: d.segmento,
+        });
+      }
+    }).catch(() => {});
   }, [ticket?.cliente_id]);
 
   // Carrega perfil do usuário (essencial)
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) setPerfilUsuario(data.perfil ?? null);
-      })
-      .catch(() => {});
+    detailsCache.fetchWithCache(
+      'user_profile',
+      async () => {
+        const res = await fetch("/api/auth/me");
+        return res.ok ? res.json() : null;
+      },
+      600000 // 10min for user profile
+    ).then((data) => {
+      if (data) setPerfilUsuario(data.perfil ?? null);
+    }).catch(() => {});
   }, []);
 
   // Carrega opções sob demanda quando necessário
   const carregarOpcoesStatusPrioridade = useCallback(async () => {
     if (statusOpcoes.length > 0 && prioridadeOpcoes.length > 0) return;
 
-    const [resS, resP] = await Promise.all([
-      fetch("/api/ticket-status"),
-      fetch("/api/ticket-prioridades"),
-    ]);
-    if (resS.ok && statusOpcoes.length === 0) setStatusOpcoes(await resS.json());
-    if (resP.ok && prioridadeOpcoes.length === 0) setPrioridadeOpcoes(await resP.json());
+    const promises = [];
+
+    if (statusOpcoes.length === 0) {
+      promises.push(
+        detailsCache.fetchWithCache(
+          'ticket_status_options',
+          async () => {
+            const res = await fetch("/api/ticket-status");
+            return res.ok ? res.json() : [];
+          },
+          600000 // 10min for status options
+        ).then(setStatusOpcoes)
+      );
+    }
+
+    if (prioridadeOpcoes.length === 0) {
+      promises.push(
+        detailsCache.fetchWithCache(
+          'ticket_priority_options',
+          async () => {
+            const res = await fetch("/api/ticket-prioridades");
+            return res.ok ? res.json() : [];
+          },
+          600000 // 10min for priority options
+        ).then(setPrioridadeOpcoes)
+      );
+    }
+
+    await Promise.all(promises);
   }, [statusOpcoes.length, prioridadeOpcoes.length]);
 
   const carregarUsuariosEDepartamentos = useCallback(async () => {
     if (usuarios.length > 0 && departamentos.length > 0) return;
 
-    const [resU, resD] = await Promise.all([
-      fetch("/api/usuarios?pageSize=100"),
-      fetch("/api/departamentos?pageSize=100"),
-    ]);
+    const promises = [];
 
-    if (resU.ok && usuarios.length === 0) {
-      const data = await resU.json();
-      setUsuarios(
-        (data.data ?? []).filter(
-          (u: UsuarioOpcao) => u.perfil !== "cliente" && u.ativo !== false,
-        ),
+    if (usuarios.length === 0) {
+      promises.push(
+        detailsCache.fetchWithCache(
+          'users_list',
+          async () => {
+            const res = await fetch("/api/usuarios?pageSize=100");
+            if (!res.ok) return [];
+            const data = await res.json();
+            return (data.data ?? []).filter(
+              (u: UsuarioOpcao) => u.perfil !== "cliente" && u.ativo !== false,
+            );
+          },
+          300000 // 5min for users list
+        ).then(setUsuarios)
       );
     }
-    if (resD.ok && departamentos.length === 0) {
-      const data = await resD.json();
-      setDepartamentos(data.data ?? []);
+
+    if (departamentos.length === 0) {
+      promises.push(
+        detailsCache.fetchWithCache(
+          'departments_list',
+          async () => {
+            const res = await fetch("/api/departamentos?pageSize=100");
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.data ?? [];
+          },
+          300000 // 5min for departments list
+        ).then(setDepartamentos)
+      );
     }
+
+    await Promise.all(promises);
   }, [usuarios.length, departamentos.length]);
 
   const carregarCategorias = useCallback(async () => {
     if (categorias.length > 0) return;
 
-    const res = await fetch("/api/categorias?pageSize=100");
-    if (res.ok) {
-      const data = await res.json();
-      setCategorias(data.data ?? []);
-    }
+    const categories = await detailsCache.fetchWithCache(
+      'categories_list',
+      async () => {
+        const res = await fetch("/api/categorias?pageSize=100");
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.data ?? [];
+      },
+      300000 // 5min for categories list
+    );
+
+    setCategorias(categories);
   }, [categorias.length]);
 
   // Carrega subcategorias ao mudar categoria no modal de edição
@@ -318,10 +548,17 @@ export default function TicketPainelPage() {
       setSubcategorias([]);
       return;
     }
-    fetch(`/api/subcategorias?categoria_id=${editarCategoriaId}&pageSize=100`)
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => setSubcategorias(d.data ?? []))
-      .catch(() => {});
+
+    detailsCache.fetchWithCache(
+      `subcategories_${editarCategoriaId}`,
+      async () => {
+        const res = await fetch(`/api/subcategorias?categoria_id=${editarCategoriaId}&pageSize=100`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.data ?? [];
+      },
+      300000 // 5min for subcategories
+    ).then(setSubcategorias).catch(() => {});
   }, [editarAberto, editarCategoriaId]);
 
   function abrirModalEditar() {
@@ -369,7 +606,8 @@ export default function TicketPainelPage() {
   async function enviarResposta(e: React.FormEvent) {
     e.preventDefault();
     const textoLimpo = resposta.replace(/<[^>]*>/g, "").trim();
-    if (!textoLimpo) return;
+    if (!textoLimpo || enviando) return; // Prevent double submission
+
     setEnviando(true);
     try {
       let res: Response;
@@ -389,10 +627,16 @@ export default function TicketPainelPage() {
           body: JSON.stringify({ corpo: resposta, interna }),
         });
       }
+
       if (res.ok) {
+        // Clear form immediately for better UX
+        setResposta("");
+        setAttachments([]);
+        editorRef.current?.clear();
+
         // If ticket is via WhatsApp and option is checked, also send via WhatsApp
         if (!interna && enviarViaWhatsapp && clienteDetalhe?.telefone) {
-          const wpRes = await fetch("/api/whatsapp/send", {
+          fetch("/api/whatsapp/send", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -400,15 +644,13 @@ export default function TicketPainelPage() {
               numero: clienteDetalhe.telefone,
               mensagem: resposta,
             }),
+          }).catch((err) => {
+            console.warn("[WhatsApp send] error:", err);
           });
-          if (!wpRes.ok) {
-            const err = await wpRes.json().catch(() => ({}));
-            console.warn("[WhatsApp send]", err.error);
-          }
         }
-        setResposta("");
-        setAttachments([]);
-        editorRef.current?.clear();
+
+        // Clear messages cache and reload
+        detailsCache.cache.delete(`ticket_messages_${id}`);
         await carregar();
       }
     } finally {
@@ -547,24 +789,116 @@ export default function TicketPainelPage() {
   }
 
   async function atualizarStatus(statusId: string) {
+    if (salvandoStatus) return; // Prevent double clicks
     setSalvandoStatus(true);
-    await fetch(`/api/tickets/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status_id: statusId }),
-    });
-    await carregar();
-    setSalvandoStatus(false);
+    try {
+      await fetch(`/api/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status_id: statusId }),
+      });
+      // Clear relevant caches
+      detailsCache.cache.delete(`ticket_details_${id}`);
+      await carregar();
+    } finally {
+      setSalvandoStatus(false);
+    }
   }
 
   async function atualizarPrioridade(prioridadeId: string) {
-    await fetch(`/api/tickets/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prioridade_id: prioridadeId }),
-    });
-    await carregar();
+    if (salvandoStatus) return; // Reuse the same loading state
+    setSalvandoStatus(true);
+    try {
+      await fetch(`/api/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prioridade_id: prioridadeId }),
+      });
+      // Clear relevant caches
+      detailsCache.cache.delete(`ticket_details_${id}`);
+      await carregar();
+    } finally {
+      setSalvandoStatus(false);
+    }
   }
+
+  // Mapa de cores por autor (memoized)
+  const autorColorMap = useMemo(() => {
+    if (!mensagens || mensagens.length === 0) return {};
+
+    const USER_COLORS = [
+      "#6366f1",
+      "#8b5cf6",
+      "#0d9488",
+      "#f43f5e",
+      "#f97316",
+      "#0891b2",
+      "#10b981",
+      "#ec4899",
+      "#84cc16",
+      "#eab308",
+    ];
+    const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
+    return Object.fromEntries(
+      autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]),
+    );
+  }, [mensagens]);
+
+  // Computações SLA (memoized for performance)
+  const slaData = useMemo(() => {
+    if (!ticket) {
+      return {
+        slaDeadline: null,
+        slaPct: 0,
+        slaDentroSla: null,
+        slaEmAlerta: false,
+        slaTotalHoras: 0,
+        slaDecorridoHoras: 0,
+        slaDecorridoMinutos: 0,
+      };
+    }
+
+    const agora = new Date();
+    const criadoEm = new Date(ticket.criado_em);
+    const slaDeadline = ticket.sla_resolucao_deadline
+      ? new Date(ticket.sla_resolucao_deadline)
+      : null;
+    const slaTotalMs = slaDeadline
+      ? slaDeadline.getTime() - criadoEm.getTime()
+      : null;
+    const slaDecorridoMs = slaTotalMs
+      ? Math.min(agora.getTime() - criadoEm.getTime(), slaTotalMs)
+      : null;
+    const slaPct =
+      slaTotalMs && slaDecorridoMs
+        ? Math.min(Math.round((slaDecorridoMs / slaTotalMs) * 100), 100)
+        : 0;
+    const slaDentroSla = slaDeadline ? agora < slaDeadline : null;
+    const slaEmAlerta = slaTotalMs
+      ? slaPct >= (ticket.sla_alerta_pct ?? 70)
+      : false;
+    const slaTotalHoras = slaTotalMs
+      ? Math.round(slaTotalMs / (1000 * 60 * 60))
+      : 0;
+    const slaDecorridoHoras = slaDecorridoMs
+      ? Math.floor(slaDecorridoMs / (1000 * 60 * 60))
+      : 0;
+    const slaDecorridoMinutos = slaDecorridoMs
+      ? Math.floor((slaDecorridoMs % (1000 * 60 * 60)) / (1000 * 60))
+      : 0;
+
+    return {
+      slaDeadline,
+      slaPct,
+      slaDentroSla,
+      slaEmAlerta,
+      slaTotalHoras,
+      slaDecorridoHoras,
+      slaDecorridoMinutos,
+    };
+  }, [ticket?.criado_em, ticket?.sla_resolucao_deadline, ticket?.sla_alerta_pct]);
+
+  const { slaDeadline, slaPct, slaDentroSla, slaEmAlerta, slaTotalHoras, slaDecorridoHoras, slaDecorridoMinutos } = slaData;
 
   if (loading) {
     return (
@@ -575,54 +909,6 @@ export default function TicketPainelPage() {
   }
 
   if (!ticket) return null;
-
-  // Mapa de cores por autor
-  const USER_COLORS = [
-    "#6366f1",
-    "#8b5cf6",
-    "#0d9488",
-    "#f43f5e",
-    "#f97316",
-    "#0891b2",
-    "#10b981",
-    "#ec4899",
-    "#84cc16",
-    "#eab308",
-  ];
-  const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
-  const autorColorMap: Record<string, string> = Object.fromEntries(
-    autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]),
-  );
-
-  // Computações SLA
-  const agora = new Date();
-  const criadoEm = new Date(ticket.criado_em);
-  const slaDeadline = ticket.sla_resolucao_deadline
-    ? new Date(ticket.sla_resolucao_deadline)
-    : null;
-  const slaTotalMs = slaDeadline
-    ? slaDeadline.getTime() - criadoEm.getTime()
-    : null;
-  const slaDecorridoMs = slaTotalMs
-    ? Math.min(agora.getTime() - criadoEm.getTime(), slaTotalMs)
-    : null;
-  const slaPct =
-    slaTotalMs && slaDecorridoMs
-      ? Math.min(Math.round((slaDecorridoMs / slaTotalMs) * 100), 100)
-      : 0;
-  const slaDentroSla = slaDeadline ? agora < slaDeadline : null;
-  const slaEmAlerta = slaTotalMs
-    ? slaPct >= (ticket.sla_alerta_pct ?? 70)
-    : false;
-  const slaTotalHoras = slaTotalMs
-    ? Math.round(slaTotalMs / (1000 * 60 * 60))
-    : 0;
-  const slaDecorridoHoras = slaDecorridoMs
-    ? Math.floor(slaDecorridoMs / (1000 * 60 * 60))
-    : 0;
-  const slaDecorridoMinutos = slaDecorridoMs
-    ? Math.floor((slaDecorridoMs % (1000 * 60 * 60)) / (1000 * 60))
-    : 0;
 
   return (
     <>

@@ -28,6 +28,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { prefetchTicketDetails as prefetchTicketDetailsOptimized } from "./[id]/page";
 
 interface TicketRow {
   id: string;
@@ -202,7 +203,10 @@ class PerformanceCache {
     this.set('prefetchQueue', ticketId, ticketId);
 
     try {
-      // Carregar detalhes em background com baixa prioridade
+      // Usar a função de prefetch otimizada da página de detalhes
+      prefetchTicketDetailsOptimized(ticketId);
+
+      // Ainda fazer cache local para compatibilidade com o sistema existente
       const [ticketRes, mensagensRes] = await Promise.all([
         this.fetchWithCache(`/api/tickets/${ticketId}`),
         this.fetchWithCache(`/api/tickets/${ticketId}/mensagens`)

@@ -464,37 +464,39 @@ export default function TicketPainelPage() {
     console.log('📊 Status atual:', statusOpcoes.length, 'Prioridades:', prioridadeOpcoes.length);
 
     if (statusOpcoes.length > 0 && prioridadeOpcoes.length > 0) {
-      console.log('✅ Já carregado, pulando...');
-      return;
+      console.log('✅ Já carregado, retornando status existentes...');
+      return statusOpcoes;
     }
 
     const promises = [];
+    let statusCarregados: any[] = statusOpcoes;
 
     if (statusOpcoes.length === 0) {
       console.log('🔄 Carregando status da API...');
-      promises.push(
-        detailsCache.fetchWithCache(
-          'ticket_status_options',
-          async () => {
-            console.log('📡 Fazendo fetch para /api/ticket-status...');
-            const res = await fetch("/api/ticket-status");
-            console.log('📡 Resposta da API:', res.status, res.ok);
+      const statusPromise = detailsCache.fetchWithCache(
+        'ticket_status_options',
+        async () => {
+          console.log('📡 Fazendo fetch para /api/ticket-status...');
+          const res = await fetch("/api/ticket-status");
+          console.log('📡 Resposta da API:', res.status, res.ok);
 
-            if (res.ok) {
-              const data = await res.json();
-              console.log('✅ Dados recebidos:', data);
-              return data;
-            } else {
-              console.error('❌ Erro na API:', res.status, await res.text());
-              return [];
-            }
-          },
-          600000 // 10min for status options
-        ).then((data) => {
-          console.log('💾 Setando statusOpcoes com:', data);
-          setStatusOpcoes(data);
-        })
-      );
+          if (res.ok) {
+            const data = await res.json();
+            console.log('✅ Dados recebidos:', data);
+            return data;
+          } else {
+            console.error('❌ Erro na API:', res.status, await res.text());
+            return [];
+          }
+        },
+        600000 // 10min for status options
+      ).then((data) => {
+        console.log('💾 Setando statusOpcoes com:', data);
+        setStatusOpcoes(data);
+        statusCarregados = data;
+        return data;
+      });
+      promises.push(statusPromise);
     }
 
     if (prioridadeOpcoes.length === 0) {
@@ -514,6 +516,8 @@ export default function TicketPainelPage() {
     console.log('⏳ Aguardando Promise.all com', promises.length, 'promises...');
     await Promise.all(promises);
     console.log('✅ Promise.all concluída!');
+    console.log('📋 Retornando status carregados:', statusCarregados.length);
+    return statusCarregados;
   }, [statusOpcoes.length, prioridadeOpcoes.length]);
 
   const carregarUsuariosEDepartamentos = useCallback(async () => {
@@ -859,13 +863,17 @@ export default function TicketPainelPage() {
     try {
       console.log('📋 Status antes do carregamento:', statusOpcoes.length);
       // Garante que as opções de status estejam carregadas
-      await carregarOpcoesStatusPrioridade();
-      console.log('📋 Status após carregamento:', statusOpcoes.length, statusOpcoes);
+      const statusCarregados = await carregarOpcoesStatusPrioridade();
+      console.log('📋 Status carregados diretamente:', statusCarregados);
+
+      // Usa os dados carregados diretamente ou fallback para o estado
+      const statusParaUsar = statusCarregados && statusCarregados.length > 0 ? statusCarregados : statusOpcoes;
+      console.log('📋 Status que serão usados:', statusParaUsar.length, statusParaUsar);
 
       const statusAberto =
-        statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
+        statusParaUsar.find((s) => s.encerra === false) ?? statusParaUsar[0];
       console.log('🎯 Status para reabrir encontrado:', statusAberto);
-      console.log('📊 Todos os status:', statusOpcoes.map(s => ({nome: s.nome, encerra: s.encerra})));
+      console.log('📊 Todos os status:', statusParaUsar.map(s => ({nome: s.nome, encerra: s.encerra})));
       if (statusAberto) {
         console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {

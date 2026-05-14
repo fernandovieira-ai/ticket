@@ -837,6 +837,9 @@ export default function TicketPainelPage() {
       await carregarOpcoesStatusPrioridade();
 
       console.log('Status disponíveis:', statusOpcoes);
+      console.log('Status com encerra=false:', statusOpcoes.filter((s) => s.encerra === false));
+      console.log('Status com encerra=true:', statusOpcoes.filter((s) => s.encerra === true));
+
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
       console.log('Status para reabrir encontrado:', statusAberto);
@@ -875,7 +878,8 @@ export default function TicketPainelPage() {
         detailsCache.clearCache(`ticket_messages_${id}`);
         await carregar();
       } else {
-        alert('Erro: não foi encontrado um status aberto configurado');
+        const statusDisponiveis = statusOpcoes.map(s => `${s.nome} (encerra: ${s.encerra})`).join(', ');
+        alert(`Erro: não foi encontrado um status aberto configurado.\nStatus disponíveis: ${statusDisponiveis}`);
       }
     } catch (error) {
       console.error('Erro ao reabrir ticket:', error);

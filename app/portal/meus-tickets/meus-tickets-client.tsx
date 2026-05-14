@@ -338,7 +338,7 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
             {/* Header */}
             <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
               <div>
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-0.5">
+                <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: "var(--color-brand)" }}>
                   NOVO TICKET
                 </p>
                 <h2 className="text-xl font-bold text-gray-900">
@@ -470,7 +470,20 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
                 <button
                   type="submit"
                   disabled={salvando}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-60"
+                  style={{
+                    backgroundColor: "var(--color-brand)",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!salvando) {
+                      e.currentTarget.style.backgroundColor = "var(--color-brand-hover)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!salvando) {
+                      e.currentTarget.style.backgroundColor = "var(--color-brand)";
+                    }
+                  }}
                 >
                   {salvando ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -505,7 +518,7 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
             >
               <button
                 onClick={() => router.push("/portal/novo-ticket")}
-                className="portal-btn-novo flex items-center justify-between rounded-lg group flex-shrink-0"
+                className="tickets-btn-novo flex items-center justify-between rounded-lg group flex-shrink-0"
                 style={{
                   padding: "8px 14px",
                   minWidth: 180,
@@ -587,9 +600,9 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
                       padding: "10px 18px",
                       fontSize: 13,
                       fontWeight: ativo ? 600 : 400,
-                      color: ativo ? "#0ea5e9" : "#6b7280",
+                      color: ativo ? "var(--color-brand)" : "#6b7280",
                       borderBottom: ativo
-                        ? "2px solid #0ea5e9"
+                        ? "2px solid var(--color-brand)"
                         : "2px solid transparent",
                       background: "none",
                       cursor: "pointer",
@@ -608,8 +621,8 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
                           fontWeight: 600,
                           padding: "1px 6px",
                           borderRadius: 10,
-                          backgroundColor: ativo ? "#e0f2fe" : "#f3f4f6",
-                          color: ativo ? "#0ea5e9" : "#9ca3af",
+                          backgroundColor: ativo ? "var(--color-brand-light)" : "#f3f4f6",
+                          color: ativo ? "var(--color-brand)" : "#9ca3af",
                         }}
                       >
                         {count}
@@ -681,7 +694,7 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
                         onClick={() =>
                           router.push(`/portal/meus-tickets/${t.id}`)
                         }
-                        className="portal-ticket-row"
+                        className="tickets-table-row"
                       >
                         <td
                           className="whitespace-nowrap"

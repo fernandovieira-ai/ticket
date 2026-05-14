@@ -245,6 +245,7 @@ export default function TicketPainelPage() {
   const [cancelarMotivo, setCancelarMotivo] = useState("");
   const [cancelando, setCancelando] = useState(false);
   const [reabrindo, setReabrindo] = useState(false);
+  const [confirmarReaberturaAberto, setConfirmarReaberturaAberto] = useState(false);
   const [enviarViaWhatsapp, setEnviarViaWhatsapp] = useState(false);
   const [transferirAberto, setTransferirAberto] = useState(false);
   const [transferirTipo, setTransferirTipo] = useState<
@@ -413,12 +414,13 @@ export default function TicketPainelPage() {
         if (cancelarAberto) setCancelarAberto(false);
         if (statusAberto) setStatusAberto(false);
         if (prioridadeAberta) setPrioridadeAberta(false);
+        if (confirmarReaberturaAberto) setConfirmarReaberturaAberto(false);
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [enviando, resposta, editarAberto, transferirAberto, finalizarAberto, cancelarAberto, statusAberto, prioridadeAberta]);
+  }, [enviando, resposta, editarAberto, transferirAberto, finalizarAberto, cancelarAberto, statusAberto, prioridadeAberta, confirmarReaberturaAberto]);
 
   useEffect(() => {
     if (!ticket?.cliente_id) return;
@@ -1040,7 +1042,7 @@ export default function TicketPainelPage() {
               {ticket.status_encerra ? (
                 <button
                   type="button"
-                  onClick={reabrirTicket}
+                  onClick={() => setConfirmarReaberturaAberto(true)}
                   disabled={reabrindo}
                   title="Reabrir chamado"
                   className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2002,6 +2004,62 @@ export default function TicketPainelPage() {
                 )}
               </button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmação Reabertura */}
+      <Dialog open={confirmarReaberturaAberto} onOpenChange={setConfirmarReaberturaAberto}>
+        <DialogContent showCloseButton={false} className="max-w-md p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900">
+              Reabrir Chamado
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setConfirmarReaberturaAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-4">
+            <p className="text-sm text-gray-700 mb-4">
+              Tem certeza que deseja reabrir este chamado?
+            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-blue-800">
+                <strong>#{ticket?.numero}</strong> - {ticket?.titulo}
+              </p>
+            </div>
+            <p className="text-xs text-gray-500">
+              O chamado voltará para um status aberto e poderá receber novas interações.
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={() => setConfirmarReaberturaAberto(false)}
+              className="inline-flex items-center text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-md px-4 py-2 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmarReaberturaAberto(false);
+                reabrirTicket();
+              }}
+              disabled={reabrindo}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {reabrindo ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <CornerUpLeft size={14} />
+              )}
+              Reabrir Chamado
+            </button>
           </div>
         </DialogContent>
       </Dialog>

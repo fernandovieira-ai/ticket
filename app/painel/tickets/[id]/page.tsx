@@ -716,18 +716,24 @@ export default function TicketPainelPage() {
     setFinalizando(true);
     try {
       // Envia a mensagem de finalização
-      await fetch(`/api/tickets/${id}/mensagens`, {
+      const msgResponse = await fetch(`/api/tickets/${id}/mensagens`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ corpo: finalizarMotivo, interna: false }),
       });
+      if (!msgResponse.ok) {
+        const msgError = await msgResponse.json();
+        alert(`Erro ao enviar mensagem: ${msgError.error || 'Erro desconhecido'}`);
+        return;
+      }
+
       // Fecha o ticket com o status de encerramento e salva tempo de trabalho
       const statusEncerra = statusOpcoes.find((s) => s.encerra === true);
       if (statusEncerra) {
         const hh = parseInt(finalizarHH || "0", 10);
         const mm = parseInt(finalizarMM || "0", 10);
         const tempoMinutos = hh * 60 + mm;
-        await fetch(`/api/tickets/${id}`, {
+        const statusResponse = await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -735,6 +741,14 @@ export default function TicketPainelPage() {
             ...(tempoMinutos > 0 && { tempo_trabalho_minutos: tempoMinutos }),
           }),
         });
+        if (!statusResponse.ok) {
+          const statusError = await statusResponse.json();
+          alert(`Erro ao finalizar ticket: ${statusError.error || 'Erro desconhecido'}`);
+          return;
+        }
+      } else {
+        alert('Erro: não foi encontrado um status de encerramento configurado');
+        return;
       }
       setFinalizarAberto(false);
       setFinalizarMotivo("");
@@ -742,6 +756,9 @@ export default function TicketPainelPage() {
       setFinalizarMM("");
       finalizarEditorRef.current?.clear();
       await carregar();
+    } catch (error) {
+      console.error('Erro ao finalizar ticket:', error);
+      alert(`Erro ao finalizar ticket: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     } finally {
       setFinalizando(false);
     }
@@ -782,13 +799,23 @@ export default function TicketPainelPage() {
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
       if (statusAberto) {
-        await fetch(`/api/tickets/${id}`, {
+        const response = await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status_id: statusAberto.id }),
         });
+        if (!response.ok) {
+          const error = await response.json();
+          alert(`Erro ao reabrir ticket: ${error.error || 'Erro desconhecido'}`);
+          return;
+        }
         await carregar();
+      } else {
+        alert('Erro: não foi encontrado um status aberto configurado');
       }
+    } catch (error) {
+      console.error('Erro ao reabrir ticket:', error);
+      alert(`Erro ao reabrir ticket: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     } finally {
       setReabrindo(false);
     }

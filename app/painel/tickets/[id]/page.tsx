@@ -781,6 +781,10 @@ export default function TicketPainelPage() {
         alert('Erro: não foi encontrado um status de encerramento configurado');
         return;
       }
+      // Limpa o cache para forçar recarregamento dos dados atualizados
+      detailsCache.clearCache(`ticket_details_${id}`);
+      detailsCache.clearCache(`ticket_messages_${id}`);
+
       setFinalizarAberto(false);
       setFinalizarMotivo("");
       setFinalizarHH("");
@@ -859,6 +863,9 @@ export default function TicketPainelPage() {
 
         // Sucesso - não precisa ler a resposta JSON
         console.log('✅ Ticket reaberto com sucesso!');
+        // Limpa o cache para forçar recarregamento dos dados atualizados
+        detailsCache.clearCache(`ticket_details_${id}`);
+        detailsCache.clearCache(`ticket_messages_${id}`);
         await carregar();
       } else {
         alert('Erro: não foi encontrado um status aberto configurado');

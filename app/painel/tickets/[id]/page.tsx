@@ -722,8 +722,20 @@ export default function TicketPainelPage() {
         body: JSON.stringify({ corpo: finalizarMotivo, interna: false }),
       });
       if (!msgResponse.ok) {
-        const msgError = await msgResponse.json();
-        alert(`Erro ao enviar mensagem: ${msgError.error || 'Erro desconhecido'}`);
+        let errorMessage = `HTTP ${msgResponse.status} - ${msgResponse.statusText}`;
+        try {
+          const contentType = msgResponse.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const msgError = await msgResponse.json();
+            errorMessage = msgError.error || errorMessage;
+          } else {
+            const textResponse = await msgResponse.text();
+            errorMessage += ` - ${textResponse.substring(0, 100)}`;
+          }
+        } catch (parseError) {
+          errorMessage += ' (erro ao ler resposta)';
+        }
+        alert(`Erro ao enviar mensagem: ${errorMessage}`);
         return;
       }
 
@@ -763,16 +775,8 @@ export default function TicketPainelPage() {
           return;
         }
 
-        // Handle successful response
-        try {
-          const contentType = statusResponse.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const result = await statusResponse.json();
-            console.log('Ticket finalizado com sucesso:', result);
-          }
-        } catch (jsonError) {
-          console.log('Aviso: resposta de sucesso não contém JSON válido, mas operação pode ter funcionado');
-        }
+        // Sucesso - não precisa ler a resposta JSON
+        console.log('✅ Ticket finalizado com sucesso!');
       } else {
         alert('Erro: não foi encontrado um status de encerramento configurado');
         return;
@@ -853,16 +857,8 @@ export default function TicketPainelPage() {
           return;
         }
 
-        // Handle successful response
-        try {
-          const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const result = await response.json();
-            console.log('Ticket reaberto com sucesso:', result);
-          }
-        } catch (jsonError) {
-          console.log('Aviso: resposta de sucesso não contém JSON válido, mas operação pode ter funcionado');
-        }
+        // Sucesso - não precisa ler a resposta JSON
+        console.log('✅ Ticket reaberto com sucesso!');
         await carregar();
       } else {
         alert('Erro: não foi encontrado um status aberto configurado');

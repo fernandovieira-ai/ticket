@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       await writeFile(path.join(uploadDir, safeName), buffer);
       uploadedFiles.push({
         nome: file.name,
-        url: `/uploads/mural/${safeName}`,
+        url: `/api/intranet/mensagens/arquivo/${safeName}`,
         tamanho: file.size,
         mime_type: file.type,
       });

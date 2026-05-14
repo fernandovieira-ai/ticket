@@ -46,7 +46,7 @@ async function isAccessTokenFresh(token: string): Promise<boolean> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const exp = (payload.exp ?? 0) * 1000;
-    return Date.now() < exp - 60_000;
+    return Date.now() < exp - 10_000;
   } catch {
     return false;
   }

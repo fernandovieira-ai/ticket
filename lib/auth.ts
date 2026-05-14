@@ -74,7 +74,7 @@ export function setAuthCookies(
   const secure = IS_PRODUCTION ? "; Secure" : "";
   response.headers.append(
     "Set-Cookie",
-    `access_token=${accessToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=900${secure}`,
+    `access_token=${accessToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=7200${secure}`,
   );
   response.headers.append(
     "Set-Cookie",

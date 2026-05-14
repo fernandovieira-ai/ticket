@@ -25,9 +25,10 @@ export async function GET(
     ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "mural", safeName)
     : path.join(process.cwd(), "public", "uploads", "mural", safeName);
 
-  let buffer: Buffer;
+  let buffer: Uint8Array;
   try {
-    buffer = await readFile(filePath);
+    const raw = await readFile(filePath);
+    buffer = new Uint8Array(raw);
   } catch {
     return new NextResponse("Arquivo não encontrado", { status: 404 });
   }

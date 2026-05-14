@@ -469,25 +469,11 @@ export default function TicketPainelPage() {
         detailsCache.fetchWithCache(
           'ticket_status_options',
           async () => {
-            console.log('🔄 Buscando status da API /api/ticket-status...');
             const res = await fetch("/api/ticket-status");
-            console.log('📡 Resposta da API ticket-status:', res.status, res.statusText);
-
-            if (res.ok) {
-              const data = await res.json();
-              console.log('✅ Dados recebidos da API ticket-status:', data);
-              return data;
-            } else {
-              const errorText = await res.text();
-              console.error('❌ Erro na API ticket-status:', res.status, errorText);
-              return [];
-            }
+            return res.ok ? res.json() : [];
           },
           600000 // 10min for status options
-        ).then((data) => {
-          console.log('💾 Setando statusOpcoes com:', data);
-          setStatusOpcoes(data);
-        })
+        ).then(setStatusOpcoes)
       );
     }
 
@@ -850,13 +836,8 @@ export default function TicketPainelPage() {
       // Garante que as opções de status estejam carregadas
       await carregarOpcoesStatusPrioridade();
 
-      console.log('Status disponíveis:', statusOpcoes);
-      console.log('Status com encerra=false:', statusOpcoes.filter((s) => s.encerra === false));
-      console.log('Status com encerra=true:', statusOpcoes.filter((s) => s.encerra === true));
-
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
-      console.log('Status para reabrir encontrado:', statusAberto);
       if (statusAberto) {
         console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {
@@ -892,8 +873,7 @@ export default function TicketPainelPage() {
         detailsCache.clearCache(`ticket_messages_${id}`);
         await carregar();
       } else {
-        const statusDisponiveis = statusOpcoes.map(s => `${s.nome} (encerra: ${s.encerra})`).join(', ');
-        alert(`Erro: não foi encontrado um status aberto configurado.\nStatus disponíveis: ${statusDisponiveis}`);
+        alert('Erro: não foi encontrado um status aberto configurado');
       }
     } catch (error) {
       console.error('Erro ao reabrir ticket:', error);

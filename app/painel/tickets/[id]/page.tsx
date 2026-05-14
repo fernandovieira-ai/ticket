@@ -858,30 +858,24 @@ export default function TicketPainelPage() {
   }
 
   async function reabrirTicket() {
-    console.log('🚀 Iniciando reabertura de ticket...');
     setReabrindo(true);
     try {
-      console.log('📋 Status antes do carregamento:', statusOpcoes.length);
       // Garante que as opções de status estejam carregadas
       const statusCarregados = await carregarOpcoesStatusPrioridade();
-      console.log('📋 Status carregados diretamente:', statusCarregados);
 
       // Usa os dados carregados diretamente ou fallback para o estado
       const statusParaUsar = statusCarregados && statusCarregados.length > 0 ? statusCarregados : statusOpcoes;
-      console.log('📋 Status que serão usados:', statusParaUsar.length, statusParaUsar);
 
       const statusAberto =
         statusParaUsar.find((s) => s.encerra === false) ?? statusParaUsar[0];
-      console.log('🎯 Status para reabrir encontrado:', statusAberto);
-      console.log('📊 Todos os status:', statusParaUsar.map(s => ({nome: s.nome, encerra: s.encerra})));
+
       if (statusAberto) {
-        console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status_id: statusAberto.id }),
         });
-        console.log('Resposta PATCH status:', response.status, response.statusText);
+
         if (!response.ok) {
           const contentType = response.headers.get('content-type');
           let errorMessage = `HTTP ${response.status} - ${response.statusText}`;
@@ -902,8 +896,6 @@ export default function TicketPainelPage() {
           return;
         }
 
-        // Sucesso - não precisa ler a resposta JSON
-        console.log('✅ Ticket reaberto com sucesso!');
         // Limpa o cache para forçar recarregamento dos dados atualizados
         detailsCache.clearCache(`ticket_details_${id}`);
         detailsCache.clearCache(`ticket_messages_${id}`);

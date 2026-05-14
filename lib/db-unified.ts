@@ -1,5 +1,27 @@
 import { Pool } from 'pg';
 
+// Pool drfweb (intranet original — contratos, etc.)
+const dbDrfweb = new Pool({
+  host: process.env.DRFWEB_HOST ?? 'cloud.digitalrf.com.br',
+  database: process.env.DRFWEB_DB ?? 'drfweb',
+  user: process.env.DRFWEB_USER ?? 'drfweb',
+  password: process.env.DRFWEB_PASS ?? 'ASf5S6g7d6d0s',
+  port: parseInt(process.env.DRFWEB_PORT ?? '5432'),
+  ssl: false,
+  max: 5,
+  idleTimeoutMillis: 10000,
+});
+
+export async function queryDrfweb(text: string, params?: any[]) {
+  try {
+    const result = await dbDrfweb.query(text, params);
+    return result;
+  } catch (error) {
+    console.error('❌ Erro query drfweb:', error);
+    throw error;
+  }
+}
+
 // Pool unificado (drfticket com schemas public + intranet)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -68,21 +90,33 @@ export const intranetQueries = {
   getSistemas: () =>
     query('SELECT * FROM intranet.sistemas ORDER BY nom_sistema'),
 
-  // Contratos
+  // Contratos — lidos de intranet.contrato (drfticket)
   getContratos: () =>
-    query('SELECT * FROM intranet.contratos ORDER BY empresa'),
+    queryIntranet(`
+      SELECT
+        cod_grupo,
+        des_grupo,
+        cod_pessoa,
+        nom_pessoa,
+        num_cnpj_cpf,
+        cod_item,
+        des_item,
+        num_telefone_1
+      FROM intranet.contrato
+      ORDER BY des_grupo, nom_pessoa
+    `),
 
-  // DTEF
+  // DTEF — lidos de intranet.dtef (drfticket)
   getDtef: () =>
-    query('SELECT * FROM intranet.dtef ORDER BY loja'),
+    queryIntranet('SELECT * FROM intranet.dtef ORDER BY loja'),
 
   // AnyDesk
   getAnydeskAcessos: () =>
-    query('SELECT * FROM intranet.anydesk_acessos ORDER BY rede, unidade'),
+    queryIntranet('SELECT * FROM intranet.anydesk_acessos ORDER BY rede, unidade'),
 
   // Dados Restritos
   getDadosRestritos: () =>
-    query('SELECT id, projeto, descricao, criado_por, criado_em FROM intranet.dados_restritos ORDER BY criado_em DESC'),
+    queryIntranet('SELECT id, des_projeto, des_funcao, des_complemento, des_link, criado_em FROM intranet.dados_restrito ORDER BY id'),
 
   // Config
   getConfig: (chave?: string) => {

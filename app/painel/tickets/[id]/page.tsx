@@ -1343,7 +1343,6 @@ export default function TicketPainelPage() {
                       // Prefetch dados do cliente no hover
                       if (ticket.cliente_id) {
                         fetch(`/api/clientes/${ticket.cliente_id}`, { priority: 'high' as any }).catch(() => {});
-                        fetch(`/api/clientes/${ticket.cliente_id}/contatos`, { priority: 'high' as any }).catch(() => {});
                       }
                     }}
                   >

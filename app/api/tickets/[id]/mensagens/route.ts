@@ -248,9 +248,12 @@ export async function POST(
     corpo = parsed.data.corpo;
   }
 
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const corpoSanitizado = corpo.replace(/[^\x00-\x7F]/g, "?");
+
   const [mensagem] = await query<{ id: string; criado_em: Date }>(
     `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna) VALUES ($1, $2, $3, $4) RETURNING id, criado_em`,
-    [id, session.sub, corpo, interna],
+    [id, session.sub, corpoSanitizado, interna],
   );
 
   // Salva anexos no banco

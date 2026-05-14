@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       path: "/",
       sameSite: "lax",
-      maxAge: 900,
+      maxAge: 7200, // 2 hours - should match JWT_EXPIRES_IN
     });
     response.cookies.set("refresh_token", refreshToken, {
       httpOnly: true,

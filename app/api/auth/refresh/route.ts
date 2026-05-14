@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const newRefreshToken = await signRefreshToken({ sub: usuario.id, empresaId: usuario.empresa_id })
 
   const response = NextResponse.json({ ok: true })
-  response.cookies.set('access_token', newAccessToken, { httpOnly: true, path: '/', sameSite: 'lax', maxAge: 900 })
+  response.cookies.set('access_token', newAccessToken, { httpOnly: true, path: '/', sameSite: 'lax', maxAge: 7200 }) // 2 hours - should match JWT_EXPIRES_IN
   response.cookies.set('refresh_token', newRefreshToken, { httpOnly: true, path: '/', sameSite: 'lax', maxAge: 604800 })
   return response
 }

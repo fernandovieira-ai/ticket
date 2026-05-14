@@ -102,7 +102,7 @@ export async function PATCH(req: NextRequest) {
     httpOnly: true,
     path: "/",
     sameSite: "lax",
-    maxAge: 900,
+    maxAge: 7200, // 2 hours - should match JWT_EXPIRES_IN
   });
   return response;
 }

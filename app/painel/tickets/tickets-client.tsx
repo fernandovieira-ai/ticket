@@ -102,7 +102,6 @@ class PerformanceCache {
     tempoAberto: new Map<string, { valor: string; timestamp: number }>(),
     tempoRelativo: new Map<string, { valor: string; timestamp: number }>(),
     ticketProcessed: new Map<string, { ticket: any; timestamp: number }>(),
-    networkRequests: new Map<string, { promise: Promise<any>; timestamp: number }>(),
     ticketDetails: new Map<string, { data: any; timestamp: number }>(),
     prefetchQueue: new Set<string>()
   };
@@ -114,7 +113,6 @@ class PerformanceCache {
     tempoAberto: 30000, // 30s - tempo muda constantemente
     tempoRelativo: 45000, // 45s - meio termo
     ticketProcessed: 120000, // 2min - dados do ticket processado
-    networkRequests: 30000, // 30s - cache de requisições de rede
     ticketDetails: 120000, // 2min - detalhes do ticket
     prefetchQueue: 10000 // 10s - fila de prefetch
   };
@@ -138,7 +136,7 @@ class PerformanceCache {
     const currentTtl = ttl || this.TTL[cacheType];
 
     if (cached && Date.now() - cached.timestamp < currentTtl) {
-      return cached.status || cached.valor || cached.ticket || cached as T;
+      return cached.status || cached.valor || cached.ticket || cached.data || cached as T;
     }
 
     // Auto-cleanup de entradas expiradas (performance)
@@ -174,8 +172,6 @@ class PerformanceCache {
       cache.set(key, value as string);
     } else if (cacheType === 'ticketProcessed') {
       cache.set(key, { ticket: value, timestamp });
-    } else if (cacheType === 'networkRequests') {
-      cache.set(key, { promise: value as Promise<any>, timestamp });
     } else if (cacheType === 'ticketDetails') {
       cache.set(key, { data: value, timestamp });
     } else {
@@ -187,15 +183,16 @@ class PerformanceCache {
   async fetchWithCache<T>(url: string, options?: RequestInit): Promise<T> {
     const cacheKey = `${url}_${JSON.stringify(options || {})}`;
 
-    // Verificar cache existente
-    const cached = this.get<Promise<T>>('networkRequests', cacheKey);
+    // Verificar cache existente de resultado
+    const cached = this.get<T>('ticketDetails', cacheKey);
     if (cached) return cached;
 
-    // Criar nova requisição e cachear a promise
-    const request = fetch(url, options).then(res => res.json());
-    this.set('networkRequests', cacheKey, request);
+    // Fazer requisição e cachear resultado
+    const response = await fetch(url, options);
+    const data = await response.json();
+    this.set('ticketDetails', cacheKey, data);
 
-    return request;
+    return data;
   }
 
   // 🚀 Prefetch de detalhes do ticket em hover

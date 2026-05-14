@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { query, queryOne } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import type { Categoria } from '@/types'
+import { sanitizeText } from '@/lib/sanitize-text'
 
 const updateSchema = z.object({
   nome: z.string().min(2).max(100).optional(),
@@ -73,7 +74,12 @@ export async function PATCH(
     return NextResponse.json({ error: 'Uma categoria não pode ser seu próprio pai' }, { status: 400 })
   }
 
-  const { nome, descricao, parent_id, sla_primeira_resp, sla_resolucao, visivel_cliente, ativo, ordem } = parsed.data
+  const { nome: nomeOriginal, descricao: descricaoOriginal, parent_id, sla_primeira_resp, sla_resolucao, visivel_cliente, ativo, ordem } = parsed.data
+
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const nome = nomeOriginal !== undefined ? sanitizeText(nomeOriginal) : undefined
+  const descricao = descricaoOriginal !== undefined ? (descricaoOriginal ? sanitizeText(descricaoOriginal) : null) : undefined
+
   const sets: string[] = []
   const values: unknown[] = []
   let idx = 1

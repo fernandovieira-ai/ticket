@@ -3,6 +3,7 @@ import { z } from "zod";
 import { query } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import type { Categoria } from "@/types";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 // GET /api/categorias
 export async function GET(req: NextRequest) {
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    nome,
-    descricao,
+    nome: nomeOriginal,
+    descricao: descricaoOriginal,
     parent_id,
     sla_primeira_resp,
     sla_resolucao,
@@ -104,6 +105,10 @@ export async function POST(req: NextRequest) {
     ativo,
     ordem,
   } = parsed.data;
+
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const nome = sanitizeText(nomeOriginal);
+  const descricao = descricaoOriginal ? sanitizeText(descricaoOriginal) : null;
 
   // Verificar nome duplicado no mesmo nível
   const existe = await query(
@@ -128,7 +133,7 @@ export async function POST(req: NextRequest) {
       [
         parent_id ?? null,
         nome,
-        descricao ?? null,
+        descricao,
         sla_primeira_resp || null,
         sla_resolucao || null,
         visivel_cliente ?? true,

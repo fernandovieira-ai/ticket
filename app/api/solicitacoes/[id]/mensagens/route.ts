@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 // GET /api/solicitacoes/[id]/mensagens
 export async function GET(
@@ -81,6 +82,9 @@ export async function POST(
     );
   }
 
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const corpoSanitizado = sanitizeText(parsed.data.corpo);
+
   const msg = await queryOne<{
     id: string;
     corpo: string;
@@ -89,7 +93,7 @@ export async function POST(
     `INSERT INTO mensagens_solicitacao (solicitacao_id, autor_id, corpo)
      VALUES ($1, $2, $3)
      RETURNING id, corpo, criado_em`,
-    [id, session.sub, parsed.data.corpo],
+    [id, session.sub, corpoSanitizado],
   );
 
   return NextResponse.json(

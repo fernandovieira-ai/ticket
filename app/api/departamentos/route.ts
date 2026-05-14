@@ -3,6 +3,7 @@ import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import type { Departamento } from "@/types";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 const criarSchema = z.object({
   nome: z.string().min(2).max(100),
@@ -71,7 +72,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  const { nome, descricao } = parsed.data;
+  const { nome: nomeOriginal, descricao: descricaoOriginal } = parsed.data;
+
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const nome = sanitizeText(nomeOriginal);
+  const descricao = descricaoOriginal ? sanitizeText(descricaoOriginal) : null;
 
   const existente = await queryOne(
     `SELECT id FROM departamentos WHERE empresa_id = $1 AND nome ILIKE $2`,
@@ -88,7 +93,7 @@ export async function POST(req: NextRequest) {
     `INSERT INTO departamentos (empresa_id, nome, descricao)
      VALUES ($1, $2, $3)
      RETURNING id, nome, descricao, ativo, criado_em`,
-    [session.empresaId, nome, descricao ?? null],
+    [session.empresaId, nome, descricao],
   );
 
   return NextResponse.json(departamento, { status: 201 });

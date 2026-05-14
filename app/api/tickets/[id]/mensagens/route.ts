@@ -6,6 +6,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { emailNovaResposta } from "@/lib/email/send";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 const enviarMensagemSchema = z.object({
   corpo: z.string().min(1).max(10000),
@@ -249,25 +250,7 @@ export async function POST(
   }
 
   // Sanitizar caracteres especiais para compatibilidade com LATIN1
-  const corpoSanitizado = corpo
-    // Substitui caracteres especiais comuns por equivalentes ASCII
-    .replace(/[""]/g, '"')           // Aspas curvas -> aspas normais
-    .replace(/['']/g, "'")           // Apóstrofes curvos -> apóstrofe normal
-    .replace(/[–—]/g, "-")           // Travessões -> hífen
-    .replace(/→/g, "->")             // Seta -> seta ASCII
-    .replace(/←/g, "<-")             // Seta esquerda -> seta ASCII
-    .replace(/…/g, "...")            // Reticências -> três pontos
-    .replace(/º/g, "o")              // Símbolo masculino -> o
-    .replace(/ª/g, "a")              // Símbolo feminino -> a
-    .replace(/°/g, "o")              // Graus -> o
-    .replace(/©/g, "(c)")            // Copyright -> (c)
-    .replace(/®/g, "(R)")            // Marca registrada -> (R)
-    .replace(/™/g, "(TM)")           // Trademark -> (TM)
-    .replace(/§/g, "par.")           // Parágrafo -> par.
-    // Remove acentos mantendo as letras
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")           // Remove diacríticos (acentos)
-    .replace(/[^\x00-\x7F]/g, "?");  // Substitui caracteres restantes por ?
+  const corpoSanitizado = sanitizeText(corpo);
 
   const [mensagem] = await query<{ id: string; criado_em: Date }>(
     `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna) VALUES ($1, $2, $3, $4) RETURNING id, criado_em`,

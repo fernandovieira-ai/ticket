@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 export async function GET() {
   const session = await getSession();
@@ -28,11 +29,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Título e descrição são obrigatórios" }, { status: 400 });
   }
 
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const tituloSanitizado = sanitizeText(titulo.trim());
+  const descricaoSanitizada = sanitizeText(descricao.trim());
+
   const result = await query(
     `INSERT INTO intranet.informativos (titulo, descricao, dta_validade)
      VALUES ($1, $2, $3)
      RETURNING *`,
-    [titulo.trim(), descricao.trim(), dta_validade || null]
+    [tituloSanitizado, descricaoSanitizada, dta_validade || null]
   );
 
   return NextResponse.json(result[0], { status: 201 });

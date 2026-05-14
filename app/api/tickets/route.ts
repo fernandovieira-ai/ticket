@@ -4,6 +4,7 @@ import { query, queryOne } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { notificarWhatsappNovoTicket } from "@/lib/whatsapp";
 import { emailAberturaTicket } from "@/lib/email/send";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 const criarTicketSchema = z.object({
   titulo: z.string().min(3).max(300),
@@ -159,8 +160,8 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    titulo,
-    descricao,
+    titulo: tituloOriginal,
+    descricao: descricaoOriginal,
     prioridade_id,
     categoria_id,
     subcategoria_id,
@@ -170,6 +171,10 @@ export async function POST(req: NextRequest) {
     notificar_email,
     notificar_whatsapp,
   } = parsed.data;
+
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const titulo = sanitizeText(tituloOriginal);
+  const descricao = sanitizeText(descricaoOriginal);
   const deveNotificarEmail = notificar_email !== false;
   const deveNotificarWhatsapp = notificar_whatsapp !== false;
 

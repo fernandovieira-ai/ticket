@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 const ALLOWED_MIME = new Set([
   "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -87,11 +88,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Mensagem é obrigatória" }, { status: 400 });
   }
 
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const mensagemSanitizada = sanitizeText(mensagem);
+
   const rows = await query(
     `INSERT INTO intranet.mensagens (username, mensagem, anexos, criado_em, atualizado_em)
      VALUES ($1, $2, $3::jsonb, NOW(), NOW())
      RETURNING id, username, mensagem, criado_em AS created_at, COALESCE(anexos, '[]'::jsonb) AS anexos`,
-    [session.nome, mensagem, JSON.stringify(uploadedFiles)]
+    [session.nome, mensagemSanitizada, JSON.stringify(uploadedFiles)]
   );
 
   return NextResponse.json(rows[0], { status: 201 });

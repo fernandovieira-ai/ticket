@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 const criarSolicitacaoSchema = z.object({
   tipo_id: z.string().uuid(),
@@ -122,8 +123,8 @@ export async function POST(req: NextRequest) {
 
   const {
     tipo_id,
-    titulo,
-    descricao,
+    titulo: tituloOriginal,
+    descricao: descricaoOriginal,
     prioridade_id,
     departamento_dest,
     responsavel_id,
@@ -131,6 +132,10 @@ export async function POST(req: NextRequest) {
     categoria_id,
     subcategoria_id,
   } = parsed.data;
+
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const titulo = sanitizeText(tituloOriginal);
+  const descricao = descricaoOriginal ? sanitizeText(descricaoOriginal) : null;
 
   // Validar que o tipo existe e pertence à empresa
   const tipo = await queryOne<{ id: string }>(
@@ -152,7 +157,7 @@ export async function POST(req: NextRequest) {
       session.empresaId,
       tipo_id,
       titulo,
-      descricao ?? null,
+      descricao,
       prioridade_id ?? null,
       session.sub,
       departamento_dest ?? null,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { sanitizeText } from "@/lib/sanitize-text";
 
 export async function PUT(
   req: Request,
@@ -23,12 +24,16 @@ export async function PUT(
     return NextResponse.json({ error: "Título e descrição são obrigatórios" }, { status: 400 });
   }
 
+  // Sanitizar caracteres especiais para compatibilidade com LATIN1
+  const tituloSanitizado = sanitizeText(titulo.trim());
+  const descricaoSanitizada = sanitizeText(descricao.trim());
+
   const result = await query(
     `UPDATE intranet.informativos
      SET titulo = $1, descricao = $2, dta_validade = $3
      WHERE id = $4
      RETURNING *`,
-    [titulo.trim(), descricao.trim(), dta_validade || null, id]
+    [tituloSanitizado, descricaoSanitizada, dta_validade || null, id]
   );
 
   if (result.length === 0) {

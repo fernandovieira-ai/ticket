@@ -836,8 +836,10 @@ export default function TicketPainelPage() {
       // Garante que as opções de status estejam carregadas
       await carregarOpcoesStatusPrioridade();
 
+      console.log('🔄 Status após carregamento:', statusOpcoes.length, statusOpcoes);
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
+      console.log('🎯 Status para reabrir:', statusAberto);
       if (statusAberto) {
         console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {

@@ -249,11 +249,25 @@ export async function POST(
   }
 
   // Sanitizar caracteres especiais para compatibilidade com LATIN1
-  // Converte acentos para letras normais mantendo legibilidade
   const corpoSanitizado = corpo
+    // Substitui caracteres especiais comuns por equivalentes ASCII
+    .replace(/[""]/g, '"')           // Aspas curvas -> aspas normais
+    .replace(/['']/g, "'")           // Apóstrofes curvos -> apóstrofe normal
+    .replace(/[–—]/g, "-")           // Travessões -> hífen
+    .replace(/→/g, "->")             // Seta -> seta ASCII
+    .replace(/←/g, "<-")             // Seta esquerda -> seta ASCII
+    .replace(/…/g, "...")            // Reticências -> três pontos
+    .replace(/º/g, "o")              // Símbolo masculino -> o
+    .replace(/ª/g, "a")              // Símbolo feminino -> a
+    .replace(/°/g, "o")              // Graus -> o
+    .replace(/©/g, "(c)")            // Copyright -> (c)
+    .replace(/®/g, "(R)")            // Marca registrada -> (R)
+    .replace(/™/g, "(TM)")           // Trademark -> (TM)
+    .replace(/§/g, "par.")           // Parágrafo -> par.
+    // Remove acentos mantendo as letras
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // Remove diacríticos (acentos)
-    .replace(/[^\x00-\x7F]/g, "?"); // Substitui caracteres restantes por ?
+    .replace(/[̀-ͯ]/g, "")           // Remove diacríticos (acentos)
+    .replace(/[^\x00-\x7F]/g, "?");  // Substitui caracteres restantes por ?
 
   const [mensagem] = await query<{ id: string; criado_em: Date }>(
     `INSERT INTO mensagens (ticket_id, autor_id, corpo, interna) VALUES ($1, $2, $3, $4) RETURNING id, criado_em`,

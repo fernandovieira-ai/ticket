@@ -831,13 +831,18 @@ export default function TicketPainelPage() {
   }
 
   async function reabrirTicket() {
+    console.log('🚀 Iniciando reabertura de ticket...');
     setReabrindo(true);
     try {
+      console.log('📋 Status antes do carregamento:', statusOpcoes.length);
       // Garante que as opções de status estejam carregadas
       await carregarOpcoesStatusPrioridade();
+      console.log('📋 Status após carregamento:', statusOpcoes.length, statusOpcoes);
 
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
+      console.log('🎯 Status para reabrir encontrado:', statusAberto);
+      console.log('📊 Todos os status:', statusOpcoes.map(s => ({nome: s.nome, encerra: s.encerra})));
       if (statusAberto) {
         console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {

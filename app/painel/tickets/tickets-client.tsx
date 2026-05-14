@@ -93,7 +93,7 @@ const SLA_BG: Record<SlaStatus, string> = {
   none: "transparent",
 };
 
-// 🚀 Sistema de Cache Otimizado - Unificado e Mais Eficiente
+// 🚀 Sistema de Cache Otimizado - Unificado e Mais Eficiente + Prefetch
 class PerformanceCache {
   private static instance: PerformanceCache;
   private caches = {
@@ -101,7 +101,10 @@ class PerformanceCache {
     dateFormat: new Map<string, string>(),
     tempoAberto: new Map<string, { valor: string; timestamp: number }>(),
     tempoRelativo: new Map<string, { valor: string; timestamp: number }>(),
-    ticketProcessed: new Map<string, { ticket: any; timestamp: number }>()
+    ticketProcessed: new Map<string, { ticket: any; timestamp: number }>(),
+    networkRequests: new Map<string, { promise: Promise<any>; timestamp: number }>(),
+    ticketDetails: new Map<string, { data: any; timestamp: number }>(),
+    prefetchQueue: new Set<string>()
   };
 
   // TTLs otimizados baseados na frequência de mudança dos dados
@@ -110,7 +113,10 @@ class PerformanceCache {
     dateFormat: 300000, // 5min - datas não mudam nunca
     tempoAberto: 30000, // 30s - tempo muda constantemente
     tempoRelativo: 45000, // 45s - meio termo
-    ticketProcessed: 120000 // 2min - dados do ticket processado
+    ticketProcessed: 120000, // 2min - dados do ticket processado
+    networkRequests: 30000, // 30s - cache de requisições de rede
+    ticketDetails: 120000, // 2min - detalhes do ticket
+    prefetchQueue: 10000 // 10s - fila de prefetch
   };
 
   static getInstance(): PerformanceCache {
@@ -153,9 +159,55 @@ class PerformanceCache {
       cache.set(key, value as string);
     } else if (cacheType === 'ticketProcessed') {
       cache.set(key, { ticket: value, timestamp });
+    } else if (cacheType === 'networkRequests') {
+      cache.set(key, { promise: value as Promise<any>, timestamp });
+    } else if (cacheType === 'ticketDetails') {
+      cache.set(key, { data: value, timestamp });
+    } else if (cacheType === 'prefetchQueue') {
+      (cache as Set<string>).add(key);
+      setTimeout(() => (cache as Set<string>).delete(key), this.TTL.prefetchQueue);
     } else {
       cache.set(key, { valor: value as string, timestamp });
     }
+  }
+
+  // 🚀 Prefetch inteligente de requisições de rede
+  async fetchWithCache<T>(url: string, options?: RequestInit): Promise<T> {
+    const cacheKey = `${url}_${JSON.stringify(options || {})}`;
+
+    // Verificar cache existente
+    const cached = this.get<Promise<T>>('networkRequests', cacheKey);
+    if (cached) return cached;
+
+    // Criar nova requisição e cachear a promise
+    const request = fetch(url, options).then(res => res.json());
+    this.set('networkRequests', cacheKey, request);
+
+    return request;
+  }
+
+  // 🚀 Prefetch de detalhes do ticket em hover
+  async prefetchTicketDetails(ticketId: string): Promise<void> {
+    if (this.caches.prefetchQueue.has(ticketId)) return; // Já sendo carregado
+
+    this.set('prefetchQueue', ticketId, ticketId);
+
+    try {
+      // Carregar detalhes em background com baixa prioridade
+      const [ticketRes, mensagensRes] = await Promise.all([
+        this.fetchWithCache(`/api/tickets/${ticketId}`),
+        this.fetchWithCache(`/api/tickets/${ticketId}/mensagens`)
+      ]);
+
+      this.set('ticketDetails', ticketId, { ticket: ticketRes, mensagens: mensagensRes });
+    } catch (error) {
+      console.debug('Prefetch falhou (não é crítico):', error);
+    }
+  }
+
+  // 🚀 Obter dados prefetchados se disponíveis
+  getPrefetchedTicketDetails(ticketId: string) {
+    return this.get('ticketDetails', ticketId);
   }
 
   clear(): void {

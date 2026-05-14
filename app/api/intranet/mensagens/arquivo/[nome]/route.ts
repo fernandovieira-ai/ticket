@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -11,14 +11,14 @@ export async function GET(
   { params }: Params
 ) {
   const session = await getSession();
-  if (!session) return new NextResponse("Não autenticado", { status: 401 });
+  if (!session) return new Response("Não autenticado", { status: 401 });
 
   const { nome } = await params;
 
   // Sanitize: apenas nome de arquivo simples (sem path traversal)
   const safeName = path.basename(nome);
   if (!safeName || safeName !== nome) {
-    return new NextResponse("Nome inválido", { status: 400 });
+    return new Response("Nome inválido", { status: 400 });
   }
 
   const filePath = process.env.RAILWAY_VOLUME_MOUNT_PATH
@@ -30,7 +30,7 @@ export async function GET(
     const raw = await readFile(filePath);
     buffer = new Uint8Array(raw);
   } catch {
-    return new NextResponse("Arquivo não encontrado", { status: 404 });
+    return new Response("Arquivo não encontrado", { status: 404 });
   }
 
   // Determinar content-type pela extensão
@@ -52,7 +52,7 @@ export async function GET(
   };
   const contentType = mimeMap[ext] ?? "application/octet-stream";
 
-  return new NextResponse(buffer, {
+  return new Response(buffer, {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "private, max-age=86400",

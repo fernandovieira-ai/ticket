@@ -93,80 +93,141 @@ const SLA_BG: Record<SlaStatus, string> = {
   none: "transparent",
 };
 
-// Cache para otimizar cálculos custosos
-const slaCache = new Map<string, { status: SlaStatus; timestamp: number }>();
-const dateFormatCache = new Map<string, string>();
-const tempoAbertoCache = new Map<string, { valor: string; timestamp: number }>();
-const tempoRelativoCache = new Map<string, { valor: string; timestamp: number }>();
+// 🚀 Sistema de Cache Otimizado - Unificado e Mais Eficiente
+class PerformanceCache {
+  private static instance: PerformanceCache;
+  private caches = {
+    sla: new Map<string, { status: SlaStatus; timestamp: number }>(),
+    dateFormat: new Map<string, string>(),
+    tempoAberto: new Map<string, { valor: string; timestamp: number }>(),
+    tempoRelativo: new Map<string, { valor: string; timestamp: number }>(),
+    ticketProcessed: new Map<string, { ticket: any; timestamp: number }>()
+  };
 
-function formatarDataMemoizada(data: string): string {
-  if (!dateFormatCache.has(data)) {
-    dateFormatCache.set(data, format(new Date(data), "dd/MM/yyyy HH:mm", { locale: ptBR }));
+  // TTLs otimizados baseados na frequência de mudança dos dados
+  private readonly TTL = {
+    sla: 60000,        // 1min - dados críticos, mas não mudam muito rápido
+    dateFormat: 300000, // 5min - datas não mudam nunca
+    tempoAberto: 30000, // 30s - tempo muda constantemente
+    tempoRelativo: 45000, // 45s - meio termo
+    ticketProcessed: 120000 // 2min - dados do ticket processado
+  };
+
+  static getInstance(): PerformanceCache {
+    if (!this.instance) {
+      this.instance = new PerformanceCache();
+    }
+    return this.instance;
   }
-  return dateFormatCache.get(data)!;
+
+  get<T>(cacheType: keyof typeof this.caches, key: string, ttl?: number): T | null {
+    const cache = this.caches[cacheType];
+    const cached = cache.get(key) as any;
+    const currentTtl = ttl || this.TTL[cacheType];
+
+    if (cached && Date.now() - cached.timestamp < currentTtl) {
+      return cached.status || cached.valor || cached.ticket || cached as T;
+    }
+
+    // Auto-cleanup de entradas expiradas (performance)
+    if (cached) {
+      cache.delete(key);
+    }
+
+    return null;
+  }
+
+  set<T>(cacheType: keyof typeof this.caches, key: string, value: T): void {
+    const cache = this.caches[cacheType] as Map<string, any>;
+    const timestamp = Date.now();
+
+    // Limitar tamanho do cache para evitar memory leaks
+    if (cache.size > 1000) {
+      const firstKey = cache.keys().next().value;
+      if (firstKey) cache.delete(firstKey);
+    }
+
+    if (cacheType === 'sla') {
+      cache.set(key, { status: value as SlaStatus, timestamp });
+    } else if (cacheType === 'dateFormat') {
+      cache.set(key, value as string);
+    } else if (cacheType === 'ticketProcessed') {
+      cache.set(key, { ticket: value, timestamp });
+    } else {
+      cache.set(key, { valor: value as string, timestamp });
+    }
+  }
+
+  clear(): void {
+    Object.values(this.caches).forEach(cache => cache.clear());
+  }
 }
 
-function tempoAbertoMemoizado(criadoEm: string): string {
-  const agora = Date.now();
-  const cached = tempoAbertoCache.get(criadoEm);
+const perfCache = PerformanceCache.getInstance();
 
-  // Cache válido por 30 segundos
-  if (cached && agora - cached.timestamp < 30000) {
-    return cached.valor;
-  }
+// 🚀 Funções Memoizadas Otimizadas
+const formatarDataMemoizada = (data: string): string => {
+  const cached = perfCache.get<string>('dateFormat', data);
+  if (cached) return cached;
+
+  const formatted = format(new Date(data), "dd/MM/yyyy HH:mm", { locale: ptBR });
+  perfCache.set('dateFormat', data, formatted);
+  return formatted;
+};
+
+const tempoAbertoMemoizado = (criadoEm: string): string => {
+  const cached = perfCache.get<string>('tempoAberto', criadoEm);
+  if (cached) return cached;
 
   const valor = tempoAberto(criadoEm);
-  tempoAbertoCache.set(criadoEm, { valor, timestamp: agora });
+  perfCache.set('tempoAberto', criadoEm, valor);
   return valor;
-}
+};
 
-// Memoizar slaTempoBadge para evitar recálculos
-function slaTempoBadgeMemoizado(t: TicketRow, sla: SlaStatus): string {
-  const cacheKey = `${t.id}_${t.sla_primeira_resp_deadline}_${sla}_${t.criado_em}`;
-  const agora = Date.now();
-  const cached = tempoRelativoCache.get(cacheKey);
-
-  if (cached && agora - cached.timestamp < 30000) {
-    return cached.valor;
-  }
+// 🚀 SLA Badge com Cache Inteligente
+const slaTempoBadgeMemoizado = (t: TicketRow, sla: SlaStatus): string => {
+  const cacheKey = `${t.id}_${t.sla_primeira_resp_deadline}_${sla}`;
+  const cached = perfCache.get<string>('tempoRelativo', cacheKey);
+  if (cached) return cached;
 
   const valor = slaTempoBadge(t, sla);
-  tempoRelativoCache.set(cacheKey, { valor, timestamp: agora });
+  perfCache.set('tempoRelativo', cacheKey, valor);
   return valor;
-}
+};
 
-function slaAtendimento(t: TicketRow): SlaStatus {
+// 🚀 SLA Status com Cache Otimizado e Early Returns
+const slaAtendimento = (t: TicketRow): SlaStatus => {
+  // Early returns para casos simples (performance)
   if (!t.sla_primeira_resp_deadline) return "none";
   if (t.respondido_em !== null) {
     return t.sla_primeira_resp_ok ? "ok" : "exceeded";
   }
 
-  // Cache baseado em ID + deadline + timestamp atualizado
+  // Cache inteligente com chave otimizada
   const cacheKey = `${t.id}_${t.sla_primeira_resp_deadline}_${t.atualizado_em}`;
-  const agora = Date.now();
-  const cached = slaCache.get(cacheKey);
+  const cached = perfCache.get<SlaStatus>('sla', cacheKey);
+  if (cached) return cached;
 
-  // Cache válido por 30 segundos
-  if (cached && agora - cached.timestamp < 30000) {
-    return cached.status;
-  }
-
+  // Cálculo otimizado com menos operações
   const deadline = new Date(t.sla_primeira_resp_deadline).getTime();
   const now = Date.now();
-  let status: SlaStatus;
 
+  let status: SlaStatus;
   if (now > deadline) {
     status = "exceeded";
   } else {
-    const alerta = t.sla_alerta_pct ?? 70;
+    const alertaPct = t.sla_alerta_pct ?? 70;
     const criado = new Date(t.criado_em).getTime();
-    const total = deadline - criado;
-    status = now > criado + (total * alerta) / 100 ? "warning" : "ok";
+    const tempoDecorrido = now - criado;
+    const tempoTotal = deadline - criado;
+
+    // Usar porcentagem direta ao invés de recalcular
+    status = (tempoDecorrido / tempoTotal * 100) >= alertaPct ? "warning" : "ok";
   }
 
-  slaCache.set(cacheKey, { status, timestamp: agora });
+  perfCache.set('sla', cacheKey, status);
   return status;
-}
+};
 
 function slaTempoBadge(t: TicketRow, sla: SlaStatus): string {
   if (
@@ -499,8 +560,12 @@ export const TicketsClient = React.memo(function TicketsClient({
   const [busca, setBusca] = useState("");
   const [situacaoMeus, setSituacaoMeus] = useState("abertos_todos");
   const [loading, setLoading] = useState(!ticketsIniciais?.data?.length);
+  const [page, setPage] = useState(1); // 🚀 Estado para paginação
+  const [hasMore, setHasMore] = useState(true); // 🚀 Estado para controle de mais páginas
+  const [loadingMore, setLoadingMore] = useState(false); // 🚀 Loading para próximas páginas
   const primeiroRender = useRef(true);
   const loadingRef = useRef(false); // Ref para evitar race conditions
+  const sentinelRef = useRef<HTMLDivElement>(null); // 🚀 Ref para elemento sentinel
 
   const [painelAberto, setPainelAberto] = useState(novo);
   const [salvando, setSalvando] = useState(false);
@@ -602,19 +667,49 @@ export const TicketsClient = React.memo(function TicketsClient({
     [atendentes, atendenteBusca],
   );
 
-  // Memoizar dados processados para otimizar renderização
+  // 🚀 Timestamp baseado em intervalos para reduzir recálculos
+  const [currentTimeInterval, setCurrentTimeInterval] = useState(() =>
+    Math.floor(Date.now() / 30000) // Atualiza apenas a cada 30s
+  );
+
+  // Timer otimizado que atualiza apenas quando necessário
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newInterval = Math.floor(Date.now() / 30000);
+      setCurrentTimeInterval(prev => {
+        // Só atualiza state se realmente mudou o intervalo
+        return prev !== newInterval ? newInterval : prev;
+      });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // 🚀 Memoização Ultra-Otimizada com Cache de Ticket Processado
   const ticketsOtimizados = useMemo(() => {
     return tickets.map((ticket) => {
+      // Verificar cache de ticket já processado primeiro
+      const ticketCacheKey = `${ticket.id}_${ticket.atualizado_em}_${currentTimeInterval}`;
+      const cachedTicket = perfCache.get<any>('ticketProcessed', ticketCacheKey);
+      if (cachedTicket) {
+        return cachedTicket;
+      }
+
+      // Processar ticket apenas se não estiver em cache
       const slaStatus = slaAtendimento(ticket);
-      return {
+      const processedTicket = {
         ...ticket,
         dataFormatada: formatarDataMemoizada(ticket.atualizado_em),
         slaStatus,
         tempoAbertoTexto: tempoAbertoMemoizado(ticket.criado_em),
         slaBadgeTexto: slaTempoBadgeMemoizado(ticket, slaStatus),
       };
+
+      // Armazenar no cache para próximas renderizações
+      perfCache.set('ticketProcessed', ticketCacheKey, processedTicket);
+      return processedTicket;
     });
-  }, [tickets]);
+  }, [tickets, currentTimeInterval]); // Dependência otimizada
   const atendenteRef = useRef<HTMLDivElement>(null);
   const fecharAtendente = useCallback(() => setAtendenteAberto(false), []);
   useEffect(() => {
@@ -630,23 +725,32 @@ export const TicketsClient = React.memo(function TicketsClient({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [atendenteAberto, fecharAtendente]);
 
-  // Carregar tickets
-  const carregar = useCallback(async () => {
-    // Evitar loading desnecessário se já está carregando
+  // 🚀 Função de carregamento otimizada com paginação
+  const carregar = useCallback(async (pageNum: number = 1, append: boolean = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    setLoading(true);
 
-    let isMounted = true; // Flag para verificar se componente ainda está montado
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setPage(1);
+    }
+
+    let isMounted = true;
 
     try {
-      const params = new URLSearchParams({ q: busca, pageSize: "50" });
+      const params = new URLSearchParams({
+        q: busca,
+        page: pageNum.toString(),
+        pageSize: "30" // 🚀 Otimizado: 30 por página
+      });
+
       if (statusCodigo) params.set("status_codigo", statusCodigo);
       if (meus) {
         params.set("meus", "1");
         if (situacaoMeus) {
           if (situacaoMeus === "abertos_todos") {
-            // Filtrar pelos 3 status que representam tickets realmente abertos
             params.set("status_codigo", "aberto,em_andamento,aguardando");
           } else {
             params.set("status_codigo", situacaoMeus);
@@ -654,14 +758,32 @@ export const TicketsClient = React.memo(function TicketsClient({
         }
       }
       if (fila) params.set("fila", "1");
-      const res = await fetch(`/api/tickets?${params}`);
 
-      // Só processa se o componente ainda estiver montado
+      const res = await fetch(`/api/tickets?${params}`, {
+        headers: { 'Cache-Control': 'max-age=30' } // 🚀 Cache otimizado
+      });
+
       if (!isMounted) return;
 
       const data = await res.json();
-      setTickets(data.data ?? []);
+
+      if (append) {
+        // Adicionar à lista existente (scroll infinito)
+        setTickets(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newTickets = (data.data || []).filter((t: any) => !existingIds.has(t.id));
+          return [...prev, ...newTickets];
+        });
+        setPage(pageNum);
+      } else {
+        // Substituir lista (nova busca/filtro)
+        setTickets(data.data ?? []);
+        setPage(pageNum);
+      }
+
       setTotal(data.total ?? 0);
+      setHasMore((data.data || []).length === 30 && (pageNum * 30) < (data.total || 0));
+
       if (primeiroCarregamento) {
         setPrimeiroCarregamento(false);
       }
@@ -670,24 +792,54 @@ export const TicketsClient = React.memo(function TicketsClient({
     } finally {
       if (isMounted) {
         setLoading(false);
+        setLoadingMore(false);
       }
       loadingRef.current = false;
     }
   }, [busca, statusCodigo, meus, fila, situacaoMeus, primeiroCarregamento]);
 
+  // 🚀 Função para carregar mais (scroll infinito)
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    carregar(page + 1, true);
+  }, [hasMore, loadingMore, page, carregar]);
+
   useEffect(() => {
     if (primeiroRender.current) {
       primeiroRender.current = false;
-      // Carregamento inicial imediato sem delay
       carregar();
       return;
     }
     // Para mudanças subsequentes (busca, filtros), usar debounce
-    const t = setTimeout(carregar, 300);
+    const t = setTimeout(() => carregar(), 300);
+    return () => clearTimeout(t);
+  }, [busca, statusCodigo, meus, fila, situacaoMeus]);
+
+  // 🚀 Intersection Observer para scroll infinito
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && !loadingMore) {
+          loadMore();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '300px', // Começar a carregar 300px antes
+        threshold: 0.1
+      }
+    );
+
+    observer.observe(sentinel);
+
     return () => {
-      clearTimeout(t);
+      if (observer) observer.disconnect();
     };
-  }, [busca, statusCodigo, meus, fila, situacaoMeus]); // Dependências diretas ao invés de carregar
+  }, [hasMore, loadingMore, loadMore]);
 
   // Carregar sessão e opções fixas
   useEffect(() => {
@@ -1273,6 +1425,41 @@ export const TicketsClient = React.memo(function TicketsClient({
                 ))}
               </tbody>
             </table>
+          )}
+
+          {/* 🚀 Elemento Sentinel para Scroll Infinito */}
+          {hasMore && (
+            <div
+              ref={sentinelRef}
+              style={{
+                height: 1,
+                width: '100%',
+                pointerEvents: 'none'
+              }}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* 🚀 Loading indicator para scroll infinito */}
+          {loadingMore && (
+            <div className="flex items-center justify-center py-4 border-t border-gray-100">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+              <span className="ml-3 text-sm text-gray-500">
+                Carregando mais tickets...
+              </span>
+            </div>
+          )}
+
+          {/* 🚀 Botão "Carregar Mais" (fallback se Intersection Observer não funcionar) */}
+          {hasMore && !loadingMore && tickets.length >= 30 && (
+            <div className="flex items-center justify-center py-4 border-t border-gray-100">
+              <button
+                onClick={loadMore}
+                className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-md hover:bg-blue-50"
+              >
+                Carregar mais tickets
+              </button>
+            </div>
           )}
         </div>
       </div>

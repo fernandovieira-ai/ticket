@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { MessageSquare, Plus, Trash2, Send, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Send, X, ChevronLeft, ChevronRight, Paperclip } from "lucide-react";
+import { RichTextEditor, type RichTextEditorRef } from "@/components/ui/rich-text-editor";
+
+interface Anexo {
+  nome: string;
+  url: string;
+  tamanho: number;
+  mime_type: string;
+}
 
 interface Mensagem {
   id: number;
@@ -10,6 +18,7 @@ interface Mensagem {
   created_at: string;
   tem_imagem: boolean;
   avatar_url: string | null;
+  anexos: Anexo[];
 }
 
 interface Props {
@@ -78,7 +87,9 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
   const [excluindo, setExcluindo] = useState<number | null>(null);
   const [paginaCard, setPaginaCard] = useState(1);
   const [paginaModal, setPaginaModal] = useState(1);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     carregarMensagens();
@@ -96,16 +107,27 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
   }
 
   async function handleEnviar() {
-    if (!novaMsg.trim()) return;
+    const textoLimpo = novaMsg.replace(/<[^>]*>/g, "").trim();
+    if (!textoLimpo) return;
     setEnviando(true);
     try {
-      const res = await fetch("/api/intranet/mensagens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mensagem: novaMsg.trim() }),
-      });
+      let res: Response;
+      if (attachments.length > 0) {
+        const fd = new FormData();
+        fd.append("mensagem", novaMsg);
+        for (const f of attachments) fd.append("arquivos", f);
+        res = await fetch("/api/intranet/mensagens", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/intranet/mensagens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mensagem: novaMsg }),
+        });
+      }
       if (res.ok) {
         setNovaMsg("");
+        setAttachments([]);
+        editorRef.current?.clear();
         await carregarMensagens();
       }
     } finally {
@@ -282,6 +304,30 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                       className="mural-msg-body"
                       dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                     />
+                    {(msg.anexos?.length > 0) && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                        {msg.anexos.map((a, i) => (
+                          <a
+                            key={i}
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                              fontSize: 11, borderRadius: 5, padding: "3px 8px",
+                              background: "var(--color-bg-secondary)",
+                              border: "0.5px solid var(--color-border)",
+                              color: "#2563eb", textDecoration: "none",
+                            }}
+                          >
+                            <Paperclip style={{ width: 10, height: 10, flexShrink: 0 }} />
+                            <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {a.nome}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {msg.tem_imagem && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -468,6 +514,30 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                           className="mural-msg-body"
                           dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                         />
+                        {(msg.anexos?.length > 0) && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                            {msg.anexos.map((a, i) => (
+                              <a
+                                key={i}
+                                href={a.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: "inline-flex", alignItems: "center", gap: 5,
+                                  fontSize: 12, borderRadius: 6, padding: "4px 10px",
+                                  background: "var(--color-bg-secondary)",
+                                  border: "0.5px solid var(--color-border)",
+                                  color: "#2563eb", textDecoration: "none",
+                                }}
+                              >
+                                <Paperclip style={{ width: 11, height: 11, flexShrink: 0 }} />
+                                <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {a.nome}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                         {msg.tem_imagem && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -502,27 +572,44 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                 gap: 10,
               }}
             >
-              <textarea
-                ref={textareaRef}
+              <RichTextEditor
+                ref={editorRef}
                 value={novaMsg}
-                onChange={(e) => setNovaMsg(e.target.value)}
-                placeholder="Escreva sua mensagem para o mural... (Shift+Enter para nova linha)"
-                rows={3}
-                autoFocus
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleEnviar().then(() => { if (!novaMsg) {} }); } }}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "0.5px solid var(--color-border)",
-                  background: "var(--color-bg-secondary)",
-                  color: "var(--color-text-primary)",
-                  fontSize: 14,
-                  outline: "none",
-                  resize: "vertical",
-                  minHeight: 80,
-                }}
+                onChange={setNovaMsg}
+                placeholder="Escreva sua mensagem para o mural..."
+                onAttach={(files) => setAttachments((prev) => [...prev, ...files])}
+                disabled={enviando}
               />
+
+              {/* Arquivos anexados pendentes */}
+              {attachments.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {attachments.map((f, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "var(--color-bg-secondary)",
+                        border: "0.5px solid var(--color-border)",
+                        borderRadius: 6, padding: "4px 10px", fontSize: 12,
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      <Paperclip style={{ width: 11, height: 11 }} />
+                      <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {f.name}
+                      </span>
+                      <button
+                        onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", color: "#dc2626" }}
+                      >
+                        <X style={{ width: 11, height: 11 }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button
                   onClick={() => setModalAberto(false)}
@@ -538,13 +625,13 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                 </button>
                 <button
                   onClick={async () => { await handleEnviar(); }}
-                  disabled={enviando || !novaMsg.trim()}
+                  disabled={enviando || !novaMsg.replace(/<[^>]*>/g, "").trim()}
                   style={{
                     padding: "8px 24px", borderRadius: 8, border: "none",
                     background: "#0E1326", color: "white",
                     fontSize: 13, fontWeight: 600,
-                    cursor: enviando || !novaMsg.trim() ? "not-allowed" : "pointer",
-                    opacity: !novaMsg.trim() ? 0.5 : 1,
+                    cursor: enviando || !novaMsg.replace(/<[^>]*>/g, "").trim() ? "not-allowed" : "pointer",
+                    opacity: !novaMsg.replace(/<[^>]*>/g, "").trim() ? 0.5 : 1,
                     display: "flex", alignItems: "center", gap: 6,
                   }}
                 >

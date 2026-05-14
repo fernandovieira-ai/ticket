@@ -469,11 +469,25 @@ export default function TicketPainelPage() {
         detailsCache.fetchWithCache(
           'ticket_status_options',
           async () => {
+            console.log('🔄 Buscando status da API /api/ticket-status...');
             const res = await fetch("/api/ticket-status");
-            return res.ok ? res.json() : [];
+            console.log('📡 Resposta da API ticket-status:', res.status, res.statusText);
+
+            if (res.ok) {
+              const data = await res.json();
+              console.log('✅ Dados recebidos da API ticket-status:', data);
+              return data;
+            } else {
+              const errorText = await res.text();
+              console.error('❌ Erro na API ticket-status:', res.status, errorText);
+              return [];
+            }
           },
           600000 // 10min for status options
-        ).then(setStatusOpcoes)
+        ).then((data) => {
+          console.log('💾 Setando statusOpcoes com:', data);
+          setStatusOpcoes(data);
+        })
       );
     }
 

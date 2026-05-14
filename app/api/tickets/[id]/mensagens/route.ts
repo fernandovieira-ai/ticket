@@ -145,7 +145,7 @@ export async function POST(
     status_id: string;
     respondido_em: Date | null;
     sla_primeira_resp_deadline: Date | null;
-  }>(`SELECT id, cliente_id, status_id, respondido_em, sla_primeira_resp_deadline FROM tickets WHERE id = $1`, [id]);
+  }>(`SELECT id, cliente_id, status_id, respondido_em, sla_primeira_resp_deadline FROM tickets WHERE id = $1 AND empresa_id = $2`, [id, session.empresaId]);
   if (!ticket)
     return NextResponse.json(
       { error: "Ticket não encontrado" },

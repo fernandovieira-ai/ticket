@@ -25,10 +25,9 @@ export async function GET(
     ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "mural", safeName)
     : path.join(process.cwd(), "public", "uploads", "mural", safeName);
 
-  let buffer: Uint8Array;
+  let buffer: Buffer;
   try {
-    const raw = await readFile(filePath);
-    buffer = new Uint8Array(raw);
+    buffer = await readFile(filePath);
   } catch {
     return new Response("Arquivo não encontrado", { status: 404 });
   }
@@ -52,7 +51,7 @@ export async function GET(
   };
   const contentType = mimeMap[ext] ?? "application/octet-stream";
 
-  return new Response(buffer, {
+  return new Response(new Uint8Array(buffer), {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "private, max-age=86400",

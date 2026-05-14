@@ -128,7 +128,13 @@ class PerformanceCache {
 
   get<T>(cacheType: keyof typeof this.caches, key: string, ttl?: number): T | null {
     const cache = this.caches[cacheType];
-    const cached = cache.get(key) as any;
+
+    // Tratamento especial para Set (prefetchQueue)
+    if (cacheType === 'prefetchQueue') {
+      return (cache as Set<string>).has(key) as any;
+    }
+
+    const cached = (cache as Map<string, any>).get(key);
     const currentTtl = ttl || this.TTL[cacheType];
 
     if (cached && Date.now() - cached.timestamp < currentTtl) {
@@ -137,15 +143,24 @@ class PerformanceCache {
 
     // Auto-cleanup de entradas expiradas (performance)
     if (cached) {
-      cache.delete(key);
+      (cache as Map<string, any>).delete(key);
     }
 
     return null;
   }
 
   set<T>(cacheType: keyof typeof this.caches, key: string, value: T): void {
-    const cache = this.caches[cacheType] as Map<string, any>;
     const timestamp = Date.now();
+
+    // Tratamento especial para Set (prefetchQueue)
+    if (cacheType === 'prefetchQueue') {
+      const prefetchSet = this.caches.prefetchQueue;
+      prefetchSet.add(key);
+      setTimeout(() => prefetchSet.delete(key), this.TTL.prefetchQueue);
+      return;
+    }
+
+    const cache = this.caches[cacheType] as Map<string, any>;
 
     // Limitar tamanho do cache para evitar memory leaks
     if (cache.size > 1000) {
@@ -163,9 +178,6 @@ class PerformanceCache {
       cache.set(key, { promise: value as Promise<any>, timestamp });
     } else if (cacheType === 'ticketDetails') {
       cache.set(key, { data: value, timestamp });
-    } else if (cacheType === 'prefetchQueue') {
-      (cache as Set<string>).add(key);
-      setTimeout(() => (cache as Set<string>).delete(key), this.TTL.prefetchQueue);
     } else {
       cache.set(key, { valor: value as string, timestamp });
     }
@@ -382,6 +394,7 @@ const TicketTableRow = React.memo(function TicketTableRow({
   return (
     <tr
       onClick={onClick}
+      onMouseEnter={() => perfCache.prefetchTicketDetails(ticket.id)}
       className="tickets-table-row"
       style={{ borderBottom: "0.5px solid var(--color-border)" }}
     >
@@ -811,13 +824,23 @@ export const TicketsClient = React.memo(function TicketsClient({
       }
       if (fila) params.set("fila", "1");
 
-      const res = await fetch(`/api/tickets?${params}`, {
-        headers: { 'Cache-Control': 'max-age=30' } // 🚀 Cache otimizado
-      });
+      // 🚀 Verificar cache de prefetch primeiro
+      const prefetchKey = `prefetch_page_${pageNum}`;
+      const prefetchedData = perfCache.get<any>('ticketDetails', prefetchKey);
+
+      let data;
+      if (prefetchedData && append) {
+        // Usar dados prefetchados se disponíveis
+        data = prefetchedData;
+      } else {
+        // 🚀 Request deduplication - usar fetchWithCache
+        const url = `/api/tickets?${params}`;
+        data = await perfCache.fetchWithCache(url, {
+          headers: { 'Cache-Control': 'max-age=30' }
+        });
+      }
 
       if (!isMounted) return;
-
-      const data = await res.json();
 
       if (append) {
         // Adicionar à lista existente (scroll infinito)
@@ -856,23 +879,27 @@ export const TicketsClient = React.memo(function TicketsClient({
     carregar(page + 1, true);
   }, [hasMore, loadingMore, page, carregar]);
 
+  // 🚀 Debounce otimizado com diferentes delays para diferentes ações
   useEffect(() => {
     if (primeiroRender.current) {
       primeiroRender.current = false;
       carregar();
       return;
     }
-    // Para mudanças subsequentes (busca, filtros), usar debounce
-    const t = setTimeout(() => carregar(), 300);
+
+    // Debounce inteligente: busca de texto = 400ms, filtros = 150ms
+    const delay = busca ? 400 : 150;
+    const t = setTimeout(() => carregar(), delay);
     return () => clearTimeout(t);
   }, [busca, statusCodigo, meus, fila, situacaoMeus]);
 
-  // 🚀 Intersection Observer para scroll infinito
+  // 🚀 Intersection Observer para scroll infinito + Prefetch antecipado
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !hasMore) return;
 
-    const observer = new IntersectionObserver(
+    // Observer principal para carregar mais
+    const mainObserver = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
         if (entry.isIntersecting && !loadingMore) {
@@ -881,17 +908,46 @@ export const TicketsClient = React.memo(function TicketsClient({
       },
       {
         root: null,
-        rootMargin: '300px', // Começar a carregar 300px antes
+        rootMargin: '400px', // Começar a carregar 400px antes
         threshold: 0.1
       }
     );
 
-    observer.observe(sentinel);
+    // 🚀 Observer de prefetch antecipado (mais cedo)
+    const prefetchObserver = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && !loadingMore && hasMore) {
+          // Prefetch da próxima página em background com prioridade baixa
+          const nextPage = page + 1;
+          const params = new URLSearchParams(window.location.search);
+          params.set('page', nextPage.toString());
+          params.set('pageSize', '30');
+
+          perfCache.fetchWithCache(`/api/tickets?${params}`)
+            .then((data: any) => {
+              // Cache os dados para uso posterior quando loadMore() for chamado
+              perfCache.set('ticketDetails', `prefetch_page_${nextPage}`, data);
+            })
+            .catch(() => {}); // Falha silenciosa - não é crítico
+        }
+      },
+      {
+        root: null,
+        rootMargin: '800px', // Prefetch 800px antes (mais agressivo)
+        threshold: 0.1
+      }
+    );
+
+    // Iniciar observação com ambos os observers
+    mainObserver.observe(sentinel);
+    prefetchObserver.observe(sentinel);
 
     return () => {
-      if (observer) observer.disconnect();
+      if (mainObserver) mainObserver.disconnect();
+      if (prefetchObserver) prefetchObserver.disconnect();
     };
-  }, [hasMore, loadingMore, loadMore]);
+  }, [hasMore, loadingMore, loadMore, page]);
 
   // Carregar sessão e opções fixas
   useEffect(() => {

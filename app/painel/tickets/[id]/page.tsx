@@ -733,6 +733,7 @@ export default function TicketPainelPage() {
         const hh = parseInt(finalizarHH || "0", 10);
         const mm = parseInt(finalizarMM || "0", 10);
         const tempoMinutos = hh * 60 + mm;
+        console.log('Enviando PATCH para finalizar:', { status_id: statusEncerra.id, ...(tempoMinutos > 0 && { tempo_trabalho_minutos: tempoMinutos }) });
         const statusResponse = await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -741,6 +742,7 @@ export default function TicketPainelPage() {
             ...(tempoMinutos > 0 && { tempo_trabalho_minutos: tempoMinutos }),
           }),
         });
+        console.log('Resposta PATCH status:', statusResponse.status, statusResponse.statusText);
         if (!statusResponse.ok) {
           const contentType = statusResponse.headers.get('content-type');
           let errorMessage = `HTTP ${statusResponse.status} - ${statusResponse.statusText}`;
@@ -761,11 +763,15 @@ export default function TicketPainelPage() {
           return;
         }
 
-        // Check if response has content before trying to parse JSON
-        const contentType = statusResponse.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const result = await statusResponse.json();
-          console.log('Ticket finalizado com sucesso:', result);
+        // Handle successful response
+        try {
+          const contentType = statusResponse.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const result = await statusResponse.json();
+            console.log('Ticket finalizado com sucesso:', result);
+          }
+        } catch (jsonError) {
+          console.log('Aviso: resposta de sucesso não contém JSON válido, mas operação pode ter funcionado');
         }
       } else {
         alert('Erro: não foi encontrado um status de encerramento configurado');
@@ -820,11 +826,13 @@ export default function TicketPainelPage() {
       const statusAberto =
         statusOpcoes.find((s) => s.encerra === false) ?? statusOpcoes[0];
       if (statusAberto) {
+        console.log('Enviando PATCH para reabrir:', { status_id: statusAberto.id });
         const response = await fetch(`/api/tickets/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status_id: statusAberto.id }),
         });
+        console.log('Resposta PATCH status:', response.status, response.statusText);
         if (!response.ok) {
           const contentType = response.headers.get('content-type');
           let errorMessage = `HTTP ${response.status} - ${response.statusText}`;
@@ -845,11 +853,15 @@ export default function TicketPainelPage() {
           return;
         }
 
-        // Check if response has content before trying to parse JSON
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const result = await response.json();
-          console.log('Ticket reaberto com sucesso:', result);
+        // Handle successful response
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const result = await response.json();
+            console.log('Ticket reaberto com sucesso:', result);
+          }
+        } catch (jsonError) {
+          console.log('Aviso: resposta de sucesso não contém JSON válido, mas operação pode ter funcionado');
         }
         await carregar();
       } else {

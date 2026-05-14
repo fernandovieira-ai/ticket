@@ -13,6 +13,18 @@ export interface Informativo {
   criado_em: string;
 }
 
+// Converte URLs no texto em <a> clicáveis
+function linkificar(html: string): string {
+  // Primeiro processa o HTML existente para não duplicar links já marcados
+  const semTags = html.replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, (match) => match); // preserva <a> existentes
+  // Regex para detectar URLs fora de tags HTML existentes
+  return semTags.replace(
+    /(?<!href=["'])(https?:\/\/[^\s<>"')\]]+)/gi,
+    (url) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#6d28d9;font-weight:600;text-decoration:underline;word-break:break-all;">${url}</a>`
+  );
+}
+
 interface Props {
   initialInformativos: Informativo[];
 }
@@ -160,7 +172,7 @@ export function InformativosClient({ initialInformativos }: Props) {
                       lineHeight: 1.6,
                       marginBottom: 8,
                     }}
-                    dangerouslySetInnerHTML={{ __html: inf.descricao }}
+                    dangerouslySetInnerHTML={{ __html: linkificar(inf.descricao) }}
                   />
                   <div className="flex items-center gap-4">
                     {inf.dta_validade && (

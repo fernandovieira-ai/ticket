@@ -18,6 +18,15 @@ interface Props {
 }
 
 const CARD_POR_PAG = 8;
+
+// Detecta URLs no texto e transforma em links clicáveis
+function linkificar(texto: string): string {
+  return texto.replace(
+    /(?<!href=["'])(https?:\/\/[^\s<>"')\]]+)/gi,
+    (url) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+  );
+}
 const MODAL_POR_PAG = 5;
 
 function Paginacao({
@@ -270,7 +279,8 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                     </div>
                     <div
                       style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5, marginTop: 2 }}
-                      dangerouslySetInnerHTML={{ __html: msg.mensagem }}
+                      className="mural-msg-body"
+                      dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                     />
                     {msg.tem_imagem && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -456,7 +466,7 @@ export function MuralRecados({ usuarioNome, usuarioPerfil }: Props) {
                         <div
                           style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.7 }}
                           className="mural-msg-body"
-                          dangerouslySetInnerHTML={{ __html: msg.mensagem }}
+                          dangerouslySetInnerHTML={{ __html: linkificar(msg.mensagem) }}
                         />
                         {msg.tem_imagem && (
                           // eslint-disable-next-line @next/next/no-img-element

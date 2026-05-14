@@ -375,6 +375,15 @@
   padding-left: 1.2em;
   margin: 4px 0;
 }
+.informativo-descricao a {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.informativo-descricao a:hover {
+  color: #1d4ed8;
+}
 
 /* HTML dentro das mensagens do mural */
 .mural-msg-body br {
@@ -386,12 +395,13 @@
   color: var(--color-text-primary);
 }
 .mural-msg-body a {
-  color: #6d28d9;
+  color: #2563eb;
+  font-weight: 600;
   text-decoration: underline;
   word-break: break-all;
 }
 .mural-msg-body a:hover {
-  color: #4c1d95;
+  color: #1d4ed8;
 }
 .mural-msg-body ul, .mural-msg-body ol {
   padding-left: 1.4em;

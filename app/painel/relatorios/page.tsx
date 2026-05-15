@@ -60,8 +60,25 @@ function isoInicio(dias: number) {
 function isoFim() { return new Date().toISOString(); }
 
 function fmtData(iso: string) {
-  const [, m, d] = iso.split("-");
-  return `${d}/${m}`;
+  if (!iso) return "";
+
+  // Tenta extrair a data usando regex para YYYY-MM-DD
+  const match = String(iso).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, , mes, dia] = match;
+    return `${dia}/${mes}`;
+  }
+
+  // Fallback: tenta usar Date
+  try {
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return String(iso);
+    const dia = String(date.getDate()).padStart(2, "0");
+    const mes = String(date.getMonth() + 1).padStart(2, "0");
+    return `${dia}/${mes}`;
+  } catch {
+    return String(iso);
+  }
 }
 
 function fmtHoras(h: number | null) {
@@ -107,12 +124,31 @@ function KpiCard({ label, value, icon, color, alert }: KpiCardProps) {
 
 // ─── Tooltip customizado para linha ──────────────────────────────────────────
 
+function fmtDataCompleta(iso: string) {
+  if (!iso) return "";
+  const match = String(iso).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, ano, mes, dia] = match;
+    return `${dia}/${mes}/${ano}`;
+  }
+  try {
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return String(iso);
+    const dia = String(date.getDate()).padStart(2, "0");
+    const mes = String(date.getMonth() + 1).padStart(2, "0");
+    const ano = date.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+  } catch {
+    return String(iso);
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function LineTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-zinc-200 rounded-lg shadow px-3 py-2 text-xs">
-      <p className="font-semibold text-zinc-700 mb-1">{label}</p>
+      <p className="font-semibold text-zinc-700 mb-1">{fmtDataCompleta(label)}</p>
       <p className="text-zinc-500">Tickets: <span className="font-bold text-indigo-600">{payload[0].value}</span></p>
     </div>
   );

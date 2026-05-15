@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Edit, Trash2, Clock, CheckCircle, Filter, X } from 'lucide-react';
 import { EditarPlantaoModal } from './editar-plantao-modal';
 import { ConfirmarExclusaoModal } from './confirmar-exclusao-modal';
+import { DateInputBR } from './date-input-br';
 
 interface Plantao {
   id: number;
@@ -33,6 +34,20 @@ export function PlantaoTable({ plantoes, onRefresh }: PlantaoTableProps) {
   const [selectedPlantao, setSelectedPlantao] = useState<Plantao | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Função para converter data para formato YYYY-MM-DD (formato do input date)
+  const toInputDateFormat = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Função auxiliar para normalizar data (pegar apenas ano-mes-dia sem horário)
+  const normalizarData = (dateString: string): Date => {
+    const date = new Date(dateString);
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  };
+
   // Filtrar plantões baseado nos filtros
   const plantoesFiltrados = useMemo(() => {
     let filtered = plantoes;
@@ -44,15 +59,19 @@ export function PlantaoTable({ plantoes, onRefresh }: PlantaoTableProps) {
 
     // Filtrar por período
     if (dataInicio) {
-      filtered = filtered.filter(plantao =>
-        new Date(plantao.dtainicio) >= new Date(dataInicio)
-      );
+      const dataInicioFilter = new Date(dataInicio + 'T00:00:00Z'); // Z para UTC
+      filtered = filtered.filter(plantao => {
+        const plantaoDataInicio = normalizarData(plantao.dtainicio);
+        return plantaoDataInicio >= dataInicioFilter;
+      });
     }
 
     if (dataFinal) {
-      filtered = filtered.filter(plantao =>
-        new Date(plantao.dtafinal) <= new Date(dataFinal)
-      );
+      const dataFinalFilter = new Date(dataFinal + 'T23:59:59Z'); // Z para UTC
+      filtered = filtered.filter(plantao => {
+        const plantaoDataFinal = normalizarData(plantao.dtafinal);
+        return plantaoDataFinal <= dataFinalFilter;
+      });
     }
 
     return filtered;
@@ -105,11 +124,15 @@ export function PlantaoTable({ plantoes, onRefresh }: PlantaoTableProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    // Parse da data e ajuste para evitar problemas de timezone
+    const date = new Date(dateString);
+
+    // Pegar os componentes da data em UTC para evitar problemas de timezone
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+
+    return `${day}/${month}/${year}`;
   };
 
   const getStatusBadge = (indFinalizado: string) => {
@@ -140,20 +163,16 @@ export function PlantaoTable({ plantoes, onRefresh }: PlantaoTableProps) {
               Período:
             </label>
             <div className="flex items-center space-x-2">
-              <input
-                type="date"
+              <DateInputBR
                 value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-                placeholder="mm/dd/yyyy"
+                onChange={setDataInicio}
+                title="Data de início"
               />
               <span className="text-gray-500 text-sm">até</span>
-              <input
-                type="date"
+              <DateInputBR
                 value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-                placeholder="mm/dd/yyyy"
+                onChange={setDataFinal}
+                title="Data final"
               />
             </div>
           </div>

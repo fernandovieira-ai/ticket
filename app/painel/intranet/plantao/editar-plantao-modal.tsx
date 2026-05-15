@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { X } from 'lucide-react';
+import { DateInputBR } from './date-input-br';
 
 interface Plantao {
   id: number;
@@ -159,14 +160,13 @@ export function EditarPlantaoModal({ isOpen, onClose, onSuccess, plantao }: Edit
                 <label htmlFor="dtainicio" className="block text-sm font-medium text-gray-700 mb-1">
                   Data Início *
                 </label>
-                <input
-                  type="date"
-                  id="dtainicio"
-                  name="dtainicio"
+                <DateInputBR
                   value={formData.dtainicio}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  onChange={(value) => {
+                    handleChange({ target: { name: 'dtainicio', value } } as any);
+                  }}
+                  title="Data de início do plantão"
+                  className="border-gray-300 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
 
@@ -175,14 +175,13 @@ export function EditarPlantaoModal({ isOpen, onClose, onSuccess, plantao }: Edit
                 <label htmlFor="dtafinal" className="block text-sm font-medium text-gray-700 mb-1">
                   Data Final *
                 </label>
-                <input
-                  type="date"
-                  id="dtafinal"
-                  name="dtafinal"
+                <DateInputBR
                   value={formData.dtafinal}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  onChange={(value) => {
+                    handleChange({ target: { name: 'dtafinal', value } } as any);
+                  }}
+                  title="Data final do plantão"
+                  className="border-gray-300 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
             </div>

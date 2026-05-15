@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { X, Calendar, User } from 'lucide-react';
+import { DateInputBR } from './date-input-br';
 
 interface NovoPlantaoModalProps {
   isOpen: boolean;
@@ -131,12 +132,11 @@ export function NovoPlantaoModal({ isOpen, onClose, onSuccess }: NovoPlantaoModa
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Data Início <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <DateInputBR
                 value={formData.dtainicio}
-                onChange={(e) => handleChange('dtainicio', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                required
+                onChange={(value) => handleChange('dtainicio', value)}
+                title="Data de início do plantão"
+                className="border-gray-200 focus:ring-green-500 focus:border-green-500"
               />
             </div>
 
@@ -145,12 +145,11 @@ export function NovoPlantaoModal({ isOpen, onClose, onSuccess }: NovoPlantaoModa
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Data Final <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <DateInputBR
                 value={formData.dtafinal}
-                onChange={(e) => handleChange('dtafinal', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                required
+                onChange={(value) => handleChange('dtafinal', value)}
+                title="Data final do plantão"
+                className="border-gray-200 focus:ring-green-500 focus:border-green-500"
               />
             </div>
 

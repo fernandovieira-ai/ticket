@@ -69,7 +69,6 @@ const MENU: MenuItem[] = [
     id: "intranet",
     icon: Globe,
     label: "Intranet",
-    adminOnly: true,
     items: [
       {
         label: "Informativos",

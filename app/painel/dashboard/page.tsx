@@ -29,6 +29,7 @@ interface TicketRecente {
   status_cor: string;
   prioridade_nome: string;
   prioridade_cor: string;
+  categoria_nome: string | null;
   cliente_nome: string | null;
   atribuido_nome: string | null;
   criado_em: Date;
@@ -111,11 +112,13 @@ async function DashboardContent({
       `SELECT t.id, t.numero, t.titulo, t.criado_em,
                 ts.nome AS status_nome, ts.cor AS status_cor,
                 tp.nome AS prioridade_nome, tp.cor AS prioridade_cor,
+                cat.nome AS categoria_nome,
                 c.nome_razao AS cliente_nome,
                 u.nome AS atribuido_nome
          FROM tickets t
          JOIN ticket_status ts ON ts.id = t.status_id
          JOIN ticket_prioridades tp ON tp.id = t.prioridade_id
+         LEFT JOIN categorias cat ON cat.id = t.categoria_id
          LEFT JOIN clientes c ON c.id = t.cliente_id
          LEFT JOIN usuarios u ON u.id = t.atribuido_a
          WHERE t.empresa_id = $1

@@ -13,6 +13,7 @@ interface TicketRow {
   status_cor: string;
   prioridade_nome: string;
   prioridade_cor: string;
+  categoria_nome: string | null;
   cliente_nome: string | null;
   criado_em: Date;
 }
@@ -216,6 +217,21 @@ const TicketsSemAtribuirComponent = memo(function TicketsSemAtribuir({
                 >
                   {t.prioridade_nome}
                 </span>
+                {t.categoria_nome && (
+                  <span
+                    className="inline-flex items-center"
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 20,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      backgroundColor: "#64748b20",
+                      color: "#64748b",
+                    }}
+                  >
+                    {t.categoria_nome}
+                  </span>
+                )}
                 {t.cliente_nome && (
                   <span
                     style={{ fontSize: 11, color: "var(--color-text-muted)" }}

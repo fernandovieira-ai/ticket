@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import pool from "@/lib/db";
+import { queryIntranet } from "@/lib/db-unified";
 
 export async function GET(
   _req: Request,
@@ -11,27 +11,22 @@ export async function GET(
 
   const { id } = await params;
 
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      "SELECT imagem, tipo_imagem FROM intranet.mensagens WHERE id = $1",
-      [id]
-    );
+  const result = await queryIntranet(
+    "SELECT imagem, tipo_imagem FROM mensagens WHERE id = $1",
+    [id]
+  );
 
-    if (result.rows.length === 0 || !result.rows[0].imagem) {
-      return new NextResponse("Imagem não encontrada", { status: 404 });
-    }
-
-    const { imagem, tipo_imagem } = result.rows[0];
-    const contentType = tipo_imagem ?? "image/jpeg";
-
-    return new NextResponse(imagem, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400",
-      },
-    });
-  } finally {
-    client.release();
+  if (result.rows.length === 0 || !result.rows[0].imagem) {
+    return new NextResponse("Imagem não encontrada", { status: 404 });
   }
+
+  const { imagem, tipo_imagem } = result.rows[0];
+  const contentType = tipo_imagem ?? "image/jpeg";
+
+  return new NextResponse(imagem, {
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
 }

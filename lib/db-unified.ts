@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 // Pool drfweb (intranet original — contratos, etc.)
 const dbDrfweb = new Pool({
@@ -10,17 +10,10 @@ const dbDrfweb = new Pool({
   ssl: false,
   max: 5,
   idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 8000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
 });
-
-export async function queryDrfweb(text: string, params?: any[]) {
-  try {
-    const result = await dbDrfweb.query(text, params);
-    return result;
-  } catch (error) {
-    console.error('❌ Erro query drfweb:', error);
-    throw error;
-  }
-}
 
 // Pool unificado (drfticket com schemas public + intranet)
 const db = new Pool({
@@ -34,34 +27,81 @@ const db = new Pool({
   options: "--statement_timeout=10000",
 });
 
+// Previne crash do processo em erros de pool
+db.on("error", (err) => {
+  console.error("[db-unified] Pool error:", err.message);
+});
+
+dbDrfweb.on("error", (err) => {
+  console.error("[dbDrfweb] Pool error:", err.message);
+});
+
+/** Erros transitórios que valem uma nova tentativa */
+const RETRYABLE = [
+  "Connection terminated unexpectedly",
+  "Connection terminated due to connection timeout",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "the database system is starting up",
+  "too many connections",
+];
+
+function isRetryable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return RETRYABLE.some((s) => msg.includes(s));
+}
+
+/**
+ * Executa um callback que recebe um PoolClient com retry automático.
+ * Em caso de erro transitório, retenta até 3 vezes com backoff exponencial.
+ */
+async function withConnection<T>(
+  pool: Pool,
+  fn: (client: PoolClient) => Promise<T>,
+  attempt = 1,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    const result = await fn(client);
+    client.release(); // conexão boa → devolve ao pool
+    return result;
+  } catch (err) {
+    // Destrói a conexão problemática em vez de reciclá-la
+    client.release(err instanceof Error ? err : new Error(String(err)));
+    if (isRetryable(err) && attempt <= 3) {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+      return withConnection(pool, fn, attempt + 1);
+    }
+    throw err;
+  }
+}
+
+export async function queryDrfweb(text: string, params?: any[]) {
+  return withConnection(dbDrfweb, async (client) => {
+    return await client.query(text, params);
+  });
+}
+
 // Função principal para consultas no banco unificado (schema public)
 export async function query(text: string, params?: any[]) {
-  try {
-    const result = await db.query(text, params);
-    return result;
-  } catch (error) {
-    console.error('❌ Erro na query:', error);
-    throw error;
-  }
+  return withConnection(db, async (client) => {
+    return await client.query(text, params);
+  });
 }
 
 // Função para consultas na intranet (schema intranet)
 export async function queryIntranet(text: string, params?: any[]) {
-  try {
-    // Se a query já inclui o schema intranet, use como está
-    // Caso contrário, adicione o prefixo intranet. automaticamente
-    const finalText = text.includes('intranet.') ? text :
-                     text.replace(/FROM\s+(\w+)/gi, 'FROM intranet.$1')
-                          .replace(/INTO\s+(\w+)/gi, 'INTO intranet.$1')
-                          .replace(/UPDATE\s+(\w+)/gi, 'UPDATE intranet.$1')
-                          .replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1');
+  // Se a query já inclui o schema intranet, use como está
+  // Caso contrário, adicione o prefixo intranet. automaticamente
+  const finalText = text.includes('intranet.') ? text :
+                   text.replace(/FROM\s+(\w+)/gi, 'FROM intranet.$1')
+                        .replace(/INTO\s+(\w+)/gi, 'INTO intranet.$1')
+                        .replace(/UPDATE\s+(\w+)/gi, 'UPDATE intranet.$1')
+                        .replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1');
 
-    const result = await db.query(finalText, params);
-    return result;
-  } catch (error) {
-    console.error('❌ Erro na query do schema intranet:', error);
-    throw error;
-  }
+  return withConnection(db, async (client) => {
+    return await client.query(finalText, params);
+  });
 }
 
 // Helper functions para consultas comuns da intranet
@@ -148,11 +188,15 @@ export async function testConnection() {
     console.log('🔗 Testando conectividade com banco unificado...');
 
     // Testar schema public (DigitalRF-Help)
-    await db.query('SELECT 1 FROM usuarios LIMIT 1');
+    await withConnection(db, async (client) => {
+      return await client.query('SELECT 1 FROM usuarios LIMIT 1');
+    });
     console.log('✅ Schema public (DigitalRF-Help) acessível');
 
     // Testar schema intranet
-    await db.query('SELECT 1 FROM intranet.informativos LIMIT 1');
+    await withConnection(db, async (client) => {
+      return await client.query('SELECT 1 FROM intranet.informativos LIMIT 1');
+    });
     console.log('✅ Schema intranet acessível');
 
     // Testar algumas consultas específicas
@@ -173,8 +217,11 @@ export async function testConnection() {
 // Fechar conexão
 export async function closeConnection() {
   try {
-    await db.end();
-    console.log('🔌 Conexão de banco fechada');
+    await Promise.all([
+      db.end(),
+      dbDrfweb.end()
+    ]);
+    console.log('🔌 Conexões de banco fechadas');
   } catch (error) {
     console.error('❌ Erro ao fechar conexão:', error);
   }

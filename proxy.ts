@@ -7,6 +7,25 @@ const JWT_REFRESH_SECRET = new TextEncoder().encode(
   process.env.JWT_REFRESH_SECRET!,
 );
 
+/**
+ * Adiciona headers de versão e segurança em todas as respostas
+ */
+function addCommonHeaders(response: NextResponse, isServerAction = false): NextResponse {
+  const buildId = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || "dev";
+
+  response.headers.set("X-Build-Version", buildId);
+  response.headers.set("X-DNS-Prefetch-Control", "on");
+  response.headers.set("X-Frame-Options", "SAMEORIGIN");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+
+  // Para Server Actions, adiciona cache apropriado
+  if (isServerAction) {
+    response.headers.set("Cache-Control", "no-store, must-revalidate");
+  }
+
+  return response;
+}
+
 // Rotas públicas (não exigem auth)
 const PUBLIC_PATHS = [
   "/login",
@@ -67,6 +86,7 @@ async function isRefreshTokenValid(token: string): Promise<boolean> {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const hostname = req.headers.get("host") ?? "";
+  const isServerAction = req.headers.has("Next-Action");
 
   // Detecta se o acesso é pelo domínio do portal do cliente
   const isPortalDomain =
@@ -84,19 +104,19 @@ export async function proxy(req: NextRequest) {
 
   if (isPortalDomain) {
     if (pathname.startsWith("/painel")) {
-      return NextResponse.redirect(new URL("/cliente/login", req.url));
+      return addCommonHeaders(NextResponse.redirect(new URL("/cliente/login", req.url)));
     }
     if (pathname === "/") {
-      return NextResponse.redirect(new URL("/cliente/login", req.url));
+      return addCommonHeaders(NextResponse.redirect(new URL("/cliente/login", req.url)));
     }
   }
 
   if (isPainelDomain) {
     if (pathname.startsWith("/portal") || pathname.startsWith("/cliente")) {
-      return NextResponse.redirect(new URL("/login", req.url));
+      return addCommonHeaders(NextResponse.redirect(new URL("/login", req.url)));
     }
     if (pathname === "/") {
-      return NextResponse.redirect(new URL("/login", req.url));
+      return addCommonHeaders(NextResponse.redirect(new URL("/login", req.url)));
     }
   }
 
@@ -106,10 +126,10 @@ export async function proxy(req: NextRequest) {
   const isPublic = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
-  if (isPublic) return NextResponse.next();
+  if (isPublic) return addCommonHeaders(NextResponse.next(), isServerAction);
 
   // Desenvolvimento sem autenticação: passa tudo
-  if (process.env.BYPASS_AUTH === "true") return NextResponse.next();
+  if (process.env.BYPASS_AUTH === "true") return addCommonHeaders(NextResponse.next(), isServerAction);
 
   const accessToken = req.cookies.get("access_token")?.value;
   const refreshToken = req.cookies.get("refresh_token")?.value;
@@ -117,7 +137,7 @@ export async function proxy(req: NextRequest) {
 
   // 1. Access token válido e "fresco" — verifica roles e prossegue
   if (accessToken && (await isAccessTokenFresh(accessToken))) {
-    return applyRoleChecks(req, accessToken, isPortalDomain);
+    return applyRoleChecks(req, accessToken, isPortalDomain, isServerAction);
   }
 
   // 2. Access token expirado/ausente — tenta renovar com o refresh token
@@ -151,8 +171,8 @@ export async function proxy(req: NextRequest) {
         }
 
         const roleResponse = newAccessToken
-          ? await applyRoleChecks(req, newAccessToken, isPortalDomain)
-          : NextResponse.next({ request: { headers: requestHeaders } });
+          ? await applyRoleChecks(req, newAccessToken, isPortalDomain, isServerAction)
+          : addCommonHeaders(NextResponse.next({ request: { headers: requestHeaders } }), isServerAction);
 
         // Se applyRoleChecks retornou um redirect, preserva mas ainda envia os cookies
         const response =
@@ -173,19 +193,23 @@ export async function proxy(req: NextRequest) {
 
   // 3. Nem access nem refresh válidos — nega o acesso
   if (isApiRoute) {
-    return NextResponse.json(
-      { error: "Sessão expirada", code: "SESSION_EXPIRED" },
-      { status: 401 },
+    return addCommonHeaders(
+      NextResponse.json(
+        { error: "Sessão expirada", code: "SESSION_EXPIRED" },
+        { status: 401 },
+      ),
+      isServerAction
     );
   }
 
-  return redirectToLogin(req, isPortalDomain);
+  return addCommonHeaders(redirectToLogin(req, isPortalDomain), isServerAction);
 }
 
 async function applyRoleChecks(
   req: NextRequest,
   token: string,
   isPortalDomain: boolean,
+  isServerAction = false,
 ): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
@@ -194,25 +218,25 @@ async function applyRoleChecks(
     const { payload: p } = await jwtVerify(token, JWT_SECRET);
     payload = p as unknown as JWTPayload;
   } catch {
-    return redirectToLogin(req, isPortalDomain);
+    return addCommonHeaders(redirectToLogin(req, isPortalDomain), isServerAction);
   }
 
   // Redirecionar raiz conforme perfil
   if (pathname === "/") {
     if (payload.perfil === "cliente") {
-      return NextResponse.redirect(new URL("/portal/meus-tickets", req.url));
+      return addCommonHeaders(NextResponse.redirect(new URL("/portal/meus-tickets", req.url)), isServerAction);
     }
-    return NextResponse.redirect(new URL("/painel/dashboard", req.url));
+    return addCommonHeaders(NextResponse.redirect(new URL("/painel/dashboard", req.url)), isServerAction);
   }
 
   // Impedir cliente de acessar painel interno
   if (pathname.startsWith("/painel") && payload.perfil === "cliente") {
-    return NextResponse.redirect(new URL("/portal/meus-tickets", req.url));
+    return addCommonHeaders(NextResponse.redirect(new URL("/portal/meus-tickets", req.url)), isServerAction);
   }
 
   // Impedir staff de acessar portal do cliente
   if (pathname.startsWith("/portal") && payload.perfil !== "cliente") {
-    return NextResponse.redirect(new URL("/painel/dashboard", req.url));
+    return addCommonHeaders(NextResponse.redirect(new URL("/painel/dashboard", req.url)), isServerAction);
   }
 
   // Rotas restritas a admin/supervisor
@@ -220,10 +244,10 @@ async function applyRoleChecks(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
   if (isAdminPath && !["admin", "supervisor"].includes(payload.perfil)) {
-    return NextResponse.redirect(new URL("/painel/dashboard", req.url));
+    return addCommonHeaders(NextResponse.redirect(new URL("/painel/dashboard", req.url)), isServerAction);
   }
 
-  return NextResponse.next();
+  return addCommonHeaders(NextResponse.next(), isServerAction);
 }
 
 function redirectToLogin(req: NextRequest, isPortal = false) {

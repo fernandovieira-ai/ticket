@@ -450,7 +450,7 @@ export function FaqClient({ initialFaq, sistemas }: Props) {
                         <p style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                           Problema
                         </p>
-                        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                           {item.des_erro}
                         </p>
                       </div>
@@ -460,7 +460,7 @@ export function FaqClient({ initialFaq, sistemas }: Props) {
                         <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                           Solução
                         </p>
-                        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                           {item.des_resolucao}
                         </p>
                       </div>

@@ -319,6 +319,21 @@ export interface IALog {
 }
 
 // ============================================================
+// PERMISSÕES DE TELAS
+// ============================================================
+export interface PermissaoTela {
+  id: string;
+  empresa_id: string;
+  perfil: PerfilUsuario;
+  tela_rota: string;
+  tela_nome: string;
+  pode_acessar: boolean;
+  pode_editar: boolean;
+  criado_em: Date;
+  atualizado_em: Date;
+}
+
+// ============================================================
 // JWT PAYLOAD
 // ============================================================
 export interface JWTPayload {

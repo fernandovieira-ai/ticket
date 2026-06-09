@@ -271,6 +271,11 @@ const MENU: MenuItem[] = [
         href: "/painel/configuracoes/ia",
         icon: <Bot size={13} />,
       },
+      {
+        label: "Permissões",
+        href: "/painel/configuracoes/permissoes",
+        icon: <Shield size={13} />,
+      },
     ],
   },
 ];

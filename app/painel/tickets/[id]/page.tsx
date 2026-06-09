@@ -26,6 +26,8 @@ import {
   ArrowRightLeft,
   Smartphone,
   Pencil,
+  Download,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -247,6 +249,8 @@ export default function TicketPainelPage() {
   const [reabrindo, setReabrindo] = useState(false);
   const [confirmarReaberturaAberto, setConfirmarReaberturaAberto] = useState(false);
   const [enviarViaWhatsapp, setEnviarViaWhatsapp] = useState(false);
+  const [anexoSelecionado, setAnexoSelecionado] = useState<Anexo | null>(null);
+  const [modalAnexoAberto, setModalAnexoAberto] = useState(false);
   const [transferirAberto, setTransferirAberto] = useState(false);
   const [transferirTipo, setTransferirTipo] = useState<
     "atendente" | "departamento"
@@ -1217,11 +1221,13 @@ export default function TicketPainelPage() {
                       {m.anexos?.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {m.anexos.map((a) => (
-                            <a
+                            <button
                               key={a.id}
-                              href={a.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              type="button"
+                              onClick={() => {
+                                setAnexoSelecionado(a);
+                                setModalAnexoAberto(true);
+                              }}
                               className="inline-flex items-center gap-1.5 text-xs bg-gray-100 text-blue-600 hover:bg-gray-200 rounded px-2.5 py-1 transition-colors"
                             >
                               <Paperclip
@@ -1242,7 +1248,7 @@ export default function TicketPainelPage() {
                                   )
                                 </span>
                               )}
-                            </a>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -2029,6 +2035,75 @@ export default function TicketPainelPage() {
                 )}
               </button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Visualizar Anexo */}
+      <Dialog open={modalAnexoAberto} onOpenChange={setModalAnexoAberto}>
+        <DialogContent showCloseButton={false} className="max-w-2xl p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-5 py-4 border-b border-gray-200">
+            <DialogTitle className="text-base font-semibold text-gray-900 truncate pr-4">
+              {anexoSelecionado?.nome}
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={() => setModalAnexoAberto(false)}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </DialogHeader>
+          <div className="px-5 py-6">
+            {anexoSelecionado && (
+              <>
+                {/* Preview de imagens */}
+                {anexoSelecionado.mime_type?.startsWith('image/') ? (
+                  <div className="mb-4 flex items-center justify-center bg-gray-50 rounded-lg p-4">
+                    <img
+                      src={anexoSelecionado.url}
+                      alt={anexoSelecionado.nome}
+                      className="max-w-full max-h-[400px] object-contain rounded"
+                    />
+                  </div>
+                ) : (
+                  <div className="mb-4 flex flex-col items-center justify-center bg-gray-50 rounded-lg p-8">
+                    <Paperclip size={48} className="text-gray-300 mb-3" />
+                    <p className="text-sm text-gray-600 mb-1">{anexoSelecionado.nome}</p>
+                    {anexoSelecionado.tamanho && (
+                      <p className="text-xs text-gray-400">
+                        {anexoSelecionado.tamanho < 1024
+                          ? `${anexoSelecionado.tamanho} B`
+                          : anexoSelecionado.tamanho < 1024 * 1024
+                            ? `${Math.round(anexoSelecionado.tamanho / 1024)} KB`
+                            : `${(anexoSelecionado.tamanho / (1024 * 1024)).toFixed(1)} MB`}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center justify-center gap-3">
+                  {/* Botão Visualizar (abre em nova aba) */}
+                  <a
+                    href={anexoSelecionado.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 rounded-md px-4 py-2 transition-colors"
+                  >
+                    <Eye size={16} />
+                    Visualizar
+                  </a>
+                  {/* Botão Baixar */}
+                  <a
+                    href={anexoSelecionado.url}
+                    download={anexoSelecionado.nome}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md px-4 py-2 transition-colors"
+                  >
+                    <Download size={16} />
+                    Baixar
+                  </a>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

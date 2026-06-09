@@ -316,6 +316,20 @@ export async function PATCH(
       ),
     ]);
 
+    // Validação: não permitir finalizar ticket sem atendente
+    if (novoStatus?.encerra) {
+      const ticketComAtendente = await queryOne<{ atribuido_a: string | null }>(
+        `SELECT atribuido_a FROM tickets WHERE id = $1`,
+        [id],
+      );
+      if (!ticketComAtendente?.atribuido_a) {
+        return NextResponse.json(
+          { error: "Não é possível finalizar um chamado sem atendente atribuído. Por favor, atribua um atendente antes de finalizar." },
+          { status: 422 },
+        );
+      }
+    }
+
     if (novoStatus) {
       if (novoStatus.codigo === "resolvido") {
         campos.push(`resolvido_em = now()`);

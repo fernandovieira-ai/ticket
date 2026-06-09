@@ -1088,11 +1088,15 @@ export default function TicketPainelPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (!ticket.atribuido_a) {
+                      alert('Não é possível finalizar o chamado sem um atendente atribuído.\n\nPor favor, atribua um atendente ao chamado antes de finalizá-lo.');
+                      return;
+                    }
                     carregarOpcoesStatusPrioridade();
                     setFinalizarAberto(true);
                   }}
-                  title="Finalizar chamado"
-                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 border border-green-300 bg-white hover:bg-green-50 hover:border-green-500 rounded-md px-2.5 py-1.5 transition-colors"
+                  title={!ticket.atribuido_a ? "É necessário atribuir um atendente antes de finalizar" : "Finalizar chamado"}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 border border-green-300 bg-white hover:bg-green-50 hover:border-green-500 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 size={13} />
                   Finalizar

@@ -358,11 +358,11 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
   const formatarDataHora = (dataISO: string) => {
     if (!dataISO) return "-";
 
-    // Garante que ambas as datas estão em UTC para comparação correta
-    const data = new Date(dataISO);
+    // PostgreSQL retorna timestamps em UTC, então garantimos que criamos Date como UTC
+    const data = new Date(dataISO + (dataISO.endsWith('Z') ? '' : 'Z'));
     const agora = new Date();
 
-    // Calcula diferença em UTC (independente do timezone)
+    // Calcula diferença em milissegundos (ambas em UTC)
     const diffMs = agora.getTime() - data.getTime();
     const diffMinutos = Math.floor(diffMs / 60000);
 

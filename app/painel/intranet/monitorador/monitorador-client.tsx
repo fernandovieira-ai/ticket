@@ -1059,11 +1059,11 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
                               </div>
                               <div style={s.infoItem}>
                                 <PlayCircle size={14} color="#10b981" />
-                                Rodando: {formatarNumero(empresa.heartbeat.proc_rodando, 0)}
+                                Ativos: {empresa.processos.filter(p => p.ativo).length}
                               </div>
                               <div style={s.infoItem}>
                                 <XCircle size={14} color="#ef4444" />
-                                Parado: {formatarNumero(empresa.heartbeat.proc_parado, 0)}
+                                Inativos: {empresa.processos.filter(p => !p.ativo).length}
                               </div>
                               <div style={s.infoItem}>
                                 <Clock size={14} color="#f59e0b" />

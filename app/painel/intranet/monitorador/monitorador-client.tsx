@@ -357,8 +357,12 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
 
   const formatarDataHora = (dataISO: string) => {
     if (!dataISO) return "-";
+
+    // Garante que ambas as datas estão em UTC para comparação correta
     const data = new Date(dataISO);
     const agora = new Date();
+
+    // Calcula diferença em UTC (independente do timezone)
     const diffMs = agora.getTime() - data.getTime();
     const diffMinutos = Math.floor(diffMs / 60000);
 
@@ -368,12 +372,17 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
     const diffHoras = Math.floor(diffMinutos / 60);
     if (diffHoras < 24) return `${diffHoras}h atrás`;
 
+    const diffDias = Math.floor(diffHoras / 24);
+    if (diffDias === 1) return "ontem";
+    if (diffDias < 7) return `${diffDias} dias atrás`;
+
     return data.toLocaleString("pt-BR", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
     });
   };
 

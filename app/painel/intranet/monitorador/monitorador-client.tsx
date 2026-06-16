@@ -447,13 +447,13 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
       overflow: "hidden",
     } as React.CSSProperties,
     redeHeader: {
-      background: "linear-gradient(135deg, #1e3a8a, #3b82f6)",
+      background: "#A3E635", // Verde lima - cor do menu ativo
       padding: "14px 20px",
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
       gap: 10,
-      color: "#fff",
+      color: "#0E1326", // Texto escuro para contraste
       fontWeight: 700,
       fontSize: 16,
       transition: "background 0.2s",

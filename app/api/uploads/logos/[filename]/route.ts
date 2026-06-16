@@ -12,6 +12,12 @@ const MIME: Record<string, string> = {
   ".webp": "image/webp",
 };
 
+function logoDir() {
+  return process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "logos")
+    : join(process.cwd(), "public", "uploads", "logos");
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ filename: string }> },
@@ -26,7 +32,7 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const filePath = join(process.cwd(), "public", "uploads", "logos", safe);
+  const filePath = join(logoDir(), safe);
 
   try {
     await access(filePath);

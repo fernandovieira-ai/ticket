@@ -7,6 +7,12 @@ import { getSession } from "@/lib/auth";
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
+function logoDir() {
+  return process.env.RAILWAY_VOLUME_MOUNT_PATH
+    ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "uploads", "logos")
+    : join(process.cwd(), "public", "uploads", "logos");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -28,7 +34,7 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const uploadDir = join(process.cwd(), "public", "uploads", "logos");
+    const uploadDir = logoDir();
     await mkdir(uploadDir, { recursive: true });
     await writeFile(join(uploadDir, filename), buffer);
 

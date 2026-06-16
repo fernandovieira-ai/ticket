@@ -419,7 +419,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                   textDecoration: "none",
                 }}
               >
-                <Icon style={{ width: "16px", height: "16px" }} />
+                <Icon className="w-4 h-4" />
                 <span>{item.label}</span>
               </Link>
             );
@@ -448,17 +448,13 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                 }}
               >
                 <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <Icon style={{ width: "16px", height: "16px" }} />
+                  <Icon className="w-4 h-4" />
                   {item.label}
                 </span>
                 {expanded ? (
-                  <ChevronDown
-                    style={{ width: "14px", height: "14px", color: "var(--nav-muted)" }}
-                  />
+                  <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--nav-muted)" }} />
                 ) : (
-                  <ChevronRight
-                    style={{ width: "14px", height: "14px", color: "var(--nav-muted)" }}
-                  />
+                  <ChevronRight className="w-3.5 h-3.5" style={{ color: "var(--nav-muted)" }} />
                 )}
               </button>
 

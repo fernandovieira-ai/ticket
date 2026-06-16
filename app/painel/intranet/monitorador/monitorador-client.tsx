@@ -355,38 +355,57 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
     }
   };
 
-  const formatarDataHora = (dataISO: string) => {
+  const formatarDataHora = (dataISO: string | Date) => {
     if (!dataISO) return "-";
 
-    // Converte para string se for Date object
-    const dataStr = typeof dataISO === 'string' ? dataISO : dataISO.toString();
+    try {
+      // Converte para string se for Date object ou outro tipo
+      let dataStr = '';
+      if (dataISO instanceof Date) {
+        dataStr = dataISO.toISOString();
+      } else if (typeof dataISO === 'string') {
+        dataStr = dataISO;
+      } else {
+        dataStr = String(dataISO);
+      }
 
-    // PostgreSQL retorna timestamps em UTC, então garantimos que criamos Date como UTC
-    const data = new Date(dataStr + (dataStr.endsWith('Z') ? '' : 'Z'));
-    const agora = new Date();
+      // PostgreSQL retorna timestamps em UTC, adiciona Z se não tiver
+      if (!dataStr.includes('Z') && !dataStr.includes('+')) {
+        dataStr = dataStr + 'Z';
+      }
 
-    // Calcula diferença em milissegundos (ambas em UTC)
-    const diffMs = agora.getTime() - data.getTime();
-    const diffMinutos = Math.floor(diffMs / 60000);
+      const data = new Date(dataStr);
+      const agora = new Date();
 
-    if (diffMinutos < 1) return "agora mesmo";
-    if (diffMinutos < 60) return `${diffMinutos} min atrás`;
+      // Verifica se a data é válida
+      if (isNaN(data.getTime())) return "-";
 
-    const diffHoras = Math.floor(diffMinutos / 60);
-    if (diffHoras < 24) return `${diffHoras}h atrás`;
+      // Calcula diferença em milissegundos (ambas em UTC)
+      const diffMs = agora.getTime() - data.getTime();
+      const diffMinutos = Math.floor(diffMs / 60000);
 
-    const diffDias = Math.floor(diffHoras / 24);
-    if (diffDias === 1) return "ontem";
-    if (diffDias < 7) return `${diffDias} dias atrás`;
+      if (diffMinutos < 1) return "agora mesmo";
+      if (diffMinutos < 60) return `${diffMinutos} min atrás`;
 
-    return data.toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "America/Sao_Paulo",
-    });
+      const diffHoras = Math.floor(diffMinutos / 60);
+      if (diffHoras < 24) return `${diffHoras}h atrás`;
+
+      const diffDias = Math.floor(diffHoras / 24);
+      if (diffDias === 1) return "ontem";
+      if (diffDias < 7) return `${diffDias} dias atrás`;
+
+      return data.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      });
+    } catch (error) {
+      console.error("Erro ao formatar data:", error, dataISO);
+      return "-";
+    }
   };
 
   const formatarCNPJ = (cnpj: string) => {

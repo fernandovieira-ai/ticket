@@ -3,7 +3,6 @@
 import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
 import {
   Users,
   User,
@@ -105,6 +104,11 @@ const MENU: MenuItem[] = [
         label: "Dados Restritos",
         href: "/painel/intranet/dados-restritos",
         icon: <Shield size={13} />,
+      },
+      {
+        label: "Monitorador",
+        href: "/painel/intranet/monitorador",
+        icon: <Activity size={13} />,
       },
     ],
   },
@@ -400,17 +404,22 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
               <Link
                 key={item.id}
                 href={item.href ?? "#"}
-                className={cn(
-                  "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition-colors",
-                  !active && "nav-item-hover"
-                )}
+                className={!active ? "nav-item-hover" : ""}
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  transition: "colors 0.2s",
                   backgroundColor: active ? "var(--nav-active-bg)" : undefined,
                   color: active ? "var(--nav-active-text)" : "var(--nav-parent)",
                   fontWeight: 600,
+                  textDecoration: "none",
                 }}
               >
-                <Icon className="w-4 h-4" />
+                <Icon style={{ width: "16px", height: "16px" }} />
                 <span>{item.label}</span>
               </Link>
             );
@@ -421,28 +430,34 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
             <div key={item.id}>
               <button
                 onClick={() => toggleGroup(item.id)}
-                className={cn(
-                  "flex items-center justify-between w-full px-2.5 py-2 rounded-md text-[13px] transition-colors",
-                  !childActive && "nav-item-hover"
-                )}
+                className={!childActive ? "nav-item-hover" : ""}
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  transition: "colors 0.2s",
                   color: "var(--nav-parent)",
                   fontWeight: 600,
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
                 }}
               >
-                <span className="flex items-center gap-2.5">
-                  <Icon className="w-4 h-4" />
+                <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Icon style={{ width: "16px", height: "16px" }} />
                   {item.label}
                 </span>
                 {expanded ? (
                   <ChevronDown
-                    className="w-3.5 h-3.5"
-                    style={{ color: "var(--nav-muted)" }}
+                    style={{ width: "14px", height: "14px", color: "var(--nav-muted)" }}
                   />
                 ) : (
                   <ChevronRight
-                    className="w-3.5 h-3.5"
-                    style={{ color: "var(--nav-muted)" }}
+                    style={{ width: "14px", height: "14px", color: "var(--nav-muted)" }}
                   />
                 )}
               </button>
@@ -450,16 +465,30 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
               {/* Submenu com trilho vertical */}
               {expanded && (
                 <div
-                  className="ml-3.5 pl-3.5 py-0.5 mb-1"
-                  style={{ borderLeft: "1.5px solid var(--nav-rail)" }}
+                  style={{
+                    marginLeft: "14px",
+                    paddingLeft: "14px",
+                    paddingTop: "2px",
+                    paddingBottom: "2px",
+                    marginBottom: "4px",
+                    borderLeft: "1.5px solid var(--nav-rail)",
+                  }}
                 >
                   {item.items!.map((child, i) => {
                     if (child.separator) {
                       return (
                         <div
                           key={`sep-${i}`}
-                          className="px-2.5 mb-1 text-[10px] uppercase tracking-wider font-medium mt-3"
-                          style={{ color: "var(--nav-section)" }}
+                          style={{
+                            padding: "0 10px",
+                            marginBottom: "4px",
+                            marginTop: "12px",
+                            fontSize: "10px",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontWeight: 500,
+                            color: "var(--nav-section)",
+                          }}
                         >
                           {child.label}
                         </div>
@@ -473,11 +502,13 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                       <Link
                         key={child.href}
                         href={child.href}
-                        className={cn(
-                          "block px-2.5 py-1.5 rounded-md text-[13px] transition-colors",
-                          !childIsActive && "nav-item-hover"
-                        )}
+                        className={!childIsActive ? "nav-item-hover" : ""}
                         style={{
+                          display: "block",
+                          padding: "6px 10px",
+                          borderRadius: "6px",
+                          fontSize: "13px",
+                          transition: "colors 0.2s",
                           backgroundColor: childIsActive
                             ? "var(--nav-child-active-bg)"
                             : undefined,
@@ -485,6 +516,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
                             ? "var(--nav-child-active-text)"
                             : "var(--nav-child)",
                           fontWeight: childIsActive ? 500 : 400,
+                          textDecoration: "none",
                         }}
                       >
                         {child.label}

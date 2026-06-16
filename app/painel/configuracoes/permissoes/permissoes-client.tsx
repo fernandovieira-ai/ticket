@@ -17,7 +17,8 @@ import {
   BarChart3,
   Settings,
   FileText,
-  Globe
+  Globe,
+  Activity
 } from "lucide-react";
 
 type Perfil = "admin" | "supervisor" | "operador" | "somente_leitura";
@@ -57,6 +58,7 @@ const ICONES_TELAS: Record<string, any> = {
   "/painel/clientes": Users,
   "/painel/whatsapp": MessageSquare,
   "/painel/intranet": Globe,
+  "/painel/intranet/monitorador": Activity,
   "/painel/relatorios": BarChart3,
   "/painel/configuracoes": Settings
 };
@@ -187,30 +189,52 @@ export function PermissoesClient() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header com legenda */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <div className="flex items-start gap-3">
-          <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-blue-900 mb-1">
-              Como funciona o controle de acesso
-            </h3>
-            <p className="text-xs text-blue-700 leading-relaxed">
-              Defina para cada perfil de usuário quais telas podem ser acessadas e se podem fazer edições.
-              As permissões de <strong>Admin</strong> não podem ser alteradas (sempre tem acesso total).
-            </p>
-            <div className="flex items-center gap-4 mt-3 text-xs">
-              <div className="flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-blue-600" />
-                <span className="text-blue-800">Pode visualizar</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Edit className="w-3.5 h-3.5 text-blue-600" />
-                <span className="text-blue-800">Pode editar</span>
+      {/* Header com legenda e botão */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex-1">
+          <div className="flex items-start gap-3">
+            <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-1">
+                Como funciona o controle de acesso
+              </h3>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                Defina para cada perfil de usuário quais telas podem ser acessadas e se podem fazer edições.
+                As permissões de <strong>Admin</strong> não podem ser alteradas (sempre tem acesso total).
+              </p>
+              <div className="flex items-center gap-4 mt-3 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-blue-800">Pode visualizar</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Edit className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-blue-800">Pode editar</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Botão Popular Permissões */}
+        <button
+          onClick={popularPermissoes}
+          disabled={populando}
+          className="flex-shrink-0 inline-flex items-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+          title="Criar/atualizar permissões padrão para todas as telas"
+        >
+          {populando ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">Atualizando...</span>
+            </>
+          ) : (
+            <>
+              <Shield className="w-4 h-4" />
+              <span className="text-sm font-medium">Popular Permissões</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Tabela de permissões */}

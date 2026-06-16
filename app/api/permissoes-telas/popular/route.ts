@@ -9,6 +9,7 @@ const TELAS = [
   { rota: "/painel/clientes", nome: "Clientes" },
   { rota: "/painel/whatsapp", nome: "WhatsApp" },
   { rota: "/painel/intranet", nome: "Intranet" },
+  { rota: "/painel/intranet/monitorador", nome: "Monitorador de Rede" },
   { rota: "/painel/relatorios", nome: "Relatórios" },
   { rota: "/painel/configuracoes", nome: "Configurações" },
 ];
@@ -40,6 +41,16 @@ const PERMISSOES_ESPECIAIS: Record<
     supervisor: { pode_acessar: false, pode_editar: false },
     operador: { pode_acessar: false, pode_editar: false },
     somente_leitura: { pode_acessar: false, pode_editar: false },
+  },
+  "/painel/intranet/monitorador": {
+    // Admin: acesso total com edição (bloquear/desbloquear)
+    admin: { pode_acessar: true, pode_editar: true },
+    // Supervisor: pode visualizar e editar
+    supervisor: { pode_acessar: true, pode_editar: true },
+    // Operador: apenas visualizar, sem editar
+    operador: { pode_acessar: true, pode_editar: false },
+    // Somente leitura: apenas visualizar
+    somente_leitura: { pode_acessar: true, pode_editar: false },
   },
 };
 

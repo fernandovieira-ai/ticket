@@ -447,7 +447,7 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
       overflow: "hidden",
     } as React.CSSProperties,
     redeHeader: {
-      background: "#1e40af", // Azul escuro para consistência com menu
+      background: "#0E1326", // Azul escuro do menu lateral (mesma cor do sidebar)
       padding: "14px 20px",
       cursor: "pointer",
       display: "flex",

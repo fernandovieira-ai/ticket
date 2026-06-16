@@ -85,19 +85,21 @@ export async function getMonitoradorData(): Promise<MonitoradorData[]> {
     `),
 
     // Query 2: Heartbeat com detecção automática de perda de comunicação
+    // ultimo_contato é TIMESTAMP WITHOUT TIMEZONE gravado em horário de Brasília (UTC-3).
+    // Convertemos com AT TIME ZONE para que node-postgres receba TIMESTAMPTZ (UTC correto).
     query(`
       SELECT
         machine_uuid,
         machine_id,
         machine_ip,
-        ultimo_contato,
+        (ultimo_contato AT TIME ZONE 'America/Sao_Paulo') AS ultimo_contato,
         cpu_percent,
         mem_percent,
         total_processos,
         proc_rodando,
         proc_parado,
         CASE
-          WHEN ultimo_contato < NOW() - INTERVAL '3 minutes' THEN 'sem_sinal'
+          WHEN (ultimo_contato AT TIME ZONE 'America/Sao_Paulo') < NOW() - INTERVAL '3 minutes' THEN 'sem_sinal'
           ELSE status
         END AS status
       FROM drf_monitor_heartbeat

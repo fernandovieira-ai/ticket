@@ -117,6 +117,12 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
   const [editandoRede, setEditandoRede] = useState<string | null>(null);
   const [novoNomeRede, setNovoNomeRede] = useState("");
   const [salvandoRede, setSalvandoRede] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Evita erro de hidratação com datas dinâmicas
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const toggleRede = (nomeRede: string) => {
     setRedesAbertas(prev => {
@@ -1035,7 +1041,7 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
                             >
                               <AlertCircle size={18} />
                               <div>
-                                ⚠️ Sem comunicação desde {formatarDataHora(empresa.heartbeat.ultimo_contato)}
+                                ⚠️ Sem comunicação desde {mounted ? formatarDataHora(empresa.heartbeat.ultimo_contato) : '-'}
                               </div>
                             </div>
                           )}
@@ -1061,7 +1067,7 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
                               </div>
                               <div style={s.infoItem}>
                                 <Clock size={14} color="#f59e0b" />
-                                Último contato: {formatarDataHora(empresa.heartbeat.ultimo_contato)}
+                                Último contato: {mounted ? formatarDataHora(empresa.heartbeat.ultimo_contato) : '-'}
                               </div>
                             </div>
                           )}

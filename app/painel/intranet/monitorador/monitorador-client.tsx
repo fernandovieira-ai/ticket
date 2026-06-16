@@ -358,8 +358,11 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
   const formatarDataHora = (dataISO: string) => {
     if (!dataISO) return "-";
 
+    // Converte para string se for Date object
+    const dataStr = typeof dataISO === 'string' ? dataISO : dataISO.toString();
+
     // PostgreSQL retorna timestamps em UTC, então garantimos que criamos Date como UTC
-    const data = new Date(dataISO + (dataISO.endsWith('Z') ? '' : 'Z'));
+    const data = new Date(dataStr + (dataStr.endsWith('Z') ? '' : 'Z'));
     const agora = new Date();
 
     // Calcula diferença em milissegundos (ambas em UTC)

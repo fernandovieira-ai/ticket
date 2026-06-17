@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   // Desabilitar headers de debug em produção
   poweredByHeader: false,
 
+  // Servir imagens em WebP/AVIF — reduz tamanho 40-60%
+  images: {
+    formats: ["image/avif", "image/webp"],
+  },
+
   // Build ID consistente baseado no git commit ou timestamp
   // Evita que Server Actions sejam invalidadas desnecessariamente
   generateBuildId: async () => {

@@ -10,6 +10,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { query } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { serverCache } from "@/lib/server-cache";
 import { TicketsSemAtribuir } from "./tickets-sem-atribuir";
 import { SenhaLZT } from "./senha-lzt";
 import { MuralRecados } from "./mural-recados";
@@ -20,6 +21,12 @@ export const maxDuration = 15;
 
 interface StatRow {
   total: number;
+}
+interface KpiRow {
+  abertos: number;
+  em_andamento: number;
+  resolvidos_hoje: number;
+  clientes_ativos: number;
 }
 interface TicketRecente {
   id: string;
@@ -63,50 +70,32 @@ async function DashboardContent({
   nome: string;
   perfil: string;
 }) {
+  // KPIs: 4 contagens consolidadas em 1 query + cache 2min
+  const kpiCacheKey = `dashboard_kpi_${empresaId}`;
+  let kpi: KpiRow;
+  const cachedKpi = serverCache.get<KpiRow>(kpiCacheKey);
+  if (cachedKpi) {
+    kpi = cachedKpi;
+  } else {
+    const kpiRows = await query<KpiRow>(
+      `SELECT
+         (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo = 'aberto') AS abertos,
+         (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo = 'em_andamento') AS em_andamento,
+         (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo IN ('finalizado','cancelado') AND t.atualizado_em >= (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')) AS resolvidos_hoje,
+         (SELECT COUNT(*)::int FROM clientes WHERE empresa_id = $1 AND ativo = true) AS clientes_ativos`,
+      [empresaId],
+    );
+    kpi = kpiRows[0];
+    serverCache.set(kpiCacheKey, kpi, 2 * 60 * 1000);
+  }
+
   const [
-    abertos,
-    emAndamento,
-    resolvidosHoje,
-    clientesAtivos,
     ticketsRecentes,
     porPrioridade,
     porUsuario,
     solicitacoesPorUsuario,
     informativosAtivos,
   ] = await Promise.all([
-    // Abertos
-    query<StatRow>(
-      `SELECT COUNT(*)::int AS total
-         FROM tickets t
-         JOIN ticket_status ts ON ts.id = t.status_id
-         WHERE t.empresa_id = $1 AND ts.codigo = 'aberto'`,
-      [empresaId],
-    ),
-    // Em andamento
-    query<StatRow>(
-      `SELECT COUNT(*)::int AS total
-         FROM tickets t
-         JOIN ticket_status ts ON ts.id = t.status_id
-         WHERE t.empresa_id = $1 AND ts.codigo = 'em_andamento'`,
-      [empresaId],
-    ),
-    // Resolvidos hoje
-    query<StatRow>(
-      `SELECT COUNT(*)::int AS total
-         FROM tickets t
-         JOIN ticket_status ts ON ts.id = t.status_id
-         WHERE t.empresa_id = $1
-           AND ts.codigo IN ('finalizado', 'cancelado')
-           AND t.atualizado_em >= (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')`,
-      [empresaId],
-    ),
-    // Clientes ativos
-    query<StatRow>(
-      `SELECT COUNT(*)::int AS total
-         FROM clientes
-         WHERE empresa_id = $1 AND ativo = true`,
-      [empresaId],
-    ),
     // Tickets recentes
     query<TicketRecente>(
       `SELECT t.id, t.numero, t.titulo, t.criado_em,
@@ -177,28 +166,28 @@ async function DashboardContent({
   const cards = [
     {
       title: "Abertos",
-      value: abertos[0]?.total ?? 0,
+      value: kpi?.abertos ?? 0,
       icon: <Ticket className="w-5 h-5 text-blue-500" />,
       color: "text-blue-600",
       href: "/painel/tickets/status/aberto",
     },
     {
       title: "Em Andamento",
-      value: emAndamento[0]?.total ?? 0,
+      value: kpi?.em_andamento ?? 0,
       icon: <Clock className="w-5 h-5 text-amber-500" />,
       color: "text-amber-600",
       href: "/painel/tickets/status/em_andamento",
     },
     {
       title: "Resolvidos Hoje",
-      value: resolvidosHoje[0]?.total ?? 0,
+      value: kpi?.resolvidos_hoje ?? 0,
       icon: <CheckCircle className="w-5 h-5 text-green-500" />,
       color: "text-green-600",
       href: "/painel/tickets/status/resolvidos",
     },
     {
       title: "Clientes Ativos",
-      value: clientesAtivos[0]?.total ?? 0,
+      value: kpi?.clientes_ativos ?? 0,
       icon: <Users className="w-5 h-5 text-purple-500" />,
       color: "text-purple-600",
       href: "/painel/clientes",

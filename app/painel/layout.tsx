@@ -30,17 +30,24 @@ export default async function PainelLayout({
   const usuarioId = session?.sub;
   const empresaId = session?.empresaId;
 
-  // Busca avatar_url do usuário logado
+  // Busca avatar_url do usuário logado — cache 30min (muda raramente)
   let avatarUrl: string | null = null;
   if (usuarioId) {
-    const u = await queryOne<{ avatar_url: string | null }>(
-      "SELECT avatar_url FROM usuarios WHERE id = $1",
-      [usuarioId]
-    );
-    avatarUrl = u?.avatar_url ?? null;
+    const avatarCacheKey = `avatar_${usuarioId}`;
+    const cachedAvatar = serverCache.get<string | null>(avatarCacheKey);
+    if (cachedAvatar !== null) {
+      avatarUrl = cachedAvatar;
+    } else {
+      const u = await queryOne<{ avatar_url: string | null }>(
+        "SELECT avatar_url FROM usuarios WHERE id = $1",
+        [usuarioId]
+      );
+      avatarUrl = u?.avatar_url ?? null;
+      serverCache.set(avatarCacheKey, avatarUrl, 30 * 60 * 1000);
+    }
   }
 
-  // Cache logo por 5 minutos — evita query no DB a cada navegação
+  // Cache logo por 30 minutos — logo da empresa muda raramente
   let logoUrl: string | null = null;
   if (empresaId) {
     const cacheKey = `logo_${empresaId}`;
@@ -53,7 +60,7 @@ export default async function PainelLayout({
         [empresaId],
       );
       logoUrl = empresa?.logo_url ?? null;
-      serverCache.set(cacheKey, logoUrl, 5 * 60 * 1000);
+      serverCache.set(cacheKey, logoUrl, 30 * 60 * 1000);
     }
   } else if (bypassAuth) {
     const empresa = await queryOne<{ logo_url: string | null }>(

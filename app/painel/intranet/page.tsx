@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { intranetQueries } from '@/lib/db-unified';
+import { serverCache } from '@/lib/server-cache';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FileText, Users, HelpCircle, Calendar, Key, Monitor, Building, Shield } from 'lucide-react';
@@ -11,8 +12,13 @@ export const metadata: Metadata = {
 };
 
 export default async function IntranetHomePage() {
-  // Buscar stats para cards
-  const stats = await intranetQueries.getDashboardStats();
+  // Cache de 5 minutos — stats de intranet mudam raramente
+  const CACHE_KEY = 'intranet_dashboard_stats';
+  let stats = serverCache.get<any>(CACHE_KEY);
+  if (!stats) {
+    stats = await intranetQueries.getDashboardStats();
+    serverCache.set(CACHE_KEY, stats, 5 * 60 * 1000);
+  }
 
   const modules = [
     {

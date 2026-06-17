@@ -185,8 +185,8 @@ async function carregarOpcoesPadrao(session: any) {
 
     const result = { status, prioridades, usuarios };
 
-    // Cache por 5 minutos - essas opções mudam menos frequentemente
-    serverCache.set(cacheKey, result, 5 * 60 * 1000);
+    // Cache por 30 minutos — status e prioridades mudam muito raramente
+    serverCache.set(cacheKey, result, CACHE_TTL.opcoes);
     return result;
   } catch (error) {
     console.error('[TicketsServer] Erro ao carregar opções:', error);

@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { intranetQueries } from '@/lib/db-unified';
+import { serverCache } from '@/lib/server-cache';
 import ContratosClient from './contratos-client';
 
 export const metadata: Metadata = {
@@ -72,8 +73,14 @@ function agrupar(rows: ContratoRow[]): GrupoContrato[] {
 export default async function ContratosPage() {
   let grupos: GrupoContrato[] = [];
   try {
-    const result = await intranetQueries.getContratos();
-    grupos = agrupar((result.rows ?? result) as ContratoRow[]);
+    const CACHE_KEY = 'intranet_contratos';
+    let rows = serverCache.get<ContratoRow[]>(CACHE_KEY);
+    if (!rows) {
+      const result = await intranetQueries.getContratos();
+      rows = (result.rows ?? result) as ContratoRow[];
+      serverCache.set(CACHE_KEY, rows, 15 * 60 * 1000);
+    }
+    grupos = agrupar(rows);
   } catch (e) {
     console.error('Erro ao carregar contratos:', e);
   }

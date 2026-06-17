@@ -40,7 +40,7 @@ interface TicketRow {
   atualizado_em: string;
 }
 
-const CODIGOS_ABERTOS = ["aberto", "em_andamento", "aguardando"];
+const CODIGOS_ABERTOS = ["aberto", "em_andamento", "aguardando_cliente"];
 const CODIGOS_FECHADOS = ["finalizado", "cancelado"];
 
 // Estilos estáticos para evitar recriação

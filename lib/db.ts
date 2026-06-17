@@ -2,11 +2,16 @@ import { Pool, PoolClient } from "pg";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 10000, // descarta conexões idle mais rápido, evita ficar com stale
-  connectionTimeoutMillis: 8000,
+  max: 8,
+  // 30s antes de descartar idle — Railway derruba TCP idle após ~30-60s,
+  // então dar margem evita reutilizar conexões que já foram fechadas pelo proxy.
+  idleTimeoutMillis: 30000,
+  // 15s para obter conexão do pool — mais tolerante a picos de carga.
+  connectionTimeoutMillis: 15000,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
+  // Envia primeiro keepalive probe após 10s de inatividade (antes do proxy do
+  // Railway fechar a TCP connection silenciosamente).
+  keepAliveInitialDelayMillis: 10000,
   allowExitOnIdle: false,
   // Limita qualquer query a 10s — evita spinner infinito na página
   options: "--statement_timeout=10000",
@@ -39,12 +44,24 @@ function isRetryable(err: unknown): boolean {
  *
  * IMPORTANTE: ao chamar client.release(err), o pg *destrói* a conexão
  * em vez de devolvê-la ao pool — evita reutilizar conexões mortas.
+ *
+ * O pool.connect() também é guardado: se a conexão cair antes de ser
+ * entregue (Railway derruba TCP idle), o retry é acionado igualmente.
  */
 async function withConnection<T>(
   fn: (client: PoolClient) => Promise<T>,
   attempt = 1,
 ): Promise<T> {
-  const client = await pool.connect();
+  let client: PoolClient;
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    if (isRetryable(err) && attempt <= 3) {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+      return withConnection(fn, attempt + 1);
+    }
+    throw err;
+  }
   try {
     const result = await fn(client);
     client.release(); // conexão boa → devolve ao pool

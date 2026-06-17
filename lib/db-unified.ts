@@ -1,4 +1,7 @@
 import { Pool, PoolClient } from 'pg';
+// Reutiliza o pool principal de db.ts — evita ter dois pools apontando
+// para o mesmo DATABASE_URL e dobrando o limite de conexões.
+import pool from './db';
 
 // Pool drfweb (intranet original — contratos, etc.)
 const dbDrfweb = new Pool({
@@ -9,27 +12,10 @@ const dbDrfweb = new Pool({
   port: parseInt(process.env.DRFWEB_PORT ?? '5432'),
   ssl: false,
   max: 5,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 8000,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
-});
-
-// Pool unificado (drfticket com schemas public + intranet)
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 8000,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
-  allowExitOnIdle: false,
-  options: "--statement_timeout=10000",
-});
-
-// Previne crash do processo em erros de pool
-db.on("error", (err) => {
-  console.error("[db-unified] Pool error:", err.message);
+  keepAliveInitialDelayMillis: 10000,
 });
 
 dbDrfweb.on("error", (err) => {
@@ -54,13 +40,24 @@ function isRetryable(err: unknown): boolean {
 /**
  * Executa um callback que recebe um PoolClient com retry automático.
  * Em caso de erro transitório, retenta até 3 vezes com backoff exponencial.
+ * O pool.connect() também é guardado: se a conexão cair antes de ser
+ * entregue (Railway derruba TCP idle), o retry é acionado igualmente.
  */
 async function withConnection<T>(
-  pool: Pool,
+  p: Pool,
   fn: (client: PoolClient) => Promise<T>,
   attempt = 1,
 ): Promise<T> {
-  const client = await pool.connect();
+  let client: PoolClient;
+  try {
+    client = await p.connect();
+  } catch (err) {
+    if (isRetryable(err) && attempt <= 3) {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+      return withConnection(p, fn, attempt + 1);
+    }
+    throw err;
+  }
   try {
     const result = await fn(client);
     client.release(); // conexão boa → devolve ao pool
@@ -70,7 +67,7 @@ async function withConnection<T>(
     client.release(err instanceof Error ? err : new Error(String(err)));
     if (isRetryable(err) && attempt <= 3) {
       await new Promise((r) => setTimeout(r, 300 * attempt));
-      return withConnection(pool, fn, attempt + 1);
+      return withConnection(p, fn, attempt + 1);
     }
     throw err;
   }
@@ -84,7 +81,7 @@ export async function queryDrfweb(text: string, params?: any[]) {
 
 // Função principal para consultas no banco unificado (schema public)
 export async function query(text: string, params?: any[]) {
-  return withConnection(db, async (client) => {
+  return withConnection(pool, async (client) => {
     return await client.query(text, params);
   });
 }
@@ -99,7 +96,7 @@ export async function queryIntranet(text: string, params?: any[]) {
                         .replace(/UPDATE\s+(\w+)/gi, 'UPDATE intranet.$1')
                         .replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1');
 
-  return withConnection(db, async (client) => {
+  return withConnection(pool, async (client) => {
     return await client.query(finalText, params);
   });
 }
@@ -188,13 +185,13 @@ export async function testConnection() {
     console.log('🔗 Testando conectividade com banco unificado...');
 
     // Testar schema public (DigitalRF-Help)
-    await withConnection(db, async (client) => {
+    await withConnection(pool, async (client) => {
       return await client.query('SELECT 1 FROM usuarios LIMIT 1');
     });
     console.log('✅ Schema public (DigitalRF-Help) acessível');
 
     // Testar schema intranet
-    await withConnection(db, async (client) => {
+    await withConnection(pool, async (client) => {
       return await client.query('SELECT 1 FROM intranet.informativos LIMIT 1');
     });
     console.log('✅ Schema intranet acessível');
@@ -217,10 +214,7 @@ export async function testConnection() {
 // Fechar conexão
 export async function closeConnection() {
   try {
-    await Promise.all([
-      db.end(),
-      dbDrfweb.end()
-    ]);
+    await dbDrfweb.end();
     console.log('🔌 Conexões de banco fechadas');
   } catch (error) {
     console.error('❌ Erro ao fechar conexão:', error);
@@ -228,4 +222,4 @@ export async function closeConnection() {
 }
 
 // Export the main database pool for direct access when needed
-export { db };
+export { pool as db };

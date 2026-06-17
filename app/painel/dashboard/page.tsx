@@ -5,6 +5,7 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowRight,
+  Hourglass,
 } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -25,6 +26,7 @@ interface StatRow {
 interface KpiRow {
   abertos: number;
   em_andamento: number;
+  aguardando_cliente: number;
   resolvidos_hoje: number;
   clientes_ativos: number;
 }
@@ -81,6 +83,7 @@ async function DashboardContent({
       `SELECT
          (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo = 'aberto') AS abertos,
          (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo = 'em_andamento') AS em_andamento,
+         (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo = 'aguardando_cliente') AS aguardando_cliente,
          (SELECT COUNT(*)::int FROM tickets t JOIN ticket_status ts ON ts.id = t.status_id WHERE t.empresa_id = $1 AND ts.codigo IN ('finalizado','cancelado') AND t.atualizado_em >= (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')) AS resolvidos_hoje,
          (SELECT COUNT(*)::int FROM clientes WHERE empresa_id = $1 AND ativo = true) AS clientes_ativos`,
       [empresaId],
@@ -179,6 +182,13 @@ async function DashboardContent({
       href: "/painel/tickets/status/em_andamento",
     },
     {
+      title: "Aguardando Cliente",
+      value: kpi?.aguardando_cliente ?? 0,
+      icon: <Hourglass className="w-5 h-5 text-purple-500" />,
+      color: "text-purple-600",
+      href: "/painel/tickets/status/aguardando_cliente",
+    },
+    {
       title: "Resolvidos Hoje",
       value: kpi?.resolvidos_hoje ?? 0,
       icon: <CheckCircle className="w-5 h-5 text-green-500" />,
@@ -220,11 +230,11 @@ async function DashboardContent({
         </p>
       </div>
 
-      {/* Grid de KPIs — 4 colunas */}
+      {/* Grid de KPIs — 5 colunas */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
           gap: 10,
         }}
       >
@@ -742,11 +752,11 @@ export default async function DashboardPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
               gap: 10,
             }}
           >
-            {[...Array(4)].map((_, i) => (
+            {[...Array(5)].map((_, i) => (
               <div
                 key={i}
                 className="h-20 bg-gray-100 rounded-xl animate-pulse"

@@ -817,7 +817,7 @@ export const TicketsClient = React.memo(function TicketsClient({
         params.set("meus", "1");
         if (situacaoMeus) {
           if (situacaoMeus === "abertos_todos") {
-            params.set("status_codigo", "aberto,em_andamento,aguardando");
+            params.set("status_codigo", "aberto,em_andamento,aguardando_cliente");
           } else {
             params.set("status_codigo", situacaoMeus);
           }
@@ -1348,7 +1348,7 @@ export const TicketsClient = React.memo(function TicketsClient({
               <option value="">Todos os status</option>
               <option value="aberto">📌 Aberto</option>
               <option value="em_andamento">⚙️ Em Andamento</option>
-              <option value="aguardando">⏳ Aguardando</option>
+              <option value="aguardando_cliente">⏳ Aguardando</option>
               <option value="cancelado">❌ Cancelado</option>
               <option value="finalizado">✅ Finalizado</option>
             </select>

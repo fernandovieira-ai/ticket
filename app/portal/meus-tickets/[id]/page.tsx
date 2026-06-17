@@ -104,8 +104,12 @@ export default function TicketClientePage() {
       return;
     }
     setTicket(await resT.json());
-    setMensagens(await resM.json());
-    if (resA.ok) setAnexosTicket(await resA.json());
+    const mensagensData = await resM.json();
+    setMensagens(Array.isArray(mensagensData) ? mensagensData : []);
+    if (resA.ok) {
+      const anexosData = await resA.json();
+      setAnexosTicket(Array.isArray(anexosData) ? anexosData : []);
+    }
     setLoading(false);
   }, [id, router]);
 
@@ -189,7 +193,8 @@ export default function TicketClientePage() {
       "#84cc16",
       "#eab308",
     ];
-    const autorIds = [...new Set(mensagens.map((m) => m.autor_id))];
+    const mensagensArray = Array.isArray(mensagens) ? mensagens : [];
+    const autorIds = [...new Set(mensagensArray.map((m) => m.autor_id))];
     return Object.fromEntries(
       autorIds.map((aid, i) => [aid, USER_COLORS[i % USER_COLORS.length]]),
     );

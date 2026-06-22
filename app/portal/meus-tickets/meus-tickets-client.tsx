@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -147,7 +147,9 @@ function tempoRelativoMemoizado(data: string): string {
 /* ------------------------------------------------------------------ */
 export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
   const router = useRouter();
+  const pathname = usePathname();
   const editorRef = useRef<RichTextEditorRef>(null);
+  const lastPathnameRef = useRef<string | null>(null);
 
   /* lista de tickets */
   const [tickets, setTickets] = useState<TicketRow[]>([]);
@@ -181,7 +183,9 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
 
     try {
       const params = new URLSearchParams({ pageSize: "200" });
-      const res = await fetch(`/api/tickets?${params}`);
+      const res = await fetch(`/api/tickets?${params}`, {
+        cache: 'no-store', // Força buscar dados frescos sempre
+      });
 
       // Só processa se o componente ainda estiver montado
       if (!isMounted) return;
@@ -206,11 +210,54 @@ export const MeusTicketsClient = React.memo(function MeusTicketsClient() {
   useEffect(() => {
     carregar();
 
+    // Recarregar quando a página voltar a ser visível (ex: voltar do detalhe do ticket)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        carregar();
+      }
+    };
+
+    const handleFocus = () => {
+      carregar();
+    };
+
+    // Listener para quando a aba volta a ser visível
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Listener para quando a janela recebe foco
+    window.addEventListener('focus', handleFocus);
+
     // Cleanup quando componente for desmontado
     return () => {
       loadingRef.current = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, []); // Sem dependências - carrega apenas uma vez no mount
+  }, []); // Sem dependências - carrega apenas uma vez no mount, mas escuta eventos de navegação
+
+  // Detectar quando voltamos para esta página depois de navegar para outra
+  useEffect(() => {
+    // Se voltamos de uma página diferente para esta (ex: voltar de /portal/meus-tickets/[id] para /portal/meus-tickets)
+    if (lastPathnameRef.current !== null && lastPathnameRef.current !== pathname && pathname === '/portal/meus-tickets') {
+      console.log('[MeusTickets] Voltou para a página, recarregando dados...');
+      // Forçar recarregamento sem depender do callback
+      loadingRef.current = false; // Reset flag
+      setLoading(true);
+      const params = new URLSearchParams({ pageSize: "200" });
+      fetch(`/api/tickets?${params}`, { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          const lista = (data.data ?? []) as TicketRow[];
+          lista.sort((a, b) => Number(b.numero) - Number(a.numero));
+          setTickets(lista);
+          setLoading(false);
+        })
+        .catch(error => {
+          console.error('[MeusTickets] Erro ao recarregar:', error);
+          setLoading(false);
+        });
+    }
+    lastPathnameRef.current = pathname;
+  }, [pathname]);
 
   // Cleanup geral quando componente for desmontado
   useEffect(() => {

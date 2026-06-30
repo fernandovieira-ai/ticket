@@ -91,10 +91,10 @@ export async function queryIntranet(text: string, params?: any[]) {
   // Se a query já inclui o schema intranet, use como está
   // Caso contrário, adicione o prefixo intranet. automaticamente
   const finalText = text.includes('intranet.') ? text :
-                   text.replace(/FROM\s+(\w+)/gi, 'FROM intranet.$1')
-                        .replace(/INTO\s+(\w+)/gi, 'INTO intranet.$1')
+                   text.replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1')
                         .replace(/UPDATE\s+(\w+)/gi, 'UPDATE intranet.$1')
-                        .replace(/DELETE\s+FROM\s+(\w+)/gi, 'DELETE FROM intranet.$1');
+                        .replace(/INTO\s+(\w+)/gi, 'INTO intranet.$1')
+                        .replace(/(?<!DELETE\s+)FROM\s+(\w+)/gi, 'FROM intranet.$1');
 
   return withConnection(pool, async (client) => {
     return await client.query(finalText, params);

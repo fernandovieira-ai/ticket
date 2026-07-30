@@ -46,19 +46,74 @@ export async function getEvolutionConfig(
  * Normaliza número de telefone para o formato esperado pela Evolution API.
  * Remove caracteres não-dígitos e adiciona o DDI 55 (Brasil) se ausente.
  *
+ * **IMPORTANTE Evolution API v2.4.0+:**
+ * Adiciona '@lid' ao final do número para preservar o 9º dígito.
+ * Sem '@lid', a API remove incorretamente o 9º dígito de números brasileiros.
+ *
  * Exemplos:
- *   "(34) 9 9193-1617"  → "5534991931617"
- *   "34991931617"       → "5534991931617"
- *   "5534991931617"     → "5534991931617"
- *   "+55 34 99193-1617" → "5534991931617"
+ *   "(34) 9 9193-1617"  → "5534991931617@lid"
+ *   "34991931617"       → "5534991931617@lid"
+ *   "5534991931617"     → "5534991931617@lid"
+ *   "+55 34 99193-1617" → "5534991931617@lid"
+ *   "3491234567"        → "5534991234567@lid" (adiciona DDI + 9)
  */
 export function normalizarTelefone(tel: string): string {
   const digitos = tel.replace(/\D/g, "");
-  // Já tem DDI 55 e pelo menos 12 dígitos (55 + DDD 2 + número 8ou9)
-  if (digitos.startsWith("55") && digitos.length >= 12) return digitos;
-  // Número brasileiro sem DDI (10 ou 11 dígitos)
-  if (digitos.length === 10 || digitos.length === 11) return "55" + digitos;
-  return digitos;
+
+  // CASO ESPECIAL: 12 dígitos com DDI mas SEM o 9 (ex: 553491234567)
+  // Detecta e corrige números cadastrados errados no banco
+  if (digitos.length === 12 && digitos.startsWith("55")) {
+    const ddd = digitos.substring(2, 4); // Ex: "34"
+
+    // Exceção: DDD 11 (São Paulo) - alguns números antigos não usam 9
+    if (ddd === "11") {
+      return digitos + "@lid"; // Mantém 12 dígitos + @lid
+    }
+
+    // Para outros DDDs: inserir 9 após o DDD
+    const inicio = digitos.substring(0, 4);  // "5534"
+    const resto = digitos.substring(4);       // "91234567"
+    const corrigido = inicio + "9" + resto;   // "5534991234567"
+
+    console.log('[WhatsApp] ⚠️  Número com 12 dígitos corrigido (adicionado 9):', {
+      original: tel,
+      antigo: digitos,
+      corrigido: corrigido + '@lid',
+    });
+    return corrigido + "@lid";
+  }
+
+  // Já tem DDI 55 e 13 dígitos (completo)
+  if (digitos.startsWith("55") && digitos.length === 13) {
+    return digitos + "@lid";
+  }
+
+  // Número brasileiro com 11 dígitos (DDD + 9 + 8 dígitos) → adiciona DDI
+  if (digitos.length === 11) {
+    return "55" + digitos + "@lid"; // Ex: 34991234567 → 5534991234567@lid
+  }
+
+  // Número brasileiro com 10 dígitos (DDD + 8 dígitos, SEM o 9)
+  // CORRIGIR: adicionar o 9 após o DDD
+  if (digitos.length === 10) {
+    const ddd = digitos.substring(0, 2);   // Ex: 34
+    const numero = digitos.substring(2);    // Ex: 91234567
+    const corrigido = "55" + ddd + "9" + numero; // → 5534991234567
+    console.log('[WhatsApp] Número corrigido (adicionado DDI + 9):', {
+      original: tel,
+      digitos,
+      corrigido: corrigido + '@lid',
+    });
+    return corrigido + "@lid";
+  }
+
+  // Outros casos: retorna como está (pode estar incompleto)
+  console.warn('[WhatsApp] ⚠️  Número com formato inesperado:', {
+    original: tel,
+    digitos,
+    tamanho: digitos.length,
+  });
+  return digitos + "@lid";
 }
 
 /**
@@ -106,6 +161,16 @@ async function enviarMensagem(
 ): Promise<void> {
   await aguardarLimite(config.instance);
 
+  // ✅ VALIDAR NÚMERO ANTES DE ENVIAR
+  if (numero.length < 12 || numero.length > 13) {
+    console.error('[WhatsApp] ❌ Número com tamanho inválido:', {
+      numero,
+      tamanho: numero.length,
+      esperado: '12-13 dígitos (55 + DDD + número)',
+    });
+    throw new Error(`Número inválido: ${numero} (tamanho: ${numero.length})`);
+  }
+
   const apiUrl = `${config.url}/message/sendText/${config.instance}`;
   const resp = await fetch(apiUrl, {
     method: "POST",
@@ -113,16 +178,46 @@ async function enviarMensagem(
       "Content-Type": "application/json",
       apikey: config.key,
     },
-    body: JSON.stringify({ number: numero, text: texto }),
+    body: JSON.stringify({
+      number: numero,  // ← SEM @s.whatsapp.net - Evolution adiciona automaticamente
+      text: texto
+    }),
   });
 
-  // Captura message_id retornado pela Evolution API (melhor esforço)
+  // ✅ VALIDAR RESPONSE HTTP
+  if (!resp.ok) {
+    const errorText = await resp.text().catch(() => 'Sem resposta');
+    console.error('[WhatsApp] ❌ Evolution API erro HTTP:', {
+      status: resp.status,
+      statusText: resp.statusText,
+      body: errorText.substring(0, 500),
+      numero,
+    });
+    throw new Error(`Evolution API HTTP ${resp.status}: ${resp.statusText}`);
+  }
+
+  // ✅ PARSE JSON E VERIFICAR ERRO
   let messageId: string | null = null;
   try {
     const json = (await resp.json()) as Record<string, unknown>;
+
+    // Verificar se há erro na resposta mesmo com HTTP 200
+    if (json.status === 'ERROR' || json.error) {
+      console.error('[WhatsApp] ❌ Evolution API retornou erro:', {
+        response: json,
+        numero,
+      });
+      throw new Error(`Evolution API error: ${JSON.stringify(json)}`);
+    }
+
     messageId = ((json?.key as Record<string, unknown>)?.id as string) ?? null;
-  } catch {
-    // API não retornou JSON válido — ignora
+  } catch (err) {
+    // Se já foi lançado acima, re-throw
+    if (err instanceof Error && err.message.includes('Evolution API error')) {
+      throw err;
+    }
+    // Senão, API não retornou JSON válido — continua mesmo assim
+    console.warn('[WhatsApp] ⚠️  Response não é JSON válido (mensagem pode ter sido enviada)');
   }
 
   // Persiste no banco (fire-and-forget — não bloqueia em caso de falha)
@@ -145,13 +240,37 @@ async function enviarMensagem(
   );
 }
 
+/** Verifica se as colunas extras existem na tabela whatsapp_contatos */
+async function verificarColunasContatos(): Promise<boolean> {
+  try {
+    const result = await queryOne<{ has_columns: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'whatsapp_contatos'
+           AND column_name = 'id_departamentos'
+       ) AS has_columns`
+    );
+    return result?.has_columns ?? false;
+  } catch (err) {
+    console.error('[WhatsApp] Erro ao verificar colunas:', err);
+    return false;
+  }
+}
+
 /** Garante que as colunas extras de whatsapp_contatos existam no banco. */
-async function garantirColunasContatos(): Promise<void> {
-  await query(`
-    ALTER TABLE whatsapp_contatos
-      ADD COLUMN IF NOT EXISTS id_departamentos UUID REFERENCES departamentos(id) ON DELETE SET NULL,
-      ADD COLUMN IF NOT EXISTS usuarios_id      UUID REFERENCES usuarios(id)      ON DELETE SET NULL
-  `);
+async function garantirColunasContatos(): Promise<boolean> {
+  try {
+    await query(`
+      ALTER TABLE whatsapp_contatos
+        ADD COLUMN IF NOT EXISTS id_departamentos UUID REFERENCES departamentos(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS usuarios_id      UUID REFERENCES usuarios(id)      ON DELETE SET NULL
+    `);
+    console.log('[WhatsApp] ✅ Colunas verificadas/criadas com sucesso');
+    return true;
+  } catch (err) {
+    console.error('[WhatsApp] ⚠️  Erro ao criar colunas (continuando sem elas):', err);
+    return false;
+  }
 }
 
 /**
@@ -161,6 +280,12 @@ async function garantirColunasContatos(): Promise<void> {
  *  - Se o ticket possui departamento_id, envia somente para contatos com
  *    id_departamentos = departamento_id OU id_departamentos IS NULL.
  *  - Se o ticket não possui departamento_id, envia para todos os contatos.
+ *
+ * Melhorias v2:
+ *  - Logs detalhados em cada etapa
+ *  - Tratamento robusto de erros
+ *  - Verificação de colunas antes de usar
+ *  - Resumo final de envios
  */
 export async function notificarWhatsappNovoTicket(params: {
   empresaId: string;
@@ -172,44 +297,65 @@ export async function notificarWhatsappNovoTicket(params: {
   departamentoNome?: string | null;
   abertoPorNome: string;
 }): Promise<void> {
+  const startTime = Date.now();
+
+  console.log('[WhatsApp] 🚀 Iniciando notificação de novo ticket', {
+    ticketNumero: params.ticketNumero,
+    empresaId: params.empresaId,
+    departamentoId: params.departamentoId,
+  });
+
   try {
+    // ETAPA 1: Buscar Config Evolution API
     const config = await getEvolutionConfig(params.empresaId);
     if (!config) {
-      console.warn(
-        "[WhatsApp] Config Evolution API não encontrada para empresa",
-        params.empresaId,
-      );
+      console.error('[WhatsApp] ❌ Config Evolution API não encontrada', {
+        empresaId: params.empresaId,
+      });
       return;
     }
+    console.log('[WhatsApp] ✅ Config Evolution encontrada');
 
-    // Garante colunas antes de usar (auto-migração)
-    await garantirColunasContatos();
+    // ETAPA 2: Verificar e garantir colunas
+    const hasColumns = await verificarColunasContatos();
+    if (!hasColumns) {
+      console.warn('[WhatsApp] ⚠️  Colunas não existem, tentando criar...');
+      await garantirColunasContatos();
+    }
 
-    const contatos = await query<{
-      id: string;
-      numero: string;
-      nome: string | null;
-    }>(
-      `SELECT wc.id, wc.numero, wc.nome
-       FROM whatsapp_contatos wc
-       WHERE wc.empresa_id = $1
-         AND (
-           $2::uuid IS NULL
-           OR wc.id_departamentos IS NULL
-           OR wc.id_departamentos = $2::uuid
-         )`,
-      [params.empresaId, params.departamentoId],
-    );
+    // ETAPA 3: Buscar contatos
+    let contatos: Array<{ id: string; numero: string; nome: string | null }> = [];
+    const hasColumnsNow = await verificarColunasContatos();
+
+    if (hasColumnsNow) {
+      console.log('[WhatsApp] 🔍 Buscando contatos com filtro de departamento');
+      contatos = await query<{ id: string; numero: string; nome: string | null }>(
+        `SELECT wc.id, wc.numero, wc.nome
+         FROM whatsapp_contatos wc
+         WHERE wc.empresa_id = $1
+           AND (
+             $2::uuid IS NULL
+             OR wc.id_departamentos IS NULL
+             OR wc.id_departamentos = $2::uuid
+           )`,
+        [params.empresaId, params.departamentoId]
+      );
+    } else {
+      console.warn('[WhatsApp] ⚠️  Buscando todos contatos (sem filtro)');
+      contatos = await query<{ id: string; numero: string; nome: string | null }>(
+        `SELECT id, numero, nome FROM whatsapp_contatos WHERE empresa_id = $1`,
+        [params.empresaId]
+      );
+    }
+
+    console.log('[WhatsApp] 📋 Contatos encontrados:', contatos.length);
 
     if (contatos.length === 0) {
-      console.warn(
-        "[WhatsApp] Nenhum contato encontrado para notificação. empresa=%s dept=%s",
-        params.empresaId,
-        params.departamentoId,
-      );
+      console.error('[WhatsApp] ❌ Nenhum contato encontrado');
       return;
     }
 
+    // ETAPA 4: Enviar mensagens
     const deptInfo = params.departamentoNome
       ? `\n🏢 *Departamento:* ${params.departamentoNome}`
       : "";
@@ -222,6 +368,9 @@ export async function notificarWhatsappNovoTicket(params: {
       `\n*Aberto por:* ${params.abertoPorNome}` +
       deptInfo;
 
+    let sucessos = 0;
+    let falhas = 0;
+
     for (const c of contatos) {
       try {
         const numeroNormalizado = normalizarTelefone(c.numero);
@@ -230,14 +379,24 @@ export async function notificarWhatsappNovoTicket(params: {
           ticketId: params.ticketId,
           contatoId: c.id,
         });
-        console.log("[WhatsApp] Mensagem enviada para", numeroNormalizado);
+        sucessos++;
+        console.log(`[WhatsApp] ✅ Enviado para ${numeroNormalizado}`);
       } catch (err) {
-        console.error("[WhatsApp] Falha ao enviar para", c.numero, err);
+        falhas++;
+        console.error(`[WhatsApp] ❌ Falha ao enviar para ${c.numero}:`, err);
       }
     }
+
+    // ETAPA 5: Resumo
+    const duration = Date.now() - startTime;
+    console.log('[WhatsApp] 📊 Resumo:', {
+      total: contatos.length,
+      sucesso: sucessos,
+      falha: falhas,
+      tempoMs: duration,
+    });
   } catch (err) {
-    // Notificação WhatsApp nunca deve bloquear a criação do ticket
-    console.error("[WhatsApp] Erro na notificação de novo ticket:", err);
+    console.error('[WhatsApp] ❌ Erro crítico:', err);
   }
 }
 

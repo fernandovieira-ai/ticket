@@ -353,10 +353,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
       }}
     >
       {/* Header / Logo */}
-      <div
-        className="px-5 py-4 border-b"
-        style={{ borderColor: "var(--sidebar-border)" }}
-      >
+      <div className="px-5 py-4">
         <div className="flex items-center gap-2">
           {logoUrl && !logoError ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -527,7 +524,7 @@ export function Sidebar({ perfil, logoUrl }: SidebarProps) {
       </nav>
 
       {/* Rodapé — logout */}
-      <div style={{ borderTop: "1px solid var(--sidebar-border)", padding: "12px 8px" }}>
+      <div style={{ padding: "12px 8px" }}>
         <button
           onClick={handleLogout}
           className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium w-full nav-item-hover transition-colors"

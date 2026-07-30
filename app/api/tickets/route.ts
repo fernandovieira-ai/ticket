@@ -308,14 +308,27 @@ export async function POST(req: NextRequest) {
   );
 
   // Notificar via WhatsApp os contatos do departamento (fire-and-forget)
-  const deptNome = departamento_id
-    ? ((
-        await queryOne<{ nome: string }>(
+  const [deptNome, categoriaNome, subcategoriaNome] = await Promise.all([
+    departamento_id
+      ? queryOne<{ nome: string }>(
           `SELECT nome FROM departamentos WHERE id = $1`,
           [departamento_id],
-        )
-      )?.nome ?? null)
-    : null;
+        ).then(row => row?.nome ?? null)
+      : Promise.resolve(null),
+    categoria_id
+      ? queryOne<{ nome: string }>(
+          `SELECT nome FROM categorias WHERE id = $1`,
+          [categoria_id],
+        ).then(row => row?.nome ?? null)
+      : Promise.resolve(null),
+    subcategoria_id
+      ? queryOne<{ nome: string }>(
+          `SELECT nome FROM subcategorias WHERE id = $1`,
+          [subcategoria_id],
+        ).then(row => row?.nome ?? null)
+      : Promise.resolve(null),
+  ]);
+
   const [abertoPorRow, prioridadeRow] = await Promise.all([
     queryOne<{ nome: string }>(`SELECT nome FROM usuarios WHERE id = $1`, [
       session.sub,
@@ -337,6 +350,8 @@ export async function POST(req: NextRequest) {
       prioridadeNome,
       departamentoId: departamento_id ?? null,
       departamentoNome: deptNome,
+      categoriaNome,
+      subcategoriaNome,
       abertoPorNome,
     });
   }

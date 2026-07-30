@@ -1,54 +1,31 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Arquivos temporários de teste
+teste-*.js
+test-*.js
+wppconnect-*.js
+verificar-*.js
+criar-*.js
+buscar-*.js
+reconectar-*.js
+resetar-*.js
+limpar-*.js
+debug-*.js
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# Documentação temporária
+*-URGENTE.sql
+ATUALIZAR-*.md
+PASSO-A-PASSO-*.md
+WHATSAPP_*.md
+analise-completa.md
+pesquisa-*.md
+limpar-cache-redis.md
+versoes-evolution.md
 
-# testing
-/coverage
+# Scripts temporários
+*.bat
+*.sh
+wppconnect-qrcode.html
+atualizar-evolution-api-db.sql
+verificar-numero-base.sql
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-
-# IDE / tools
-.claude/
-
-# binaries / archives
-*.rar
-*.zip
-
-# uploads (gerados em runtime)
-/public/uploads/logos/*
-/public/uploads/tickets/*
-!public/uploads/logos/.gitkeep
-!public/uploads/tickets/.gitkeep
+# Backup
+*-backup.css

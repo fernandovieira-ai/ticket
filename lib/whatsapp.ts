@@ -2,13 +2,38 @@ import { query, queryOne } from "@/lib/db";
 
 export interface EvolutionConfig {
   url: string;
-  key: string;
+  key: string; // SECRET_KEY do WPPConnect (THISISMYSECURETOKEN)
   instance: string;
 }
 
 /**
- * Returns Evolution API config for a given empresa_id.
+ * Gera token de autenticação temporário para WPPConnect.
+ * O token é gerado a cada requisição usando a SECRET_KEY.
+ */
+export async function generateWPPToken(
+  baseUrl: string,
+  secretKey: string,
+  session: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${baseUrl}/api/${session}/${secretKey}/generate-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    return data.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns WPPConnect API config for a given empresa_id.
  * Priority: DB value > environment variable.
+ * (Interface mantém nome EvolutionConfig por compatibilidade)
  */
 export async function getEvolutionConfig(
   empresaId: string,
@@ -43,77 +68,72 @@ export async function getEvolutionConfig(
 }
 
 /**
- * Normaliza número de telefone para o formato esperado pela Evolution API.
+ * Normaliza número de telefone para o formato esperado pela WPPConnect API.
  * Remove caracteres não-dígitos e adiciona o DDI 55 (Brasil) se ausente.
  *
- * **IMPORTANTE Evolution API v2.4.0+:**
- * Adiciona '@lid' ao final do número para preservar o 9º dígito.
- * Sem '@lid', a API remove incorretamente o 9º dígito de números brasileiros.
+ * **FORMATO WPPConnect:**
+ * Retorna apenas os 13 dígitos (DDI + DDD + 9 + número).
+ * WPPConnect NÃO requer '@lid' ou '@s.whatsapp.net' - ele adiciona automaticamente.
  *
  * Exemplos:
- *   "(34) 9 9193-1617"  → "5534991931617@lid"
- *   "34991931617"       → "5534991931617@lid"
- *   "5534991931617"     → "5534991931617@lid"
- *   "+55 34 99193-1617" → "5534991931617@lid"
- *   "3491234567"        → "5534991234567@lid" (adiciona DDI + 9)
+ *   "(34) 9 9193-1617"  → "5534991931617"
+ *   "34991931617"       → "5534991931617"
+ *   "5534991931617"     → "5534991931617"
+ *   "+55 34 99193-1617" → "5534991931617"
+ *   "3491234567"        → "5534991234567" (adiciona DDI + 9)
  */
 export function normalizarTelefone(tel: string): string {
   const digitos = tel.replace(/\D/g, "");
 
-  // CASO ESPECIAL: 12 dígitos com DDI mas SEM o 9 (ex: 553491234567)
-  // Detecta e corrige números cadastrados errados no banco
-  if (digitos.length === 12 && digitos.startsWith("55")) {
-    const ddd = digitos.substring(2, 4); // Ex: "34"
+  // Já tem DDI 55 e 13 dígitos (completo) → retorna direto
+  if (digitos.startsWith("55") && digitos.length === 13) {
+    return digitos; // Ex: 5534991234567
+  }
 
-    // Exceção: DDD 11 (São Paulo) - alguns números antigos não usam 9
+  // 12 dígitos com DDI mas SEM o 9 → inserir 9 após DDD
+  if (digitos.length === 12 && digitos.startsWith("55")) {
+    const ddd = digitos.substring(2, 4);
+
+    // DDD 11 (SP): alguns fixos não usam 9
     if (ddd === "11") {
-      return digitos + "@lid"; // Mantém 12 dígitos + @lid
+      return digitos; // Mantém 12 dígitos
     }
 
-    // Para outros DDDs: inserir 9 após o DDD
-    const inicio = digitos.substring(0, 4);  // "5534"
-    const resto = digitos.substring(4);       // "91234567"
-    const corrigido = inicio + "9" + resto;   // "5534991234567"
-
-    console.log('[WhatsApp] ⚠️  Número com 12 dígitos corrigido (adicionado 9):', {
+    // Outros DDDs: inserir 9
+    const corrigido = digitos.substring(0, 4) + "9" + digitos.substring(4);
+    console.log('[WhatsApp] Número corrigido (inserido 9):', {
       original: tel,
-      antigo: digitos,
-      corrigido: corrigido + '@lid',
+      antes: digitos,
+      depois: corrigido,
     });
-    return corrigido + "@lid";
+    return corrigido;
   }
 
-  // Já tem DDI 55 e 13 dígitos (completo)
-  if (digitos.startsWith("55") && digitos.length === 13) {
-    return digitos + "@lid";
-  }
-
-  // Número brasileiro com 11 dígitos (DDD + 9 + 8 dígitos) → adiciona DDI
+  // 11 dígitos (DDD + 9 + número) → adicionar DDI 55
   if (digitos.length === 11) {
-    return "55" + digitos + "@lid"; // Ex: 34991234567 → 5534991234567@lid
+    return "55" + digitos; // Ex: 34991234567 → 5534991234567
   }
 
-  // Número brasileiro com 10 dígitos (DDD + 8 dígitos, SEM o 9)
-  // CORRIGIR: adicionar o 9 após o DDD
+  // 10 dígitos (DDD + número SEM 9) → adicionar DDI e 9
   if (digitos.length === 10) {
-    const ddd = digitos.substring(0, 2);   // Ex: 34
-    const numero = digitos.substring(2);    // Ex: 91234567
-    const corrigido = "55" + ddd + "9" + numero; // → 5534991234567
+    const ddd = digitos.substring(0, 2);
+    const numero = digitos.substring(2);
+    const corrigido = "55" + ddd + "9" + numero;
     console.log('[WhatsApp] Número corrigido (adicionado DDI + 9):', {
       original: tel,
-      digitos,
-      corrigido: corrigido + '@lid',
+      antes: digitos,
+      depois: corrigido,
     });
-    return corrigido + "@lid";
+    return corrigido;
   }
 
-  // Outros casos: retorna como está (pode estar incompleto)
-  console.warn('[WhatsApp] ⚠️  Número com formato inesperado:', {
+  // Formato inesperado → retorna como está
+  console.warn('[WhatsApp] ⚠️  Formato inesperado:', {
     original: tel,
     digitos,
     tamanho: digitos.length,
   });
-  return digitos + "@lid";
+  return digitos;
 }
 
 /**
@@ -171,29 +191,37 @@ async function enviarMensagem(
     throw new Error(`Número inválido: ${numero} (tamanho: ${numero.length})`);
   }
 
-  const apiUrl = `${config.url}/message/sendText/${config.instance}`;
+  // Gerar token temporário usando SECRET_KEY
+  const token = await generateWPPToken(config.url, config.key, config.instance);
+  if (!token) {
+    throw new Error('Não foi possível gerar token de autenticação WPPConnect');
+  }
+
+  // WPPConnect API - URL format: /api/{session}/send-message
+  const apiUrl = `${config.url}/api/${config.instance}/send-message`;
   const resp = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: config.key,
+      "Authorization": `Bearer ${token}`,  // Token gerado dinamicamente
     },
     body: JSON.stringify({
-      number: numero,  // ← SEM @s.whatsapp.net - Evolution adiciona automaticamente
-      text: texto
+      phone: numero,     // WPPConnect usa "phone" (13 dígitos sem @lid)
+      message: texto,    // WPPConnect usa "message"
+      isGroup: false
     }),
   });
 
   // ✅ VALIDAR RESPONSE HTTP
   if (!resp.ok) {
     const errorText = await resp.text().catch(() => 'Sem resposta');
-    console.error('[WhatsApp] ❌ Evolution API erro HTTP:', {
+    console.error('[WhatsApp] ❌ WPPConnect API erro HTTP:', {
       status: resp.status,
       statusText: resp.statusText,
       body: errorText.substring(0, 500),
       numero,
     });
-    throw new Error(`Evolution API HTTP ${resp.status}: ${resp.statusText}`);
+    throw new Error(`WPPConnect API HTTP ${resp.status}: ${resp.statusText}`);
   }
 
   // ✅ PARSE JSON E VERIFICAR ERRO
@@ -201,19 +229,21 @@ async function enviarMensagem(
   try {
     const json = (await resp.json()) as Record<string, unknown>;
 
-    // Verificar se há erro na resposta mesmo com HTTP 200
-    if (json.status === 'ERROR' || json.error) {
-      console.error('[WhatsApp] ❌ Evolution API retornou erro:', {
+    // WPPConnect retorna {status: "success", response: [...]}
+    if (json.status === 'error' || json.error) {
+      console.error('[WhatsApp] ❌ WPPConnect API retornou erro:', {
         response: json,
         numero,
       });
-      throw new Error(`Evolution API error: ${JSON.stringify(json)}`);
+      throw new Error(`WPPConnect API error: ${JSON.stringify(json)}`);
     }
 
-    messageId = ((json?.key as Record<string, unknown>)?.id as string) ?? null;
+    // Extrair message ID do primeiro item da resposta
+    const responseArray = json.response as Array<Record<string, unknown>>;
+    messageId = responseArray?.[0]?.id as string ?? null;
   } catch (err) {
     // Se já foi lançado acima, re-throw
-    if (err instanceof Error && err.message.includes('Evolution API error')) {
+    if (err instanceof Error && err.message.includes('WPPConnect API error')) {
       throw err;
     }
     // Senão, API não retornou JSON válido — continua mesmo assim
@@ -295,6 +325,8 @@ export async function notificarWhatsappNovoTicket(params: {
   prioridadeNome: string;
   departamentoId: string | null;
   departamentoNome?: string | null;
+  categoriaNome?: string | null;
+  subcategoriaNome?: string | null;
   abertoPorNome: string;
 }): Promise<void> {
   const startTime = Date.now();
@@ -306,15 +338,15 @@ export async function notificarWhatsappNovoTicket(params: {
   });
 
   try {
-    // ETAPA 1: Buscar Config Evolution API
+    // ETAPA 1: Buscar Config WPPConnect API
     const config = await getEvolutionConfig(params.empresaId);
     if (!config) {
-      console.error('[WhatsApp] ❌ Config Evolution API não encontrada', {
+      console.error('[WhatsApp] ❌ Config WPPConnect API não encontrada', {
         empresaId: params.empresaId,
       });
       return;
     }
-    console.log('[WhatsApp] ✅ Config Evolution encontrada');
+    console.log('[WhatsApp] ✅ Config WPPConnect encontrada');
 
     // ETAPA 2: Verificar e garantir colunas
     const hasColumns = await verificarColunasContatos();
@@ -360,13 +392,23 @@ export async function notificarWhatsappNovoTicket(params: {
       ? `\n🏢 *Departamento:* ${params.departamentoNome}`
       : "";
 
+    const categoriaInfo = params.categoriaNome
+      ? `\n📂 *Categoria:* ${params.categoriaNome}`
+      : "";
+
+    const subcategoriaInfo = params.subcategoriaNome
+      ? `\n📁 *Subcategoria:* ${params.subcategoriaNome}`
+      : "";
+
     const texto =
       `📋 *Novo chamado aberto!*\n` +
       `\n*Número:* #${params.ticketNumero}` +
       `\n*Título:* ${params.ticketTitulo}` +
       `\n*Prioridade:* ${params.prioridadeNome}` +
       `\n*Aberto por:* ${params.abertoPorNome}` +
-      deptInfo;
+      deptInfo +
+      categoriaInfo +
+      subcategoriaInfo;
 
     let sucessos = 0;
     let falhas = 0;

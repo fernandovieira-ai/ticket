@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { query, queryOne } from "@/lib/db";
-import { getEvolutionConfig } from "@/lib/whatsapp";
+import { getEvolutionConfig, generateWPPToken } from "@/lib/whatsapp";
 
 export async function POST(
   _req: NextRequest,
@@ -19,50 +19,78 @@ export async function POST(
   );
   if (!row) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
 
-  const evo = await getEvolutionConfig(session.empresaId);
-  if (!evo) {
+  const wpp = await getEvolutionConfig(session.empresaId);
+  if (!wpp) {
     return NextResponse.json(
-      { error: "Evolution API não configurada. Acesse Configurações > WhatsApp > API para configurar." },
+      { error: "WPPConnect não configurado. Acesse Configurações > WhatsApp > API para configurar." },
       { status: 503 }
     );
   }
 
-  // Registra webhook URL na Evolution API (garantia antes de conectar)
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   try {
-    await fetch(`${evo.url}/webhook/set/${encodeURIComponent(row.nome_instancia)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: evo.key },
-      body: JSON.stringify({
-        enabled: true,
-        url: `${appUrl}/api/whatsapp/webhook`,
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"],
-      }),
-    });
-  } catch {
-    // Ignora falha no registro do webhook — não impede conexão
-  }
+    // 1. Gerar token temporário usando SECRET_KEY
+    const token = await generateWPPToken(wpp.url, wpp.key, row.nome_instancia);
+    if (!token) {
+      return NextResponse.json(
+        { error: "Não foi possível gerar token de autenticação" },
+        { status: 502 }
+      );
+    }
 
-  try {
-    const res = await fetch(`${evo.url}/instance/connect/${encodeURIComponent(row.nome_instancia)}`, {
+    // 2. Verificar status atual da sessão
+    const statusRes = await fetch(`${wpp.url}/api/${encodeURIComponent(row.nome_instancia)}/status-session`, {
       method: "GET",
-      headers: { apikey: evo.key },
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+
+    let needsStart = false;
+
+    if (statusRes.ok) {
+      const statusData = await statusRes.json();
+      // Se está CLOSED ou não tem QR code, precisa iniciar sessão
+      if (statusData.status === "CLOSED" || !statusData.qrcode) {
+        needsStart = true;
+      }
+    } else {
+      // Se deu erro (sessão não existe), precisa criar
+      needsStart = true;
+    }
+
+    // 3. Se necessário, iniciar a sessão
+    if (needsStart) {
+      await fetch(`${wpp.url}/api/${encodeURIComponent(row.nome_instancia)}/start-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          webhook: "",
+          waitQrCode: true,
+        }),
+      });
+
+      // Aguardar 2 segundos para sessão inicializar
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // 4. Buscar QR Code atualizado
+    const res = await fetch(`${wpp.url}/api/${encodeURIComponent(row.nome_instancia)}/status-session`, {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${token}` },
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return NextResponse.json(
-        { error: `Evolution API: ${err.message ?? res.statusText}` },
+        { error: `WPPConnect: ${err.message ?? res.statusText}` },
         { status: 502 }
       );
     }
 
     const data = await res.json();
-    // data.base64 contains the QR code image in base64
-    // data.code contains the QR code text
-    const qrCode = data.base64 ?? data.qrcode?.base64 ?? null;
+    // WPPConnect retorna data.qrcode com o QR code em base64
+    const qrCode = data.qrcode ?? null;
 
     if (qrCode) {
       await query(
@@ -74,7 +102,7 @@ export async function POST(
     return NextResponse.json({ qr_code: qrCode, status: "aguardando_qr" });
   } catch {
     return NextResponse.json(
-      { error: "Não foi possível conectar ao Evolution API" },
+      { error: "Não foi possível conectar ao WPPConnect" },
       { status: 502 }
     );
   }

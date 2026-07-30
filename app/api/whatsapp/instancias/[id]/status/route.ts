@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { query, queryOne } from "@/lib/db";
-import { getEvolutionConfig } from "@/lib/whatsapp";
+import { getEvolutionConfig, generateWPPToken } from "@/lib/whatsapp";
 
 export async function GET(
   _req: NextRequest,
@@ -17,16 +17,25 @@ export async function GET(
   );
   if (!row) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
 
-  const evo = await getEvolutionConfig(session.empresaId);
+  const wpp = await getEvolutionConfig(session.empresaId);
 
-  if (!evo) {
+  if (!wpp) {
     return NextResponse.json({ status: row.status, numero: row.numero });
   }
 
   try {
+    // Gerar token temporário usando SECRET_KEY
+    const token = await generateWPPToken(wpp.url, wpp.key, row.nome_instancia);
+    if (!token) {
+      return NextResponse.json({ status: row.status, numero: row.numero });
+    }
+
     const res = await fetch(
-      `${evo.url}/instance/connectionState/${encodeURIComponent(row.nome_instancia)}`,
-      { headers: { apikey: evo.key }, signal: AbortSignal.timeout(5000) }
+      `${wpp.url}/api/${encodeURIComponent(row.nome_instancia)}/status-session`,
+      {
+        headers: { "Authorization": `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000)
+      }
     );
 
     if (!res.ok) {
@@ -34,14 +43,15 @@ export async function GET(
     }
 
     const data = await res.json();
-    // Evolution API returns: { instance: { instanceName, state } }
-    const state = data.instance?.state ?? data.state ?? null;
+    // WPPConnect returns: { status: "CONNECTED" | "QRCODE" | "CLOSED" }
+    const state = data.status ?? null;
 
-    // Map Evolution states to our status values
+    // Map WPPConnect states to our status values
     const statusMap: Record<string, string> = {
-      open: "conectado",
-      connecting: "conectando",
-      close: "desconectado",
+      CONNECTED: "conectado",
+      QRCODE: "aguardando_qr",
+      CLOSED: "desconectado",
+      INITIALIZING: "conectando",
     };
     const novoStatus = statusMap[state] ?? row.status;
 
@@ -52,31 +62,8 @@ export async function GET(
       );
     }
 
-    // If connected, try to get the phone number
-    let numero = row.numero;
-    if (state === "open" && !numero) {
-      try {
-        const profileRes = await fetch(
-          `${evo.url}/instance/fetchInstances`,
-          { headers: { apikey: evo.key }, signal: AbortSignal.timeout(5000) }
-        );
-        if (profileRes.ok) {
-          const instances = await profileRes.json();
-          const inst = Array.isArray(instances)
-            ? instances.find((i: Record<string, unknown>) => i.name === row.nome_instancia)
-            : null;
-          numero = inst?.ownerJid?.replace("@s.whatsapp.net", "") ?? null;
-          if (numero) {
-            await query(
-              `UPDATE whatsapp_instancias SET numero = $1 WHERE id = $2`,
-              [numero, id]
-            );
-          }
-        }
-      } catch {
-        // Ignore
-      }
-    }
+    // WPPConnect: o número pode vir no campo wid ou phone
+    const numero = row.numero;
 
     return NextResponse.json({ status: novoStatus, numero });
   } catch {

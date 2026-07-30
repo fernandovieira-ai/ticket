@@ -66,6 +66,7 @@ export default function WhatsappConfigPage() {
   const [loadingInstancias, setLoadingInstancias] = useState(true);
   const [novaInstancia, setNovaInstancia] = useState("");
   const [criando, setCriando] = useState(false);
+  const [origin, setOrigin] = useState("");
   const [qrCodeAberto, setQrCodeAberto] = useState<{
     id: string;
     nome: string;
@@ -183,6 +184,7 @@ export default function WhatsappConfigPage() {
   }, []);
 
   useEffect(() => {
+    setOrigin(window.location.origin);
     carregarInstancias();
     carregarConfig();
     carregarApiConfig();
@@ -458,7 +460,7 @@ export default function WhatsappConfigPage() {
   }
 
   function copiarWebhookUrl() {
-    const url = `${window.location.origin}/api/whatsapp/webhook`;
+    const url = `${origin}/api/whatsapp/webhook`;
     navigator.clipboard.writeText(url);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
@@ -549,10 +551,10 @@ export default function WhatsappConfigPage() {
               </button>
             </div>
             <code className="text-xs text-zinc-600 break-all">
-              {typeof window !== "undefined" ? window.location.origin : ""}/api/whatsapp/webhook
+              {origin}/api/whatsapp/webhook
             </code>
             <p className="text-xs text-zinc-400 mt-1">
-              Configure essa URL no Evolution API para receber mensagens
+              Configure essa URL no WPPConnect Server para receber mensagens
             </p>
           </div>
 
@@ -1006,7 +1008,7 @@ export default function WhatsappConfigPage() {
 
               <div className="bg-white border border-zinc-200 rounded-lg p-4 space-y-4">
                 <h2 className="text-sm font-medium text-zinc-800 flex items-center gap-1.5">
-                  <Key className="h-4 w-4" /> Evolution API
+                  <Key className="h-4 w-4" /> WPPConnect API
                 </h2>
 
                 <div>
@@ -1016,7 +1018,7 @@ export default function WhatsappConfigPage() {
                   <Input
                     id="api-url"
                     type="url"
-                    placeholder="https://evolution.seudominio.com.br"
+                    placeholder="https://wppconnect.seudominio.com.br"
                     value={apiConfig.evolution_api_url}
                     onChange={(e) =>
                       setApiConfig((c) => ({ ...c, evolution_api_url: e.target.value }))
@@ -1024,7 +1026,7 @@ export default function WhatsappConfigPage() {
                     className="mt-1"
                   />
                   <p className="text-xs text-zinc-400 mt-1">
-                    URL base do seu servidor Evolution API (sem barra no final)
+                    URL base do seu servidor WPPConnect (sem barra no final)
                   </p>
                 </div>
 
@@ -1052,7 +1054,7 @@ export default function WhatsappConfigPage() {
                     </button>
                   </div>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Encontrado em: Evolution API → Configurações → API Key Global
+                    Token de autenticação do WPPConnect Server
                   </p>
                 </div>
 

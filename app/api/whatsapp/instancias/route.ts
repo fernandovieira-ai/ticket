@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getEvolutionConfig } from "@/lib/whatsapp";
+import { getEvolutionConfig, generateWPPToken } from "@/lib/whatsapp";
 
 export async function GET() {
   const session = await getSession();
@@ -36,29 +36,7 @@ export async function POST(req: NextRequest) {
   if (exists.length > 0)
     return NextResponse.json({ error: "Já existe uma instância com esse nome" }, { status: 409 });
 
-  // Create instance in Evolution API if configured (best-effort — may already exist)
-  const evo = await getEvolutionConfig(session.empresaId);
-  if (evo) {
-    try {
-      await fetch(`${evo.url}/instance/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: evo.key,
-        },
-        body: JSON.stringify({
-          instanceName: nome_instancia.trim(),
-          qrcode: true,
-          integration: "WHATSAPP-BAILEYS",
-          groupsIgnore: false,
-        }),
-      });
-      // Ignora erro da API (instância pode já existir lá)
-    } catch {
-      // Ignora falha de conexão — instância será registrada no banco mesmo assim
-    }
-  }
-
+  // Criar instância no banco (sessão WPPConnect será iniciada ao clicar em "Conectar")
   const [row] = await query<{ id: string }>(
     `INSERT INTO whatsapp_instancias (empresa_id, nome_instancia, provider)
      VALUES ($1, $2, $3)

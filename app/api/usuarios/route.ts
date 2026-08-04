@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     },
     {
       headers: {
-        'Cache-Control': 'private, max-age=300, stale-while-revalidate=600',
+        'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
       },
     },
@@ -96,12 +96,19 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = password ? await bcrypt.hash(password, 12) : null
 
-  const [usuario] = await query<UsuarioSemSenha>(
-    `INSERT INTO usuarios (empresa_id, nome, email, perfil, departamento_id, telefone, password_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, empresa_id, departamento_id, nome, email, perfil, avatar_url, telefone, ativo, ultimo_acesso, criado_em, atualizado_em`,
-    [session.empresaId, nome, email, perfil, departamento_id ?? null, telefone ?? null, passwordHash]
-  )
+  let usuario: UsuarioSemSenha
+  try {
+    const rows = await query<UsuarioSemSenha>(
+      `INSERT INTO usuarios (empresa_id, nome, email, perfil, departamento_id, telefone, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, empresa_id, departamento_id, nome, email, perfil, avatar_url, telefone, ativo, ultimo_acesso, criado_em, atualizado_em`,
+      [session.empresaId, nome, email, perfil, departamento_id ?? null, telefone ?? null, passwordHash]
+    )
+    usuario = rows[0]
+  } catch (err) {
+    console.error('[POST /api/usuarios] Erro ao inserir usuário:', err)
+    return NextResponse.json({ error: 'Erro interno ao criar usuário. Verifique os logs do servidor.' }, { status: 500 })
+  }
 
   return NextResponse.json(usuario, { status: 201 })
 }

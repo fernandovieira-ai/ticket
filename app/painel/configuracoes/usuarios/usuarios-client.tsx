@@ -356,9 +356,15 @@ function UsuariosClientComponent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      let data: Record<string, unknown> = {};
+      try {
+        data = await res.json();
+      } catch {
+        setErro("Erro interno no servidor. Verifique os logs.");
+        return;
+      }
       if (!res.ok) {
-        setErro(data.error ?? "Erro ao salvar");
+        setErro((data.error as string) ?? "Erro ao salvar");
         return;
       }
       if (modo === "criar") {
@@ -368,7 +374,7 @@ function UsuariosClientComponent({
         setForm(formVazio);
       } else {
         toast.success("Usuário atualizado com sucesso!");
-        setSelecionado(data);
+        setSelecionado(data as unknown as UsuarioComDept);
       }
       carregar();
     } finally {

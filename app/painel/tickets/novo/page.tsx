@@ -80,6 +80,7 @@ export default function NovoTicketPage() {
     categoria_id: "",
     subcategoria_id: "",
     atribuido_a: "",
+    notificar_whatsapp: true,
   });
 
   // ── Dropdown solicitante ─────────────────────────────────────────────────
@@ -501,6 +502,7 @@ export default function NovoTicketPage() {
           categoria_id: form.categoria_id || null,
           subcategoria_id: form.subcategoria_id || null,
           atribuido_a: form.atribuido_a || null,
+          notificar_whatsapp: form.notificar_whatsapp,
         }),
       });
       const data = await res.json();
@@ -946,6 +948,28 @@ export default function NovoTicketPage() {
             )}
           </div>
         )}
+
+        {/* Notificações WhatsApp */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="notificar_whatsapp"
+              checked={form.notificar_whatsapp}
+              onChange={(e) => handleFormChange('notificar_whatsapp', e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+            <Label
+              htmlFor="notificar_whatsapp"
+              className="text-sm font-normal text-gray-700 cursor-pointer"
+            >
+              Notificar responsáveis por WhatsApp
+            </Label>
+          </div>
+          <p className="text-xs text-gray-500 ml-6">
+            Envia mensagem WhatsApp para os contatos configurados do departamento
+          </p>
+        </div>
 
         {erro && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

@@ -1,4 +1,5 @@
 import { query, queryOne } from '@/lib/db';
+import { criptografar } from './crypto';
 import type {
   AgenteProposta,
   AgenteConfig,
@@ -291,7 +292,7 @@ export async function criarCliente(
     [
       empresa_id,
       dados.nome, dados.slug, dados.db_host, dados.db_porta,
-      dados.db_nome, dados.db_usuario, dados.db_senha,
+      dados.db_nome, dados.db_usuario, criptografar(dados.db_senha),
       dados.db_schema || 'public', dados.query_erros ?? null,
       dados.analise_painel ?? false, dados.notas ?? null, dados.ativo ?? true,
     ],
@@ -321,7 +322,7 @@ export async function atualizarCliente(
   if (dados.db_porta  !== undefined) add('db_porta',   dados.db_porta);
   if (dados.db_nome   !== undefined) add('db_nome',    dados.db_nome);
   if (dados.db_usuario !== undefined) add('db_usuario', dados.db_usuario);
-  if (dados.db_senha  !== undefined) add('db_senha',   dados.db_senha);
+  if (dados.db_senha  !== undefined) add('db_senha',   criptografar(dados.db_senha));
   if (dados.db_schema !== undefined) add('db_schema',  dados.db_schema);
   if ('query_erros' in dados)           add('query_erros',    dados.query_erros);
   if (dados.analise_painel !== undefined) add('analise_painel', dados.analise_painel);
@@ -369,7 +370,7 @@ export async function criarBase(
     [
       dados.cliente_id, empresa_id, dados.nome, dados.descricao ?? null,
       dados.db_host, dados.db_porta, dados.db_nome,
-      dados.db_usuario, dados.db_senha, dados.db_schema || 'public',
+      dados.db_usuario, criptografar(dados.db_senha), dados.db_schema || 'public',
       dados.ativo ?? true,
     ],
   );
@@ -396,7 +397,7 @@ export async function atualizarBase(
   if (dados.db_porta    !== undefined) add('db_porta',    dados.db_porta);
   if (dados.db_nome     !== undefined) add('db_nome',     dados.db_nome);
   if (dados.db_usuario  !== undefined) add('db_usuario',  dados.db_usuario);
-  if (dados.db_senha    !== undefined) add('db_senha',    dados.db_senha);
+  if (dados.db_senha    !== undefined) add('db_senha',    criptografar(dados.db_senha));
   if (dados.db_schema   !== undefined) add('db_schema',   dados.db_schema);
   if (dados.ativo       !== undefined) add('ativo',       dados.ativo);
 

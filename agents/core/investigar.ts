@@ -5,6 +5,7 @@
 // tabela real → PK livre). Usado tanto na varredura automática quanto no refinamento manual.
 import Anthropic from '@anthropic-ai/sdk';
 import pg from 'pg';
+import { descriptografar } from './crypto';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -166,7 +167,7 @@ export async function investigarErro(
 
     const client = new pg.Client({
       host: fonte.config.db_host, port: fonte.config.db_porta, database: fonte.config.db_nome,
-      user: fonte.config.db_usuario, password: fonte.config.db_senha,
+      user: fonte.config.db_usuario, password: descriptografar(fonte.config.db_senha),
       connectionTimeoutMillis: 8000, ssl: false,
       statement_timeout: 10000, // evita query travada consumindo o tempo da investigação inteira
       query_timeout: 12000,

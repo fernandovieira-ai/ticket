@@ -4,6 +4,7 @@
 // varredura o redetecta como se a correção não tivesse funcionado.
 import pg from 'pg';
 import { obterCliente } from './db';
+import { descriptografar } from './crypto';
 import type { AgenteProposta } from './types';
 
 export async function marcarReprocessarPainel(
@@ -17,7 +18,7 @@ export async function marcarReprocessarPainel(
 
   const pgClient = new pg.Client({
     host: cliente.db_host, port: cliente.db_porta, database: cliente.db_nome,
-    user: cliente.db_usuario, password: cliente.db_senha,
+    user: cliente.db_usuario, password: descriptografar(cliente.db_senha),
     connectionTimeoutMillis: 8000, ssl: false,
   });
 

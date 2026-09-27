@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { listarBases } from '@/agents/core/db';
+import { descriptografar } from '@/agents/core/crypto';
 import pg from 'pg';
 
 export async function POST(
@@ -20,7 +21,7 @@ export async function POST(
     port:     base.db_porta,
     database: base.db_nome,
     user:     base.db_usuario,
-    password: base.db_senha,
+    password: descriptografar(base.db_senha),
     connectionTimeoutMillis: 5000,
     ssl: false,
   });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { obterCliente } from '@/agents/core/db';
+import { descriptografar } from '@/agents/core/crypto';
 import pg from 'pg';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     port:     cliente.db_porta,
     database: cliente.db_nome,
     user:     cliente.db_usuario,
-    password: cliente.db_senha,
+    password: descriptografar(cliente.db_senha),
     connectionTimeoutMillis: 5000,
     ssl: false,
   });

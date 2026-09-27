@@ -23,6 +23,7 @@ import {
 } from '../core/db';
 import { processarErro } from './index';
 import { investigarErro, type FonteBase } from '../core/investigar';
+import { descriptografar } from '../core/crypto';
 import type { BaseContexto, AnalisarErroOutput, TipoCorrecao, NivelRisco } from '../core/types';
 
 export interface ResultadoVarredura {
@@ -87,7 +88,7 @@ async function buscarErrosCliente(cliente: {
     port:     cliente.db_porta,
     database: cliente.db_nome,
     user:     cliente.db_usuario,
-    password: cliente.db_senha,
+    password: descriptografar(cliente.db_senha),
     connectionTimeoutMillis: 8000,
     ssl: false,
   });
@@ -131,7 +132,7 @@ async function verificarCodigosAindaAtivos(
 
   const pgClient = new pg.Client({
     host: cliente.db_host, port: cliente.db_porta, database: cliente.db_nome,
-    user: cliente.db_usuario, password: cliente.db_senha,
+    user: cliente.db_usuario, password: descriptografar(cliente.db_senha),
     connectionTimeoutMillis: 8000, ssl: false,
   });
 
@@ -162,7 +163,7 @@ async function coletarContextoBase(base: {
     port:     base.db_porta,
     database: base.db_nome,
     user:     base.db_usuario,
-    password: base.db_senha,
+    password: descriptografar(base.db_senha),
     connectionTimeoutMillis: 6000,
     ssl: false,
   });
@@ -214,7 +215,7 @@ async function coletarSchemaPrincipal(cliente: {
     port:     cliente.db_porta,
     database: cliente.db_nome,
     user:     cliente.db_usuario,
-    password: cliente.db_senha,
+    password: descriptografar(cliente.db_senha),
     connectionTimeoutMillis: 6000,
     ssl: false,
   });

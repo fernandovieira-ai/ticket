@@ -1,3 +1,11 @@
+# Segredos e artefatos de build (nunca versionar)
+.env
+.env.local
+.env*.local
+node_modules/
+.next/
+*.tsbuildinfo
+
 # Arquivos temporários de teste
 teste-*.js
 test-*.js

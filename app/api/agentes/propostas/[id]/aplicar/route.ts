@@ -4,6 +4,7 @@ import { query, queryOne } from '@/lib/db';
 import { obterCliente, listarBases } from '@/agents/core/db';
 import { salvarAprendizado } from '@/agents/core/aprendizado';
 import { marcarReprocessarPainel } from '@/agents/core/painel';
+import { descriptografar } from '@/agents/core/crypto';
 import type { AgenteProposta } from '@/agents/core/types';
 import pg from 'pg';
 
@@ -74,7 +75,7 @@ export async function POST(
   // Resolve em qual base conectar: "principal" (banco do cliente) ou uma das bases
   // adicionais (ex: "dunapetrol_emsys") — a tabela alvo do SQL pode não estar na principal.
   const baseAlvo = proposta.base_alvo?.trim() || 'principal';
-  let dbConfig = { host: cliente.db_host, porta: cliente.db_porta, nome: cliente.db_nome, usuario: cliente.db_usuario, senha: cliente.db_senha };
+  let dbConfig = { host: cliente.db_host, porta: cliente.db_porta, nome: cliente.db_nome, usuario: cliente.db_usuario, senha: descriptografar(cliente.db_senha) };
 
   if (baseAlvo.toLowerCase() !== 'principal') {
     const bases = await listarBases(cliente.id, session.empresaId).catch(() => []);
@@ -90,7 +91,7 @@ export async function POST(
         error: `Base "${baseAlvo}" (definida na proposta) não encontrada ou inativa nas bases configuradas do cliente.`,
       }, { status: 400 });
     }
-    dbConfig = { host: baseEncontrada.db_host, porta: baseEncontrada.db_porta, nome: baseEncontrada.db_nome, usuario: baseEncontrada.db_usuario, senha: baseEncontrada.db_senha };
+    dbConfig = { host: baseEncontrada.db_host, porta: baseEncontrada.db_porta, nome: baseEncontrada.db_nome, usuario: baseEncontrada.db_usuario, senha: descriptografar(baseEncontrada.db_senha) };
   }
 
   const pgClient = new pg.Client({

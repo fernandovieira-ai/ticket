@@ -110,6 +110,12 @@ const MENU: MenuItem[] = [
         href: "/painel/intranet/monitorador",
         icon: <Activity size={13} />,
       },
+      { label: "IA & Automação", href: "", separator: true },
+      {
+        label: "Agentes",
+        href: "/painel/intranet/agentes",
+        icon: <Bot size={13} />,
+      },
     ],
   },
   {

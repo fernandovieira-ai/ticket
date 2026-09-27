@@ -47,6 +47,8 @@ const PUBLIC_PATHS = [
   "/api/cnpj",
   "/api/whatsapp/webhook",
   "/api/cron/monitorar-grupos",
+  "/api/cron/agentes/varrer",
+  "/api/cron/alertar-chamados-atrasados",
 ];
 
 // Rotas exclusivas de admin/supervisor (configurações de sistema)

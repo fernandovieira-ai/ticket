@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query, queryOne, transaction } from '@/lib/db';
 import { criptografar } from './crypto';
 import type {
@@ -466,6 +467,7 @@ export async function atualizarCliente(
   id: string,
   empresa_id: string,
   dados: Partial<Omit<AgenteCliente, 'id' | 'empresa_id' | 'criado_em' | 'atualizado_em'>>,
+  client?: PoolClient,
 ): Promise<AgenteCliente | null> {
   // Build SET clause only for fields that are present in dados.
   // undefined = not provided (keep existing); null = explicitly clear.
@@ -493,10 +495,38 @@ export async function atualizarCliente(
 
   if (setClauses.length === 1) return obterCliente(id, empresa_id); // nada a alterar
 
-  return queryOne<AgenteCliente>(
-    `UPDATE agente_clientes SET ${setClauses.join(', ')} WHERE id = $1 AND empresa_id = $2 RETURNING *`,
-    params,
-  );
+  const sql = `UPDATE agente_clientes SET ${setClauses.join(', ')} WHERE id = $1 AND empresa_id = $2 RETURNING *`;
+  if (client) return ((await client.query(sql, params)).rows[0] as AgenteCliente | undefined) ?? null;
+  return queryOne<AgenteCliente>(sql, params);
+}
+
+/**
+ * Salva o cliente (base AS) e a base EMSys3 na MESMA transação. O vínculo já deve ter sido
+ * validado antes. Se o cliente ainda não tem base EMSys3 (cadastro antigo), cria uma.
+ */
+export async function salvarClienteEBase(
+  empresa_id: string,
+  cliente_id: string,
+  clienteDados: Partial<Omit<AgenteCliente, 'id' | 'empresa_id' | 'criado_em' | 'atualizado_em'>>,
+  emsys: {
+    baseId: string | null;
+    dados: Partial<Omit<AgenteClienteBase, 'id' | 'empresa_id' | 'cliente_id' | 'criado_em' | 'atualizado_em' | 'papel'>>;
+  },
+): Promise<{ cliente: AgenteCliente | null; base: AgenteClienteBase | null }> {
+  return transaction(async (client) => {
+    const cliente = await atualizarCliente(cliente_id, empresa_id, clienteDados, client);
+    const base = emsys.baseId
+      ? await atualizarBase(emsys.baseId, empresa_id, emsys.dados, client)
+      : await criarBase(
+          empresa_id,
+          {
+            cliente_id, papel: 'emsys', ativo: true, descricao: null, db_schema: 'public',
+            ...(emsys.dados as Omit<AgenteClienteBase, 'id' | 'empresa_id' | 'criado_em' | 'atualizado_em' | 'cliente_id' | 'papel' | 'ativo' | 'descricao' | 'db_schema'>),
+          },
+          client,
+        );
+    return { cliente, base };
+  });
 }
 
 export async function deletarCliente(id: string, empresa_id: string): Promise<boolean> {
@@ -523,8 +553,11 @@ export async function listarBases(cliente_id: string, empresa_id: string): Promi
 export async function criarBase(
   empresa_id: string,
   dados: Omit<AgenteClienteBase, 'id' | 'empresa_id' | 'criado_em' | 'atualizado_em'>,
+  client?: PoolClient,
 ): Promise<AgenteClienteBase> {
-  const rows = await query<AgenteClienteBase>(
+  const exec = async (sql: string, p: unknown[]): Promise<AgenteClienteBase[]> =>
+    client ? ((await client.query(sql, p)).rows as AgenteClienteBase[]) : query<AgenteClienteBase>(sql, p);
+  const rows = await exec(
     `INSERT INTO agente_clientes_bases
        (cliente_id, empresa_id, nome, papel, descricao, db_host, db_porta, db_nome, db_usuario, db_senha, db_schema, ativo)
      VALUES ($1, $2, $3, $12, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -544,6 +577,7 @@ export async function atualizarBase(
   id: string,
   empresa_id: string,
   dados: Partial<Omit<AgenteClienteBase, 'id' | 'empresa_id' | 'cliente_id' | 'criado_em' | 'atualizado_em'>>,
+  client?: PoolClient,
 ): Promise<AgenteClienteBase | null> {
   const setClauses: string[] = ['atualizado_em = NOW()'];
   const params: unknown[] = [id, empresa_id];
@@ -571,10 +605,9 @@ export async function atualizarBase(
     );
   }
 
-  return queryOne<AgenteClienteBase>(
-    `UPDATE agente_clientes_bases SET ${setClauses.join(', ')} WHERE id = $1 AND empresa_id = $2 RETURNING *`,
-    params,
-  );
+  const sql = `UPDATE agente_clientes_bases SET ${setClauses.join(', ')} WHERE id = $1 AND empresa_id = $2 RETURNING *`;
+  if (client) return ((await client.query(sql, params)).rows[0] as AgenteClienteBase | undefined) ?? null;
+  return queryOne<AgenteClienteBase>(sql, params);
 }
 
 export async function deletarBase(id: string, empresa_id: string): Promise<boolean> {

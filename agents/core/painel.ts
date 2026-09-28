@@ -5,6 +5,7 @@
 import pg from 'pg';
 import { obterCliente } from './db';
 import { descriptografar } from './crypto';
+import { garantirVinculo } from './vinculo';
 import type { AgenteProposta } from './types';
 
 export async function marcarReprocessarPainel(
@@ -15,6 +16,12 @@ export async function marcarReprocessarPainel(
 
   const cliente = await obterCliente(proposta.cliente_id, empresa_id).catch(() => null);
   if (!cliente) return;
+
+  const vinculo = await garantirVinculo(cliente.id, empresa_id);
+  if (!vinculo.ok) {
+    console.error(`[painel] reprocessar NÃO marcado (${cliente.nome}) — vínculo AS x EMSys3 não validado: ${vinculo.erro}`);
+    return;
+  }
 
   const pgClient = new pg.Client({
     host: cliente.db_host, port: cliente.db_porta, database: cliente.db_nome,

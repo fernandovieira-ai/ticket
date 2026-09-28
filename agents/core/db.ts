@@ -1,4 +1,4 @@
-import { query, queryOne } from '@/lib/db';
+import { query, queryOne, transaction } from '@/lib/db';
 import { criptografar } from './crypto';
 import type {
   AgenteProposta,
@@ -350,9 +350,100 @@ export async function obterCliente(id: string, empresa_id: string): Promise<Agen
   );
 }
 
+/**
+ * Cria o cliente (base AS) e a base EMSys3 na MESMA transação: ou grava as duas, ou nenhuma.
+ * O vínculo já deve ter sido validado (validarVinculo) antes de chamar.
+ */
+export async function criarClienteComBase(
+  empresa_id: string,
+  dados: Omit<AgenteCliente, 'id' | 'empresa_id' | 'ultimo_scan' | 'criado_em' | 'atualizado_em' | 'vinculo_validado_em' | 'vinculo_cnpjs' | 'vinculo_erro'>,
+  base: { nome: string; descricao: string | null; db_host: string; db_porta: number; db_nome: string; db_usuario: string; db_senha: string; db_schema: string },
+  raizes: string[],
+): Promise<{ cliente: AgenteCliente; base: AgenteClienteBase }> {
+  return transaction(async (client) => {
+    const c = await client.query(
+      `INSERT INTO agente_clientes
+         (empresa_id, nome, slug, db_host, db_porta, db_nome, db_usuario, db_senha, db_schema,
+          query_erros, analise_painel, notas, ativo, vinculo_validado_em, vinculo_cnpjs, vinculo_erro)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $14, NULL)
+       RETURNING *`,
+      [
+        empresa_id, dados.nome, dados.slug, dados.db_host, dados.db_porta,
+        dados.db_nome, dados.db_usuario, criptografar(dados.db_senha),
+        dados.db_schema || 'public', dados.query_erros ?? null,
+        dados.analise_painel ?? false, dados.notas ?? null, dados.ativo ?? true,
+        raizes.join(','),
+      ],
+    );
+    const cliente = c.rows[0] as AgenteCliente;
+    const b = await client.query(
+      `INSERT INTO agente_clientes_bases
+         (cliente_id, empresa_id, nome, papel, descricao, db_host, db_porta, db_nome, db_usuario, db_senha, db_schema, ativo)
+       VALUES ($1, $2, $3, 'emsys', $4, $5, $6, $7, $8, $9, $10, TRUE)
+       RETURNING *`,
+      [
+        cliente.id, empresa_id, base.nome, base.descricao,
+        base.db_host, base.db_porta, base.db_nome, base.db_usuario,
+        criptografar(base.db_senha), base.db_schema || 'public',
+      ],
+    );
+    return { cliente, base: b.rows[0] as AgenteClienteBase };
+  });
+}
+
+/** Grava o resultado da última validação do vínculo AS x EMSys3 (best-effort). */
+export async function registrarVinculo(
+  cliente_id: string,
+  empresa_id: string,
+  r: { ok: boolean; erro?: string | null; cnpjs?: string[] },
+): Promise<void> {
+  try {
+    await query(
+      `UPDATE agente_clientes
+       SET vinculo_validado_em = CASE WHEN $1 THEN NOW() ELSE NULL END,
+           vinculo_cnpjs       = CASE WHEN $1 THEN $2 ELSE NULL END,
+           vinculo_erro        = $3
+       WHERE id = $4 AND empresa_id = $5`,
+      [r.ok, (r.cnpjs ?? []).join(',') || null, r.ok ? null : latin1Safe(r.erro ?? 'Vínculo não validado'), cliente_id, empresa_id],
+    );
+  } catch (e: any) {
+    console.error('[agentes] falha ao registrar vínculo:', e?.message);
+  }
+}
+
+/**
+ * Se o banco físico (host + porta + nome) já está cadastrado em OUTRO cliente da empresa
+ * (como base principal ou adicional), devolve o nome desse cliente.
+ */
+export async function bancoEmUsoPorOutroCliente(
+  empresa_id: string,
+  cfg: { db_host: string; db_porta: number; db_nome: string },
+  ignorarClienteId?: string | null,
+): Promise<string | null> {
+  const rows = await query<{ nome: string }>(
+    `SELECT c.nome FROM agente_clientes c
+      WHERE c.empresa_id = $1 AND LOWER(c.db_host) = LOWER($2) AND c.db_porta = $3 AND LOWER(c.db_nome) = LOWER($4)
+        AND ($5::uuid IS NULL OR c.id <> $5::uuid)
+     UNION
+     SELECT c.nome FROM agente_clientes_bases b JOIN agente_clientes c ON c.id = b.cliente_id
+      WHERE b.empresa_id = $1 AND LOWER(b.db_host) = LOWER($2) AND b.db_porta = $3 AND LOWER(b.db_nome) = LOWER($4)
+        AND ($5::uuid IS NULL OR b.cliente_id <> $5::uuid)
+     LIMIT 1`,
+    [empresa_id, cfg.db_host.trim(), cfg.db_porta, cfg.db_nome.trim(), ignorarClienteId ?? null],
+  );
+  return rows[0]?.nome ?? null;
+}
+
+export async function obterBase(id: string, empresa_id: string): Promise<AgenteClienteBase | null> {
+  return queryOne<AgenteClienteBase>(
+    `SELECT * FROM agente_clientes_bases WHERE id = $1 AND empresa_id = $2`,
+    [id, empresa_id],
+  );
+}
+
 export async function criarCliente(
   empresa_id: string,
-  dados: Omit<AgenteCliente, 'id' | 'empresa_id' | 'ultimo_scan' | 'criado_em' | 'atualizado_em'>,
+  dados: Omit<AgenteCliente, 'id' | 'empresa_id' | 'ultimo_scan' | 'criado_em' | 'atualizado_em' | 'vinculo_validado_em' | 'vinculo_cnpjs' | 'vinculo_erro'>,
 ): Promise<AgenteCliente> {
   const rows = await query<AgenteCliente>(
     `INSERT INTO agente_clientes
@@ -435,14 +526,15 @@ export async function criarBase(
 ): Promise<AgenteClienteBase> {
   const rows = await query<AgenteClienteBase>(
     `INSERT INTO agente_clientes_bases
-       (cliente_id, empresa_id, nome, descricao, db_host, db_porta, db_nome, db_usuario, db_senha, db_schema, ativo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (cliente_id, empresa_id, nome, papel, descricao, db_host, db_porta, db_nome, db_usuario, db_senha, db_schema, ativo)
+     VALUES ($1, $2, $3, $12, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       dados.cliente_id, empresa_id, dados.nome, dados.descricao ?? null,
       dados.db_host, dados.db_porta, dados.db_nome,
       dados.db_usuario, criptografar(dados.db_senha), dados.db_schema || 'public',
       dados.ativo ?? true,
+      dados.papel ?? 'outro',
     ],
   );
   return rows[0];

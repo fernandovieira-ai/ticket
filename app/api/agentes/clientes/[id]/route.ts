@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { obterCliente, atualizarCliente, deletarCliente } from '@/agents/core/db';
+import {
+  obterCliente, atualizarCliente, deletarCliente, listarBases, registrarVinculo, bancoEmUsoPorOutroCliente,
+} from '@/agents/core/db';
+import { descriptografar } from '@/agents/core/crypto';
+import { validarVinculo } from '@/agents/core/vinculo';
 import { z } from 'zod';
 
 const schemaUpdate = z.object({
@@ -49,9 +53,54 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if ('query_erros' in dados) {
       dados.query_erros = dados.query_erros?.trim() || null;
     }
+
+    // Trocar a conexão da base AS exige revalidar o vínculo com a base EMSys3 ANTES de salvar
+    const atual = await obterCliente(id, session.empresaId);
+    if (!atual) return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 });
+
+    const mudouConexao =
+      (dados.db_host !== undefined && dados.db_host.trim().toLowerCase() !== atual.db_host.trim().toLowerCase()) ||
+      (dados.db_porta !== undefined && dados.db_porta !== atual.db_porta) ||
+      (dados.db_nome !== undefined && dados.db_nome.trim().toLowerCase() !== atual.db_nome.trim().toLowerCase()) ||
+      (dados.db_usuario !== undefined && dados.db_usuario !== atual.db_usuario) ||
+      (dados.db_schema !== undefined && dados.db_schema !== atual.db_schema) ||
+      dados.db_senha !== undefined;
+
+    let raizes: string[] | null = null;
+    if (mudouConexao) {
+      const emsys = (await listarBases(id, session.empresaId)).find((b) => b.papel === 'emsys');
+      if (!emsys) {
+        return NextResponse.json({
+          error: 'Este cliente não tem base EMSys3 cadastrada. Cadastre a base EMSys3 (em "Bases") antes de alterar a conexão do AS.',
+        }, { status: 409 });
+      }
+      const novoAS = {
+        db_host: dados.db_host ?? atual.db_host,
+        db_porta: dados.db_porta ?? atual.db_porta,
+        db_nome: dados.db_nome ?? atual.db_nome,
+        db_usuario: dados.db_usuario ?? atual.db_usuario,
+        db_senha: dados.db_senha ?? descriptografar(atual.db_senha),
+        db_schema: dados.db_schema ?? atual.db_schema,
+      };
+      const outro = await bancoEmUsoPorOutroCliente(session.empresaId, novoAS, id);
+      if (outro) {
+        return NextResponse.json({
+          error: `O banco informado já está cadastrado no cliente "${outro}". Cada banco pertence a um único cliente.`,
+        }, { status: 409 });
+      }
+      const vinculo = await validarVinculo(novoAS, { ...emsys, db_senha: descriptografar(emsys.db_senha) });
+      if (!vinculo.ok) return NextResponse.json({ error: vinculo.mensagem, vinculo: false }, { status: 422 });
+      raizes = vinculo.raizes ?? [];
+    }
+
     const atualizado = await atualizarCliente(id, session.empresaId, dados);
     if (!atualizado) return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 });
-    return NextResponse.json({ ...atualizado, db_senha: '••••••••' });
+    let final = atualizado;
+    if (raizes) {
+      await registrarVinculo(id, session.empresaId, { ok: true, cnpjs: raizes });
+      final = (await obterCliente(id, session.empresaId)) ?? atualizado;
+    }
+    return NextResponse.json({ ...final, db_senha: '••••••••' });
   } catch (err: any) {
     if (err?.code === '23505') {
       return NextResponse.json({ error: 'Slug ja existe' }, { status: 409 });

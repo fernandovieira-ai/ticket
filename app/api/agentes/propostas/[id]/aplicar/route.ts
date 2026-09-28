@@ -5,6 +5,7 @@ import { obterCliente, listarBases } from '@/agents/core/db';
 import { salvarAprendizado } from '@/agents/core/aprendizado';
 import { marcarReprocessarPainel } from '@/agents/core/painel';
 import { descriptografar } from '@/agents/core/crypto';
+import { garantirVinculo } from '@/agents/core/vinculo';
 import type { AgenteProposta } from '@/agents/core/types';
 import pg from 'pg';
 
@@ -71,6 +72,12 @@ export async function POST(
   // Busca credenciais do cliente
   const cliente = await obterCliente(proposta.cliente_id, session.empresaId);
   if (!cliente) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 });
+
+  // Trava de segurança: só escreve se AS e EMSys3 do cliente forem comprovadamente da mesma empresa (CNPJ)
+  const vinculo = await garantirVinculo(proposta.cliente_id, session.empresaId);
+  if (!vinculo.ok) {
+    return NextResponse.json({ error: `Aplicação bloqueada — vínculo AS x EMSys3 não validado: ${vinculo.erro}` }, { status: 409 });
+  }
 
   // Resolve em qual base conectar: "principal" (banco do cliente) ou uma das bases
   // adicionais (ex: "dunapetrol_emsys") — a tabela alvo do SQL pode não estar na principal.

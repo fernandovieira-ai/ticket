@@ -65,6 +65,12 @@ export interface AgenteCliente {
   ultimo_scan: string | null;
   notas: string | null;
   ativo: boolean;
+  /** Quando o vínculo AS x EMSys3 (CNPJ) foi validado com sucesso pela última vez */
+  vinculo_validado_em: string | null;
+  /** CNPJs raiz confirmados nas duas bases */
+  vinculo_cnpjs: string | null;
+  /** Motivo da última validação que falhou (null quando ok) */
+  vinculo_erro: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -73,12 +79,16 @@ export interface AgenteClientePublico extends Omit<AgenteCliente, 'db_senha'> {
   db_senha: string; // mascara: '••••••••'
 }
 
+/** 'emsys' = base EMSys3 obrigatória do cliente (vinculada ao AS por CNPJ); 'outro' = adicional livre */
+export type PapelBase = 'emsys' | 'outro';
+
 /** Base de dados adicional para investigacao (ex: emsys3 alem do AS) */
 export interface AgenteClienteBase {
   id: string;
   cliente_id: string;
   empresa_id: string;
   nome: string;
+  papel: PapelBase;
   descricao: string | null;
   db_host: string;
   db_porta: number;

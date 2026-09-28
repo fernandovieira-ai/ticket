@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { queryOne } from '@/lib/db';
 import { atualizarConteudoProposta, obterCliente, listarBases, listarConhecimentoAtivo, registrarContextoProposta } from '@/agents/core/db';
 import { investigarErro, mesclarInvestigacoes, type FonteBase } from '@/agents/core/investigar';
+import { garantirVinculo } from '@/agents/core/vinculo';
 import type { AgenteProposta, AnalisarErroOutput } from '@/agents/core/types';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -158,6 +159,14 @@ export async function POST(
   const cliente = original.cliente_id
     ? await obterCliente(original.cliente_id, session.empresaId)
     : null;
+
+  // Trava de segurança: só investiga se AS e EMSys3 do cliente forem comprovadamente da mesma empresa (CNPJ)
+  if (cliente) {
+    const vinculo = await garantirVinculo(cliente.id, session.empresaId);
+    if (!vinculo.ok) {
+      return NextResponse.json({ error: `Refinamento bloqueado — vínculo AS x EMSys3 não validado: ${vinculo.erro}` }, { status: 409 });
+    }
+  }
 
   const basesAdicionais = cliente
     ? await listarBases(cliente.id, session.empresaId).catch(() => [])

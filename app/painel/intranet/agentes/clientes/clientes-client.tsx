@@ -22,6 +22,12 @@ const VAZIO_CLIENTE = {
 const VAZIO_BASE = {
   nome: "", descricao: "", db_host: "", db_porta: 5432,
   db_nome: "", db_usuario: "", db_senha: "", db_schema: "public", ativo: true,
+  papel: "outro" as "emsys" | "outro",
+};
+
+const VAZIO_EMSYS = {
+  nome: "EMSys3", descricao: "", db_host: "", db_porta: 5432,
+  db_nome: "", db_usuario: "", db_senha: "", db_schema: "public",
 };
 
 export function ClientesClient({ clientes: inicial }: Props) {
@@ -34,6 +40,20 @@ export function ClientesClient({ clientes: inicial }: Props) {
   const [form, setForm] = useState({ ...VAZIO_CLIENTE });
   const [showSenha, setShowSenha] = useState(false);
   const [erroCliente, setErroCliente] = useState<string | null>(null);
+
+  // ── Base EMSys3 obrigatória (cadastro de novo cliente) e resultado da validação do vínculo por CNPJ
+  const [emsysForm, setEmsysForm] = useState({ ...VAZIO_EMSYS });
+  const [showEmsysSenha, setShowEmsysSenha] = useState(false);
+  const [vinculoRes, setVinculoRes] = useState<{ ok: boolean; msg: string; sig: string } | null>(null);
+  const [vinculoCarregando, setVinculoCarregando] = useState(false);
+  const [vinculoClienteRes, setVinculoClienteRes] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  // Assinatura das duas conexões: qualquer alteração invalida a validação feita antes
+  const assinaturaAtual = JSON.stringify([
+    form.db_host, form.db_porta, form.db_nome, form.db_usuario, form.db_senha, form.db_schema,
+    emsysForm.db_host, emsysForm.db_porta, emsysForm.db_nome, emsysForm.db_usuario, emsysForm.db_senha, emsysForm.db_schema,
+  ]);
+  const vinculoValidoAgora = !!vinculoRes && vinculoRes.ok && vinculoRes.sig === assinaturaAtual;
 
   // ── Bases adicionais
   const [basesAbertas, setBasesAbertas] = useState<Record<string, boolean>>({});
@@ -55,6 +75,9 @@ export function ClientesClient({ clientes: inicial }: Props) {
   function abrirNovo() {
     setEditando(null);
     setForm({ ...VAZIO_CLIENTE });
+    setEmsysForm({ ...VAZIO_EMSYS });
+    setVinculoRes(null);
+    setShowEmsysSenha(false);
     setShowSenha(false);
     setErroCliente(null);
     setShowForm(true);
@@ -84,11 +107,20 @@ export function ClientesClient({ clientes: inicial }: Props) {
     if (!editando && !form.db_senha) {
       setErroCliente("Informe a senha do banco."); return;
     }
+    if (!editando) {
+      if (!emsysForm.db_host || !emsysForm.db_nome || !emsysForm.db_usuario || !emsysForm.db_senha) {
+        setErroCliente("Preencha os dados da base EMSys3 (obrigatória)."); return;
+      }
+      if (!vinculoValidoAgora) {
+        setErroCliente("Valide o vínculo AS × EMSys3 antes de salvar."); return;
+      }
+    }
     setLoading("salvar"); setErroCliente(null);
     try {
       const method = editando ? "PUT" : "POST";
       const url = editando ? `/api/agentes/clientes/${editando.id}` : "/api/agentes/clientes";
       const body: any = { ...form };
+      if (!editando) body.emsys = { ...emsysForm };
       if (editando && body.db_senha === "••••••••") delete body.db_senha;
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json();
@@ -97,6 +129,46 @@ export function ClientesClient({ clientes: inicial }: Props) {
       else setClientes([data, ...clientes]);
       fecharForm();
     } catch { setErroCliente("Erro de comunicacao. Tente novamente."); }
+    finally { setLoading(null); }
+  }
+
+  // Valida (sem salvar) se as bases AS e EMSys3 do formulário são da mesma empresa (CNPJ)
+  async function handleValidarVinculoForm() {
+    if (!form.db_host || !form.db_nome || !form.db_usuario || !form.db_senha) {
+      setVinculoRes({ ok: false, msg: "Preencha a conexão da base AS (host, banco, usuário e senha) antes de validar.", sig: assinaturaAtual }); return;
+    }
+    if (!emsysForm.db_host || !emsysForm.db_nome || !emsysForm.db_usuario || !emsysForm.db_senha) {
+      setVinculoRes({ ok: false, msg: "Preencha a conexão da base EMSys3 (host, banco, usuário e senha) antes de validar.", sig: assinaturaAtual }); return;
+    }
+    const sig = assinaturaAtual;
+    setVinculoCarregando(true);
+    setVinculoRes({ ok: false, msg: "Validando CNPJ nas duas bases...", sig });
+    try {
+      const pick = (f: { db_host: string; db_porta: number; db_nome: string; db_usuario: string; db_senha: string; db_schema: string }) =>
+        ({ db_host: f.db_host, db_porta: f.db_porta, db_nome: f.db_nome, db_usuario: f.db_usuario, db_senha: f.db_senha, db_schema: f.db_schema });
+      const res = await fetch("/api/agentes/clientes/validar-vinculo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ as: pick(form), emsys: pick(emsysForm) }),
+      });
+      const data = await res.json();
+      setVinculoRes({ ok: !!data.ok, msg: data.mensagem ?? data.error ?? "Falha ao validar", sig });
+    } catch { setVinculoRes({ ok: false, msg: "Erro de rede ao validar o vínculo.", sig }); }
+    finally { setVinculoCarregando(false); }
+  }
+
+  // Revalida o vínculo de um cliente já cadastrado (usa as credenciais salvas)
+  async function handleValidarVinculoCliente(id: string) {
+    setLoading("vinculo-" + id);
+    setVinculoClienteRes((p) => ({ ...p, [id]: { ok: false, msg: "Validando..." } }));
+    try {
+      const res = await fetch(`/api/agentes/clientes/${id}/vinculo`, { method: "POST" });
+      const data = await res.json();
+      setVinculoClienteRes((p) => ({ ...p, [id]: { ok: !!data.ok, msg: data.mensagem ?? data.error ?? "Falha ao validar" } }));
+      setClientes((cs) => cs.map((c) => c.id === id
+        ? { ...c, vinculo_validado_em: data.vinculo_validado_em ?? null, vinculo_cnpjs: data.vinculo_cnpjs ?? null, vinculo_erro: data.vinculo_erro ?? null }
+        : c));
+    } catch { setVinculoClienteRes((p) => ({ ...p, [id]: { ok: false, msg: "Erro de rede" } })); }
     finally { setLoading(null); }
   }
 
@@ -158,7 +230,7 @@ export function ClientesClient({ clientes: inicial }: Props) {
       nome: b.nome, descricao: b.descricao ?? "",
       db_host: b.db_host, db_porta: b.db_porta,
       db_nome: b.db_nome, db_usuario: b.db_usuario,
-      db_senha: b.db_senha, db_schema: b.db_schema, ativo: b.ativo,
+      db_senha: b.db_senha, db_schema: b.db_schema, ativo: b.ativo, papel: b.papel,
     });
     setShowBaseSenha(false);
     setErroBase(null);
@@ -190,6 +262,7 @@ export function ClientesClient({ clientes: inicial }: Props) {
         setBases((p) => ({ ...p, [clienteId]: [...(p[clienteId] ?? []), data] }));
       }
       fecharBaseForm(clienteId);
+      if (data.papel === "emsys") handleValidarVinculoCliente(clienteId);
     } catch { setErroBase("Erro de comunicacao."); }
     finally { setLoading(null); }
   }
@@ -349,6 +422,80 @@ export function ClientesClient({ clientes: inicial }: Props) {
             </div>
           </div>
 
+          {/* Base EMSys3 obrigatória — só no cadastro; o cliente só é salvo com as duas bases e o CNPJ conferido */}
+          {!editando ? (
+            <div style={{ margin: "6px 0 16px", padding: "14px 16px", borderRadius: 10, border: "1px solid #6366f140", background: "#f5f6ff" }}>
+              <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 600, opacity: 0.6, textTransform: "uppercase" }}>
+                Base EMSys3 (obrigatória)
+              </p>
+              <p style={{ margin: "0 0 12px", fontSize: 11, opacity: 0.6, lineHeight: 1.4 }}>
+                O cliente só é salvo se o CNPJ da tabela <code>empresa</code> do AS bater com o da <code>tab_empresa</code> do EMSys3.
+                Isso garante que as duas bases são do mesmo cliente.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 20px" }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Host <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input value={emsysForm.db_host} onChange={(e) => setEmsysForm((p) => ({ ...p, db_host: e.target.value }))} placeholder="Ex: cloud.digitalrf.com.br"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Porta <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input type="number" value={emsysForm.db_porta} onChange={(e) => setEmsysForm((p) => ({ ...p, db_porta: Number(e.target.value) }))}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 20px" }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Nome do banco <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input value={emsysForm.db_nome} onChange={(e) => setEmsysForm((p) => ({ ...p, db_nome: e.target.value }))} placeholder="Ex: dunapetrol_emsys"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Usuario <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input value={emsysForm.db_usuario} onChange={(e) => setEmsysForm((p) => ({ ...p, db_usuario: e.target.value }))}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Schema</label>
+                  <input value={emsysForm.db_schema} onChange={(e) => setEmsysForm((p) => ({ ...p, db_schema: e.target.value }))} placeholder="public"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 5, opacity: 0.7 }}>Senha <span style={{ color: "#ef4444" }}>*</span></label>
+                <div style={{ position: "relative" }}>
+                  <input type={showEmsysSenha ? "text" : "password"} value={emsysForm.db_senha}
+                    onChange={(e) => setEmsysForm((p) => ({ ...p, db_senha: e.target.value }))} placeholder="Senha do usuario"
+                    style={{ width: "100%", padding: "8px 36px 8px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", fontSize: 13, boxSizing: "border-box" }} />
+                  <button type="button" onClick={() => setShowEmsysSenha((v) => !v)}
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 2, opacity: 0.5 }}>
+                    {showEmsysSenha ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              <button type="button" onClick={handleValidarVinculoForm} disabled={vinculoCarregando}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1px solid #6366f1", background: "white", color: "#4f46e5", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                {vinculoCarregando ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}
+                Validar vínculo AS × EMSys3
+              </button>
+              {vinculoRes && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 10, fontSize: 12, lineHeight: 1.4, color: vinculoValidoAgora ? "#15803d" : vinculoRes.msg.startsWith("Validando") ? "#6b7280" : "#b91c1c" }}>
+                  {vinculoValidoAgora ? <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} /> : <XCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />}
+                  <span>
+                    {vinculoRes.sig !== assinaturaAtual && vinculoRes.ok
+                      ? "Os dados mudaram depois da validação — valide o vínculo de novo."
+                      : vinculoRes.msg}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ margin: "6px 0 16px", padding: "10px 14px", borderRadius: 8, background: "#f9fafb", border: "1px solid var(--border, #e5e7eb)", fontSize: 12, opacity: 0.8 }}>
+              A base EMSys3 é editada em "Bases adicionais" (abaixo da lista). Ao alterar a conexão do AS ou do EMSys3, o vínculo por CNPJ é revalidado antes de salvar.
+            </div>
+          )}
+
           {/* Análise de painel */}
           <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border, #e5e7eb)", background: "#f9fafb" }}>
             <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
@@ -404,8 +551,9 @@ export function ClientesClient({ clientes: inicial }: Props) {
           {erroCliente && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 10 }}>{erroCliente}</p>}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSalvar} disabled={loading === "salvar"}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, border: "none", background: "#6366f1", color: "white", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            <button onClick={handleSalvar} disabled={loading === "salvar" || (!editando && !vinculoValidoAgora)}
+              title={!editando && !vinculoValidoAgora ? "Valide o vínculo AS × EMSys3 para poder salvar" : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, border: "none", background: "#6366f1", color: "white", cursor: (!editando && !vinculoValidoAgora) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 500, opacity: (!editando && !vinculoValidoAgora) ? 0.5 : 1 }}>
               {loading === "salvar" && <Loader2 size={13} className="animate-spin" />}
               {loading === "salvar" ? "Salvando..." : "Salvar"}
             </button>
@@ -475,6 +623,18 @@ export function ClientesClient({ clientes: inicial }: Props) {
                           </span>
                         )}
                       </div>
+                      {/* Vínculo AS x EMSys3 (CNPJ) */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 5, marginTop: 6, fontSize: 12, lineHeight: 1.4, color: c.vinculo_validado_em ? "#15803d" : "#b91c1c" }}>
+                        {c.vinculo_validado_em ? <CheckCircle2 size={12} style={{ flexShrink: 0, marginTop: 2 }} /> : <XCircle size={12} style={{ flexShrink: 0, marginTop: 2 }} />}
+                        <span>
+                          {c.vinculo_validado_em
+                            ? `Vínculo AS × EMSys3 validado (CNPJ raiz ${c.vinculo_cnpjs ?? "—"}) em ${new Date(c.vinculo_validado_em).toLocaleString("pt-BR")}`
+                            : `Vínculo AS × EMSys3 NÃO validado — o agente não opera neste cliente. ${c.vinculo_erro ?? "Clique em Validar vínculo."}`}
+                        </span>
+                      </div>
+                      {vinculoClienteRes[c.id] && (
+                        <p style={{ margin: "3px 0 0", fontSize: 11, color: vinculoClienteRes[c.id].ok ? "#15803d" : "#b91c1c" }}>{vinculoClienteRes[c.id].msg}</p>
+                      )}
                       {c.notas && <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.5 }}>{c.notas}</p>}
                       {teste && (
                         <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, fontSize: 12, color: teste.ok ? "#15803d" : "#b91c1c" }}>
@@ -490,6 +650,11 @@ export function ClientesClient({ clientes: inicial }: Props) {
                         style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", background: "transparent", cursor: "pointer", fontSize: 12 }}>
                         {loading === "test-" + c.id ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
                         Testar
+                      </button>
+                      <button onClick={() => handleValidarVinculoCliente(c.id)} disabled={loading === "vinculo-" + c.id} title="Conferir CNPJ entre a base AS e a base EMSys3"
+                        style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1px solid #6366f150", background: "transparent", color: "#4f46e5", cursor: "pointer", fontSize: 12 }}>
+                        {loading === "vinculo-" + c.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                        Validar vínculo
                       </button>
                       <button onClick={() => abrirEditar(c)} title="Editar"
                         style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border, #e5e7eb)", background: "transparent", cursor: "pointer" }}>
@@ -542,6 +707,9 @@ export function ClientesClient({ clientes: inicial }: Props) {
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
                                   <div>
                                     <span style={{ fontSize: 13, fontWeight: 500 }}>{b.nome}</span>
+                                    {b.papel === "emsys" && (
+                                      <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 8, padding: "1px 7px", borderRadius: 20, background: "#6366f118", color: "#4f46e5" }}>EMSys3 · obrigatória</span>
+                                    )}
                                     {b.descricao && <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 8 }}>{b.descricao}</span>}
                                     <p style={{ margin: "2px 0 0", fontSize: 11, opacity: 0.5, fontFamily: "monospace" }}>
                                       {b.db_host}:{b.db_porta} / {b.db_nome} · {b.db_usuario}
@@ -558,13 +726,15 @@ export function ClientesClient({ clientes: inicial }: Props) {
                                       style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border, #e5e7eb)", background: "white", cursor: "pointer" }}>
                                       <Pencil size={11} style={{ opacity: 0.5 }} />
                                     </button>
-                                    <button onClick={() => handleDeletarBase(c.id, b.id, b.nome)}
-                                      disabled={loading === "base-del-" + b.id}
-                                      style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #ef444420", background: "white", cursor: "pointer" }}>
-                                      {loading === "base-del-" + b.id
-                                        ? <Loader2 size={11} className="animate-spin" style={{ color: "#ef4444" }} />
-                                        : <Trash2 size={11} style={{ color: "#ef4444" }} />}
-                                    </button>
+                                    {b.papel !== "emsys" && (
+                                      <button onClick={() => handleDeletarBase(c.id, b.id, b.nome)}
+                                        disabled={loading === "base-del-" + b.id}
+                                        style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #ef444420", background: "white", cursor: "pointer" }}>
+                                        {loading === "base-del-" + b.id
+                                          ? <Loader2 size={11} className="animate-spin" style={{ color: "#ef4444" }} />
+                                          : <Trash2 size={11} style={{ color: "#ef4444" }} />}
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                                 {testeBase && (
@@ -583,6 +753,14 @@ export function ClientesClient({ clientes: inicial }: Props) {
                               <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 600 }}>
                                 {editandoBase ? `Editar: ${editandoBase.nome}` : "Nova base de investigação"}
                               </p>
+                              {!editandoBase && !listabases.some((x) => x.papel === "emsys") && (
+                                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 10, cursor: "pointer" }}>
+                                  <input type="checkbox" checked={baseForm.papel === "emsys"}
+                                    onChange={(e) => setBaseForm((p) => ({ ...p, papel: e.target.checked ? "emsys" : "outro" }))}
+                                    style={{ accentColor: "#6366f1" }} />
+                                  Esta é a base <strong>EMSys3</strong> do cliente (o CNPJ será conferido com o AS antes de salvar)
+                                </label>
+                              )}
                               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
                                 {fieldBase("nome", "Nome da base", { required: true, placeholder: "Ex: emsys3" })}
                                 {fieldBase("descricao", "Descrição", { placeholder: "Ex: Banco EMSys 3" })}

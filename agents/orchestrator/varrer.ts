@@ -24,6 +24,7 @@ import {
 import { processarErro } from './index';
 import { investigarErro, type FonteBase } from '../core/investigar';
 import { descriptografar } from '../core/crypto';
+import { garantirVinculo } from '../core/vinculo';
 import type { BaseContexto, AnalisarErroOutput, TipoCorrecao, NivelRisco } from '../core/types';
 
 export interface ResultadoVarredura {
@@ -305,6 +306,15 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
       erros_ignorados:   0,
       erros_obsoletos:   0,
     };
+
+    // Trava de segurança: só opera no cliente se AS e EMSys3 forem comprovadamente da mesma empresa (CNPJ)
+    const vinculo = await garantirVinculo(cliente.id, empresa_id);
+    if (!vinculo.ok) {
+      resultado.erro = `Vínculo AS x EMSys3 não validado: ${vinculo.erro}`;
+      console.error(`[varrer] ${cliente.nome} ignorado — ${resultado.erro}`);
+      resultados.push(resultado);
+      continue;
+    }
 
     try {
       const erros = await buscarErrosCliente(cliente);

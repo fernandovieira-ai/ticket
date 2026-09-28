@@ -81,17 +81,18 @@ async function lerCnpjsEmsys(client: pg.Client, schema: string): Promise<string[
   try {
     const r = await client.query(
       `SELECT DISTINCT num_cnpj::text AS cnpj FROM ${ident(schema)}.${ident('tab_empresa')}
-       WHERE num_cnpj IS NOT NULL LIMIT 500`,
+       WHERE num_cnpj IS NOT NULL AND ind_ativo = 'S' LIMIT 500`,
     );
     return r.rows.map((x: any) => String(x.cnpj));
   } catch (e: any) {
-    throw new ErroVinculo(`Não foi possível ler tab_empresa.num_cnpj na base EMSys3: ${e?.message ?? 'erro desconhecido'}. Confira se é mesmo o banco do EMSys3.`);
+    throw new ErroVinculo(`Não foi possível ler as empresas ativas (ind_ativo = S) de tab_empresa na base EMSys3: ${e?.message ?? 'erro desconhecido'}. Confira se é mesmo o banco do EMSys3.`);
   }
 }
 
 /**
- * Conecta nas duas bases (somente leitura) e compara os CNPJs. Regra: todo CNPJ raiz existente no AS
- * precisa existir no EMSys3 (o EMSys3 pode ter mais empresas) e ao menos um CNPJ completo deve ser igual.
+ * Conecta nas duas bases (somente leitura) e compara os CNPJs. Regra: todo CNPJ raiz das empresas ATIVAS
+ * do EMSys3 (tab_empresa.ind_ativo = 'S') precisa existir no AS (o AS pode ter mais empresas) e ao menos
+ * um CNPJ completo deve ser igual nas duas bases.
  */
 export async function validarVinculo(as: ConexaoCfg, emsys: ConexaoCfg): Promise<ResultadoVinculo> {
   if (mesmaConexaoFisica(as, emsys)) {
@@ -112,30 +113,30 @@ export async function validarVinculo(as: ConexaoCfg, emsys: ConexaoCfg): Promise
     const fullAS = new Set(brutosAS.map(normalizarCnpj).filter((c): c is string => !!c));
     const fullEm = new Set(brutosEm.map(normalizarCnpj).filter((c): c is string => !!c));
     if (!fullAS.size) return { ok: false, mensagem: 'A base AS não retornou nenhuma empresa ativa (flag = A) com CNPJ válido de 14 dígitos em pessoa.cpf.' };
-    if (!fullEm.size) return { ok: false, mensagem: 'A tabela tab_empresa do EMSys3 não tem nenhum CNPJ válido (14 dígitos).' };
+    if (!fullEm.size) return { ok: false, mensagem: 'A tabela tab_empresa do EMSys3 não tem nenhuma empresa ativa (ind_ativo = S) com CNPJ válido de 14 dígitos.' };
 
     const raizAS = new Set([...fullAS].map((c) => c.slice(0, 8)));
     const raizEm = new Set([...fullEm].map((c) => c.slice(0, 8)));
-    const faltando = [...raizAS].filter((r) => !raizEm.has(r));
-    const comuns = [...fullAS].filter((c) => fullEm.has(c));
+    const faltando = [...raizEm].filter((r) => !raizAS.has(r));
+    const comuns = [...fullEm].filter((c) => fullAS.has(c));
 
     if (faltando.length || !comuns.length) {
       const detalhe = faltando.length
-        ? `CNPJ raiz no AS que não existe no EMSys3: ${faltando.map(formatarRaiz).join(', ')}.`
+        ? `CNPJ raiz ativo no EMSys3 que não existe no AS: ${faltando.map(formatarRaiz).join(', ')}.`
         : 'Nenhum CNPJ completo é igual nas duas bases.';
       return {
         ok: false,
         mensagem:
-          `Os CNPJs da base AS não batem com os da base EMSys3 — as conexões parecem ser de clientes diferentes. ${detalhe} ` +
-          `AS: ${[...raizAS].map(formatarRaiz).join(', ')} | EMSys3: ${[...raizEm].map(formatarRaiz).join(', ')}.`,
+          `Os CNPJs da base EMSys3 não batem com os da base AS — as conexões parecem ser de clientes diferentes. ${detalhe} ` +
+          `EMSys3 (ativas): ${[...raizEm].map(formatarRaiz).join(', ')} | AS: ${[...raizAS].map(formatarRaiz).join(', ')}.`,
       };
     }
 
-    const raizes = [...raizAS].sort();
+    const raizes = [...raizEm].sort();
     return {
       ok: true,
       raizes,
-      mensagem: `Vínculo validado: CNPJ raiz ${raizes.map(formatarRaiz).join(', ')} confere entre AS (${fullAS.size} CNPJ) e EMSys3 (${fullEm.size} CNPJ).`,
+      mensagem: `Vínculo validado: CNPJ raiz ${raizes.map(formatarRaiz).join(', ')} das empresas ativas do EMSys3 (${fullEm.size} CNPJ) existe no AS (${fullAS.size} CNPJ).`,
     };
   } catch (e: any) {
     if (e instanceof ErroVinculo) return { ok: false, mensagem: e.message };

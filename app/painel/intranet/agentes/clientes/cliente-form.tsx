@@ -286,7 +286,7 @@ export function ClienteForm({ editando, onCancel, onSaved }: Props) {
         <span>
           {erroVinculo
             ? erro
-            : "Ao salvar, o sistema confere se o CNPJ das empresas ativas do AS (empresa × pessoa) é o mesmo da tab_empresa do EMSys3. Se não bater, nada é salvo — isso impede misturar bases de clientes diferentes."}
+            : "Ao salvar, o sistema confere se os CNPJs das empresas ativas do EMSys3 (tab_empresa, ind_ativo = S) existem no AS (empresa × pessoa). Se não baterem, nada é salvo — isso impede misturar bases de clientes diferentes."}
         </span>
       </div>
 

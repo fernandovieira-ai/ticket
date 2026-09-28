@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import pg from 'pg';
 import { descriptografar } from './crypto';
+import { carregarSchemaCache, salvarSchemaCache } from './db';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -45,6 +46,44 @@ export interface OpcoesInvestigacao {
   maxIteracoes?: number;
   /** Lições generalizadas de correções já aprovadas (agente_conhecimento), injetadas no prompt */
   licoes?: string[];
+  /** Queries + resultados reais já coletados em rodadas anteriores desta proposta (evita refazer) */
+  dadosAnteriores?: string;
+  /** Instruções que o operador já enviou em refinamentos anteriores */
+  instrucoesAnteriores?: string[];
+  /** Habilita o cache de schema (colunas já descobertas) para este cliente */
+  cache?: { cliente_id: string; empresa_id: string };
+}
+
+export const SEPARADOR_ENTRADA = '\n\n=====\n\n';
+const MAX_DADOS_ANTERIORES = 6000;
+const MAX_SCHEMA_PROMPT = 3500;
+
+const RESULTADO_SEM_VALOR = /\nResultado:\n\((erro ao executar|bloqueado|falha ao conectar)|\nResultado:\nBase ".*" não encontrada/i;
+
+function chaveEntrada(entrada: string): string {
+  const m = entrada.match(/^Base: .*? \| SQL: [\s\S]*?(?=\nResultado:)/m);
+  return (m?.[0] ?? entrada).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Junta o histórico de investigação anterior com o da rodada atual: remove queries repetidas
+ * (a mais recente vence), descarta as que falharam e mantém só as entradas mais novas dentro do limite.
+ */
+export function mesclarInvestigacoes(anterior: string | null | undefined, novo: string, max = MAX_DADOS_ANTERIORES): string {
+  const entradas = new Map<string, string>();
+  for (const e of [...(anterior ?? '').split(SEPARADOR_ENTRADA), ...novo.split(SEPARADOR_ENTRADA)]) {
+    const t = e.trim();
+    if (!t || RESULTADO_SEM_VALOR.test(t)) continue;
+    const k = chaveEntrada(t);
+    entradas.delete(k);
+    entradas.set(k, t);
+  }
+  const lista = [...entradas.values()];
+  let total = lista.reduce((s, e) => s + e.length + SEPARADOR_ENTRADA.length, 0);
+  while (lista.length > 1 && total > max) {
+    total -= lista.shift()!.length + SEPARADOR_ENTRADA.length;
+  }
+  return lista.join(SEPARADOR_ENTRADA).slice(-max);
 }
 
 const FERRAMENTA_SELECT: Anthropic.Tool = {
@@ -95,11 +134,28 @@ Só responda em texto (sem chamar a ferramenta de novo) DEPOIS de ter o resultad
 QUANDO PARAR: assim que tiver dados reais suficientes para confirmar a causa raiz E os valores exatos (nomes, códigos, IDs, próximo PK livre etc.) necessários para um SQL de correção definitivo — pare de chamar a ferramenta e responda com um resumo em texto contendo EXPLICITAMENTE cada valor confirmado (nome do registro, PK livre, colunas/valores do exemplo semelhante), pronto para virar um INSERT/UPDATE sem mais nenhuma pergunta. Não gaste chamadas além do necessário, mas também não pare cedo demais deixando a causa raiz sem confirmação real.`;
 }
 
+// Consulta de schema "completa" de UMA tabela (sem filtro de coluna) — só essas entram no cache,
+// porque uma lista filtrada (ex: column_name ILIKE '%x%') seria parcial.
+const SQL_SCHEMA_TABELA_COMPLETO =
+  /WHERE\s+(?:table_schema\s*=\s*'[^']*'\s+AND\s+)?table_name\s*=\s*'([^']+)'\s*(?:AND\s+table_schema\s*=\s*'[^']*'\s*)?(?:ORDER\s+BY\s+[\w\s,.]+)?$/i;
+
+interface ResultadoQuery {
+  texto: string;
+  /** Preenchido quando a query listou TODAS as colunas de uma tabela (candidata ao cache) */
+  schema?: { tabela: string; colunas: string };
+}
+
+function formatarColuna(r: Record<string, unknown>): string {
+  const tipo = r.data_type ?? r.udt_name;
+  const tam = r.character_maximum_length ? `(${r.character_maximum_length})` : '';
+  return tipo ? `${r.column_name}:${tipo}${tam}` : String(r.column_name);
+}
+
 // Executa SELECT de forma segura numa conexão já aberta
-async function executarQuerySegura(client: pg.Client, sql: string): Promise<string> {
+async function executarQuerySegura(client: pg.Client, sql: string): Promise<ResultadoQuery> {
   let sqlLimpo = sql.trim();
   if (!/^\s*SELECT\s/i.test(sqlLimpo)) {
-    return '(bloqueado: apenas SELECT é permitido)';
+    return { texto: '(bloqueado: apenas SELECT é permitido)' };
   }
 
   // Remove ";" final — a IA às vezes termina o SQL com ponto-e-vírgula, o que
@@ -108,24 +164,72 @@ async function executarQuerySegura(client: pg.Client, sql: string): Promise<stri
 
   // Bloqueia múltiplos statements (qualquer ";" remanescente no meio da query)
   if (sqlLimpo.includes(';')) {
-    return '(bloqueado: múltiplos statements não são permitidos — use uma única instrução SELECT)';
+    return { texto: '(bloqueado: múltiplos statements não são permitidos — use uma única instrução SELECT)' };
   }
 
   // Só remove um LIMIT já existente se estiver no final da query
   // (evita remover por engano o LIMIT de uma subquery no meio do SQL)
   const semLimitFinal = sqlLimpo.replace(/\bLIMIT\s+\d+\s*$/i, '').trim();
-  const sqlFinal = `${semLimitFinal} LIMIT 12`;
+  const ehSchema = /information_schema\.columns/i.test(semLimitFinal);
+  // Schema é devolvido em formato compacto ("col:tipo, col:tipo"), então cabe muito mais linhas
+  const limite = ehSchema ? 150 : 12;
+  const sqlFinal = `${semLimitFinal} LIMIT ${limite}`;
 
   try {
     const result = await client.query(sqlFinal);
-    if (!result.rows.length) return '(nenhum registro encontrado)';
+    if (!result.rows.length) return { texto: '(nenhum registro encontrado)' };
+
+    if (ehSchema && result.rows.every((r) => 'column_name' in r)) {
+      const porTabela = new Map<string, string[]>();
+      for (const r of result.rows) {
+        const tabela = String(r.table_name ?? '');
+        const lista = porTabela.get(tabela) ?? [];
+        lista.push(formatarColuna(r));
+        porTabela.set(tabela, lista);
+      }
+      const texto = [...porTabela.entries()]
+        .map(([t, cols]) => `${t ? t + ': ' : ''}${cols.join(', ')}`)
+        .join('\n');
+      const alvo = semLimitFinal.match(SQL_SCHEMA_TABELA_COMPLETO)?.[1];
+      const completo = !!alvo && result.rows.length < limite && porTabela.size <= 1;
+      return {
+        texto: texto.length > 4000 ? texto.slice(0, 4000) + '\n...(truncado)' : texto,
+        schema: completo ? { tabela: alvo!, colunas: [...porTabela.values()][0]?.join(', ') ?? texto } : undefined,
+      };
+    }
+
     const linhas = result.rows
       .map((r) => Object.entries(r).map(([k, v]) => `${k}: ${v ?? 'null'}`).join(' | '))
       .join('\n');
-    return linhas.length > 1600 ? linhas.slice(0, 1600) + '\n...(truncado)' : linhas;
+    return { texto: linhas.length > 1600 ? linhas.slice(0, 1600) + '\n...(truncado)' : linhas };
   } catch (e: any) {
-    return `(erro ao executar: ${e?.message ?? 'desconhecido'})`;
+    return { texto: `(erro ao executar: ${e?.message ?? 'desconhecido'})` };
   }
+}
+
+// Bloco do prompt com as colunas já descobertas em investigações anteriores do mesmo cliente.
+// Tabelas citadas no erro/instrução vêm primeiro; o resto fica por recência, até o limite.
+function montarBlocoSchema(
+  cache: Array<{ base: string; tabela: string; colunas: string }>,
+  textoRelevante: string,
+): string {
+  if (!cache.length) return '';
+  const alvo = textoRelevante.toLowerCase();
+  const ordenado = [...cache].sort(
+    (a, b) => Number(alvo.includes(b.tabela.toLowerCase())) - Number(alvo.includes(a.tabela.toLowerCase())),
+  );
+  const linhas: string[] = [];
+  let total = 0;
+  for (const c of ordenado) {
+    const cols = c.colunas.length > 900 ? c.colunas.slice(0, 900) + ', ...' : c.colunas;
+    const linha = `- [${c.base}] ${c.tabela}: ${cols}`;
+    if (total + linha.length > MAX_SCHEMA_PROMPT) break;
+    linhas.push(linha);
+    total += linha.length;
+  }
+  return linhas.length
+    ? `\n\n=== SCHEMA JÁ CONHECIDO (colunas reais descobertas antes neste cliente) ===\n${linhas.join('\n')}\n=== FIM ===\nUse esses nomes de coluna DIRETO — NÃO consulte information_schema para essas tabelas (só se uma lista terminar em "..." e faltar uma coluna que você precisa) e NÃO chute colunas que não estejam aqui.`
+    : '';
 }
 
 /**
@@ -182,9 +286,25 @@ export async function investigarErro(
     }
   };
 
+  const schemaCache = opcoes.cache
+    ? await carregarSchemaCache(opcoes.cache.cliente_id, opcoes.cache.empresa_id)
+    : [];
+  const blocoSchema = montarBlocoSchema(schemaCache, `${descricao_erro} ${instrucao} ${contexto_extra} ${opcoes.dadosAnteriores ?? ''}`);
+
+  const blocoDadosAnteriores = opcoes.dadosAnteriores?.trim()
+    ? `\n\n=== DADOS REAIS JÁ COLETADOS EM RODADAS ANTERIORES (queries já executadas e seus resultados reais) ===\n${opcoes.dadosAnteriores.slice(-MAX_DADOS_ANTERIORES)}\n=== FIM ===\nTrate esses resultados como verdadeiros — NÃO repita essas queries nem reconsulte o schema dessas tabelas. Só rode queries NOVAS, para o que a INSTRUÇÃO/OBJETIVO pede e que ainda não está coberto acima.`
+    : '';
+
+  const blocoInstrucoesAnteriores = opcoes.instrucoesAnteriores?.length
+    ? `\n\n=== INSTRUÇÕES ANTERIORES DO OPERADOR (já atendidas em rodadas anteriores, da mais antiga para a mais recente) ===\n${opcoes.instrucoesAnteriores.slice(-6).map((s) => `- ${s.slice(0, 300)}`).join('\n')}\n=== FIM ===\nMantenha o que essas instruções já estabeleceram, a menos que a INSTRUÇÃO atual diga o contrário.`
+    : '';
+
   const userInicial = [
     `ERRO: ${descricao_erro.slice(0, 600)}`,
     `\nINSTRUÇÃO/OBJETIVO: ${instrucao.slice(0, 500)}`,
+    blocoInstrucoesAnteriores,
+    blocoDadosAnteriores,
+    blocoSchema,
     contexto_extra.trim()
       ? `\n\n=== FATOS JÁ CONFIRMADOS EM INVESTIGAÇÃO(ÕES) ANTERIOR(ES) ===\n${contexto_extra.slice(0, 1800)}\n=== FIM ===\nTrate os fatos acima como verdadeiros e já confirmados — NÃO gaste chamadas reconfirmando o que já está aqui, e NÃO contradiga/substitua um valor já confirmado (ex: um código já achado) a menos que uma nova query mostre evidência concreta em contrário. Use seu orçamento para resolver especificamente o que a INSTRUÇÃO/OBJETIVO pede além disso, e para preencher lacunas que os fatos acima deixaram em aberto.`
       : '',
@@ -230,9 +350,15 @@ export async function investigarErro(
           resultado = `Base "${base}" não encontrada. Bases disponíveis: ${nomesBasesDisponiveis.join(', ')}`;
         } else {
           const client = await obterConexao(fonte);
-          resultado = client
-            ? await executarQuerySegura(client, sql)
-            : `Falha ao conectar na base "${base}".`;
+          if (!client) {
+            resultado = `Falha ao conectar na base "${base}".`;
+          } else {
+            const r = await executarQuerySegura(client, sql);
+            resultado = r.texto;
+            if (r.schema && opcoes.cache) {
+              await salvarSchemaCache(opcoes.cache.cliente_id, opcoes.cache.empresa_id, fonte.nome, r.schema.tabela, r.schema.colunas);
+            }
+          }
         }
 
         console.log(`[investigar] iteração ${i + 1}, base "${base}": ${sql.slice(0, 150)}`);
@@ -242,7 +368,7 @@ export async function investigarErro(
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tu.id,
-          content: resultado.slice(0, 1600),
+          content: resultado.slice(0, 4000),
         });
       }
 
@@ -254,5 +380,5 @@ export async function investigarErro(
     }
   }
 
-  return transcript.join('\n\n');
+  return transcript.join(SEPARADOR_ENTRADA);
 }

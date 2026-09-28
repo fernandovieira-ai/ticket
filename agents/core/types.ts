@@ -2,6 +2,11 @@ export type PropostaStatus = 'aguardando' | 'aprovada' | 'rejeitada' | 'aplicada
 export type TipoCorrecao = 'configuracao' | 'dados' | 'codigo' | 'infraestrutura' | 'outro';
 export type NivelRisco = 'baixo' | 'medio' | 'alto' | 'critico';
 
+export interface InstrucaoRefinamento {
+  instrucao: string;
+  titulo: string;
+}
+
 export interface AgenteProposta {
   id: string;
   empresa_id: string;
@@ -22,6 +27,10 @@ export interface AgenteProposta {
   erro_hash: string | null;
   /** "codigo" da linha em exchange_emsys_gestao_monitoramento_pend, quando veio do painel builtin */
   painel_codigo: string | null;
+  /** Queries + resultados reais já coletados nas investigações desta proposta */
+  dados_investigacao: string | null;
+  /** Instruções que o operador já enviou em refinamentos anteriores (mais antiga primeiro) */
+  instrucoes_anteriores: InstrucaoRefinamento[];
   aplicado_em: string | null;
   aplicacao_erro: string | null;
   criado_em: string;

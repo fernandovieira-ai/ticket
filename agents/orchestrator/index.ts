@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { analisarErro } from '../analyzer';
-import { criarProposta, obterConfig, obterCliente, atualizarStatusProposta } from '../core/db';
+import { criarProposta, obterConfig, obterCliente, atualizarStatusProposta, registrarContextoProposta } from '../core/db';
+import { mesclarInvestigacoes } from '../core/investigar';
 import type { AnalisarErroInput, ProcessarErroResult } from '../core/types';
 
 export async function processarErro(input: AnalisarErroInput): Promise<ProcessarErroResult> {
@@ -23,6 +24,13 @@ export async function processarErro(input: AnalisarErroInput): Promise<Processar
     input.erro_hash,
     input.codigo_painel,
   );
+
+  // Guarda os dados reais coletados na investigação, para o "Refinar" não refazer tudo
+  if (input.dados_reais?.trim()) {
+    await registrarContextoProposta(proposta.id, input.empresa_id, {
+      dados_investigacao: mesclarInvestigacoes(null, input.dados_reais),
+    });
+  }
 
   // Auto-aprova se configurado para este tipo E risco nao for critico
   const deveAutoAprovar =

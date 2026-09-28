@@ -498,7 +498,7 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
           'Investigar a causa raiz e reunir os dados reais necessários para uma correção definitiva e pronta para executar — sem intervenção manual depois.',
           contextoFinal ?? '',
           fontes,
-          { maxIteracoes: 10, licoes: licoesAprendidas },
+          { maxIteracoes: 10, licoes: licoesAprendidas, cache: { cliente_id: cliente.id, empresa_id } },
         ).catch((e: any) => {
           console.error(`[varrer] investigação falhou para ${cliente.nome}:`, e?.message);
           return '';

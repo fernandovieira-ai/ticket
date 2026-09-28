@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryOne } from '@/lib/db';
-import { atualizarConteudoProposta, obterCliente, listarBases, listarConhecimentoAtivo } from '@/agents/core/db';
-import { investigarErro, type FonteBase } from '@/agents/core/investigar';
+import { atualizarConteudoProposta, obterCliente, listarBases, listarConhecimentoAtivo, registrarContextoProposta } from '@/agents/core/db';
+import { investigarErro, mesclarInvestigacoes, type FonteBase } from '@/agents/core/investigar';
 import type { AgenteProposta, AnalisarErroOutput } from '@/agents/core/types';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -67,7 +67,7 @@ ESTRUTURA E TOM:
     sql_anterior ? `\nSQL ANTERIOR: ${sql_anterior.slice(0, 400)}` : '',
     `\nINSTRUÇÃO: ${instrucao.slice(0, 500)}`,
     temDados
-      ? `\n\n=== DADOS REAIS DO BANCO (única fonte confiável de nomes/códigos/IDs) ===\n${dadosReais.slice(0, 4500)}\n=== FIM ===`
+      ? `\n\n=== DADOS REAIS DO BANCO (única fonte confiável de nomes/códigos/IDs) ===\n${dadosReais.slice(-6000)}\n=== FIM ===`
       : '\n\n[Nenhuma consulta retornou dados — não invente nomes/códigos, diga o que precisa ser consultado]',
   ].join('');
 
@@ -110,6 +110,13 @@ ESTRUTURA E TOM:
   return parsed;
 }
 
+function pedidoApenasReprocessarPainel(instrucao: string, proposta: AgenteProposta): boolean {
+  if (!proposta.painel_codigo || !/^\d+$/.test(proposta.painel_codigo)) return false;
+  if (instrucao.length > 200 || !/reprocess/i.test(instrucao)) return false;
+  // Se o operador relata problema ou pede investigação, segue o fluxo normal com IA
+  return !/n[aã]o (funcion|deu|resolv)|erro|falh|verifi|investig|consult|descubr/i.test(instrucao);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -127,6 +134,26 @@ export async function POST(
     [id, session.empresaId],
   );
   if (!original) return NextResponse.json({ error: 'Proposta não encontrada' }, { status: 404 });
+
+  // Atalho sem IA: o operador só quer liberar o registro do painel para reprocessar
+  // (ele já corrigiu o problema por fora). O UPDATE é determinístico, não precisa investigar.
+  if (pedidoApenasReprocessarPainel(instrucao, original)) {
+    await registrarContextoProposta(id, session.empresaId, {
+      instrucao: { instrucao, titulo: 'Reprocessar registro no painel' },
+    });
+    const atualizada = await atualizarConteudoProposta(id, session.empresaId, {
+      titulo: 'Reprocessar registro no painel',
+      analise: `Ajuste informado pelo operador: "${instrucao.slice(0, 300)}". Nenhuma nova investigação foi necessária.`,
+      correcao_proposta: `Marcar o registro codigo=${original.painel_codigo} do painel EMSys Gestão para reprocessar (reprocessar = true).`,
+      sql_correcao: `UPDATE exchange_emsys_gestao_monitoramento_pend SET reprocessar = true WHERE codigo = ${original.painel_codigo}`,
+      base_alvo: 'principal',
+      tipo: 'dados',
+      nivel_risco: 'baixo',
+      confianca: 1,
+    });
+    if (!atualizada) return NextResponse.json({ error: 'Falha ao atualizar proposta' }, { status: 500 });
+    return NextResponse.json({ proposta: atualizada });
+  }
 
   const cliente = original.cliente_id
     ? await obterCliente(original.cliente_id, session.empresaId)
@@ -156,13 +183,21 @@ export async function POST(
   ].filter(Boolean).join('\n\n');
 
   // FASE 1/2 — investiga contra o(s) banco(s) real(is), com aprofundamento automático
-  const dadosReais = await investigarErro(
+  // Reaproveita o que já foi coletado nas rodadas anteriores (dados reais, schema, instruções)
+  // — a IA só investiga o que ainda falta.
+  const dadosNovos = await investigarErro(
     original.descricao_erro,
     instrucao,
     contextoRodadaAnterior,
     fontes,
-    { licoes: licoesAprendidas },
+    {
+      licoes: licoesAprendidas,
+      dadosAnteriores: original.dados_investigacao ?? undefined,
+      instrucoesAnteriores: (original.instrucoes_anteriores ?? []).map((i) => i.instrucao),
+      cache: cliente ? { cliente_id: cliente.id, empresa_id: session.empresaId } : undefined,
+    },
   ).catch(() => '');
+  const dadosReais = mesclarInvestigacoes(original.dados_investigacao, dadosNovos);
 
   // FASE 3 — Sonnet analisa com dados reais (sem truncamento)
   let analise: AnalisarErroOutput;
@@ -179,6 +214,11 @@ export async function POST(
     console.error('[refinar] erro na análise:', e?.message);
     return NextResponse.json({ error: 'Erro ao gerar análise refinada' }, { status: 500 });
   }
+
+  await registrarContextoProposta(id, session.empresaId, {
+    dados_investigacao: dadosReais,
+    instrucao: { instrucao, titulo: analise.titulo },
+  });
 
   // Atualiza a proposta original no lugar — nunca cria nova
   const atualizada = await atualizarConteudoProposta(id, session.empresaId, analise);

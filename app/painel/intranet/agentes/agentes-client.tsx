@@ -92,7 +92,6 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
   // aqui só guardamos o histórico de instruções já enviadas (mais recente primeiro).
   const [refinarAberto, setRefinarAberto] = useState<Set<string>>(new Set());
   const [instrucoes, setInstrucoes] = useState<Record<string, string>>({});
-  const [historicoRefinamento, setHistoricoRefinamento] = useState<Record<string, { instrucao: string; titulo: string }[]>>({});
 
   // Carrega lista de clientes ao abrir o formulario
   useEffect(() => {
@@ -225,8 +224,8 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
     setInstrucoes((prev) => ({ ...prev, [id]: "" }));
   }
 
-  async function handleRefinar(propostaId: string) {
-    const instrucao = instrucoes[propostaId]?.trim();
+  async function handleRefinar(propostaId: string, instrucaoRapida?: string) {
+    const instrucao = (instrucaoRapida ?? instrucoes[propostaId])?.trim();
     if (!instrucao) return;
     setLoading(propostaId + "refinar");
     setErro(null);
@@ -241,10 +240,6 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
       // Atualiza o card existente no lugar (o backend retorna o mesmo id) — os botões de
       // Aprovar/Aplicar/Rejeitar no topo do card já refletem essa versão nova automaticamente.
       setPropostas((prev) => prev.map((p) => (p.id === propostaId ? data.proposta : p)));
-      setHistoricoRefinamento((prev) => ({
-        ...prev,
-        [propostaId]: [{ instrucao, titulo: data.proposta.titulo }, ...(prev[propostaId] ?? [])],
-      }));
       setInstrucoes((prev) => ({ ...prev, [propostaId]: "" }));
     } catch {
       setErro("Erro ao refinar. Tente novamente.");
@@ -580,9 +575,9 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
                                   </p>
 
                                   {/* Histórico de instruções já enviadas — mais recente no topo */}
-                                  {historicoRefinamento[p.id]?.length > 0 && (
+                                  {(p.instrucoes_anteriores?.length ?? 0) > 0 && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                                      {historicoRefinamento[p.id].map((h, i) => (
+                                      {[...p.instrucoes_anteriores].reverse().map((h, i) => (
                                         <div key={i} style={{ padding: "8px 10px", borderRadius: 8, background: "white", border: "1px solid #dbe0fb", fontSize: 12 }}>
                                           <p style={{ margin: "0 0 3px", opacity: 0.6 }}>Você: {h.instrucao}</p>
                                           <p style={{ margin: 0, color: "#3730a3", fontWeight: 500 }}>→ {h.titulo}</p>
@@ -610,6 +605,16 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
                                     {loading === p.id + "refinar" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                                     {loading === p.id + "refinar" ? "Analisando..." : "Enviar para IA"}
                                   </button>
+                                  {p.painel_codigo && (
+                                    <button
+                                      onClick={() => handleRefinar(p.id, "Ajuste já feito, apenas reprocessar painel")}
+                                      disabled={!!loading}
+                                      style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, border: "1px solid #4f46e5", background: "white", color: "#4f46e5", cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: loading ? 0.6 : 1 }}
+                                      title="Gera na hora o UPDATE reprocessar=true para este registro, sem consultar a IA"
+                                    >
+                                      Ajuste já feito: só reprocessar painel (instantâneo)
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>

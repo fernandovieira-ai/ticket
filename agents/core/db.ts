@@ -195,6 +195,77 @@ export async function atualizarConteudoProposta(
   );
 }
 
+/**
+ * Guarda o contexto da investigação na proposta: dados reais coletados e/ou a instrução do
+ * operador (com o título resultante). Best-effort — se a migration ainda não rodou, só loga.
+ */
+export async function registrarContextoProposta(
+  id: string,
+  empresa_id: string,
+  ctx: { dados_investigacao?: string | null; instrucao?: { instrucao: string; titulo: string } },
+): Promise<void> {
+  try {
+    await query(
+      `UPDATE agente_propostas
+       SET dados_investigacao    = COALESCE($1, dados_investigacao),
+           instrucoes_anteriores = CASE WHEN $2::jsonb IS NULL THEN instrucoes_anteriores
+                                        ELSE instrucoes_anteriores || $2::jsonb END
+       WHERE id = $3 AND empresa_id = $4`,
+      [
+        ctx.dados_investigacao != null ? latin1Safe(ctx.dados_investigacao) : null,
+        ctx.instrucao
+          ? JSON.stringify([{ instrucao: latin1Safe(ctx.instrucao.instrucao), titulo: latin1Safe(ctx.instrucao.titulo) }])
+          : null,
+        id,
+        empresa_id,
+      ],
+    );
+  } catch (e: any) {
+    console.error('[agentes] falha ao registrar contexto da proposta:', e?.message);
+  }
+}
+
+// ----------------------------------------------------------------
+// Cache de schema (colunas já descobertas por cliente/base/tabela)
+// ----------------------------------------------------------------
+
+export async function carregarSchemaCache(
+  cliente_id: string,
+  empresa_id: string,
+): Promise<Array<{ base: string; tabela: string; colunas: string }>> {
+  try {
+    return await query<{ base: string; tabela: string; colunas: string }>(
+      `SELECT base, tabela, colunas FROM agente_schema_cache
+       WHERE cliente_id = $1 AND empresa_id = $2
+       ORDER BY atualizado_em DESC LIMIT 60`,
+      [cliente_id, empresa_id],
+    );
+  } catch (e: any) {
+    console.error('[agentes] falha ao carregar schema cache:', e?.message);
+    return [];
+  }
+}
+
+export async function salvarSchemaCache(
+  cliente_id: string,
+  empresa_id: string,
+  base: string,
+  tabela: string,
+  colunas: string,
+): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO agente_schema_cache (cliente_id, empresa_id, base, tabela, colunas)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (cliente_id, base, tabela)
+       DO UPDATE SET colunas = EXCLUDED.colunas, atualizado_em = NOW()`,
+      [cliente_id, empresa_id, latin1Safe(base), latin1Safe(tabela), latin1Safe(colunas)],
+    );
+  } catch (e: any) {
+    console.error('[agentes] falha ao salvar schema cache:', e?.message);
+  }
+}
+
 export async function atualizarStatusProposta(
   id: string,
   empresa_id: string,

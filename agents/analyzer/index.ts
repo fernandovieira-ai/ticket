@@ -85,7 +85,7 @@ async function analisarDireto(input: AnalisarErroInput): Promise<AnalisarErroOut
   // multi-etapas — dado que a varredura já só roda 1x por erro novo (cache de propostas
   // pendentes evita reprocessar), o custo extra por erro vale a consistência.
   const model     = process.env.AI_MODEL ?? 'claude-sonnet-5';
-  const maxTokens = Number(process.env.AI_MAX_TOKENS ?? 4096);
+  const maxTokens = Number(process.env.AI_MAX_TOKENS ?? 8192);
 
   const response = await criarMensagemComRetry(client, {
     model,

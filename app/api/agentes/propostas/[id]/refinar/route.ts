@@ -73,7 +73,7 @@ ESTRUTURA E TOM:
 
   const response = await criarMensagemComRetry({
     model: MODELO_REFINAR,
-    max_tokens: 4096,
+    max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: user }],
   });

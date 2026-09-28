@@ -61,33 +61,20 @@ async function conectar(cfg: ConexaoCfg, rotulo: string): Promise<pg.Client> {
   }
 }
 
+// AS (Autosystem): o CNPJ da empresa fica em pessoa.cpf, ligado a empresa pelo código (só empresas ativas)
 async function lerCnpjsAS(client: pg.Client, schema: string): Promise<string[]> {
-  const cols = await client.query(
-    `SELECT column_name FROM information_schema.columns
-     WHERE table_schema = $1 AND table_name = 'empresa' ORDER BY ordinal_position`,
-    [schema],
-  );
-  const todas: string[] = cols.rows.map((r: any) => String(r.column_name));
-  if (!todas.length) {
-    throw new ErroVinculo(`A base AS não tem a tabela "empresa" no schema "${schema}", então não dá para conferir o CNPJ.`);
-  }
-  const candidatas = todas.filter((c) => /cnpj|cgc/i.test(c));
-  let coluna = candidatas.length === 1 ? candidatas[0] : undefined;
-  if (!coluna && candidatas.length > 1) {
-    coluna = candidatas.find((c) => /^(cnpj|num_cnpj|nr_cnpj|nro_cnpj)$/i.test(c));
-  }
-  if (!coluna) {
-    throw new ErroVinculo(
-      candidatas.length === 0
-        ? `A tabela "empresa" do AS não tem coluna de CNPJ. Colunas encontradas: ${todas.join(', ')}.`
-        : `A tabela "empresa" do AS tem mais de uma coluna de CNPJ (${candidatas.join(', ')}); não foi possível escolher a correta.`,
+  try {
+    const r = await client.query(
+      `SELECT DISTINCT b.cpf::text AS cnpj
+         FROM ${ident(schema)}.${ident('empresa')} a
+         INNER JOIN ${ident(schema)}.${ident('pessoa')} b ON (a.codigo = b.codigo)
+        WHERE a.codigo IS NOT NULL AND a.flag = 'A' AND b.cpf IS NOT NULL
+        LIMIT 500`,
     );
+    return r.rows.map((x: any) => String(x.cnpj));
+  } catch (e: any) {
+    throw new ErroVinculo(`Não foi possível ler o CNPJ das empresas na base AS (empresa × pessoa): ${e?.message ?? 'erro desconhecido'}. Confira se é mesmo o banco do AS.`);
   }
-  const r = await client.query(
-    `SELECT DISTINCT ${ident(coluna)}::text AS cnpj FROM ${ident(schema)}.${ident('empresa')}
-     WHERE ${ident(coluna)} IS NOT NULL LIMIT 500`,
-  );
-  return r.rows.map((x: any) => String(x.cnpj));
 }
 
 async function lerCnpjsEmsys(client: pg.Client, schema: string): Promise<string[]> {
@@ -124,7 +111,7 @@ export async function validarVinculo(as: ConexaoCfg, emsys: ConexaoCfg): Promise
 
     const fullAS = new Set(brutosAS.map(normalizarCnpj).filter((c): c is string => !!c));
     const fullEm = new Set(brutosEm.map(normalizarCnpj).filter((c): c is string => !!c));
-    if (!fullAS.size) return { ok: false, mensagem: 'A tabela empresa do AS não tem nenhum CNPJ válido (14 dígitos).' };
+    if (!fullAS.size) return { ok: false, mensagem: 'A base AS não retornou nenhuma empresa ativa (flag = A) com CNPJ válido de 14 dígitos em pessoa.cpf.' };
     if (!fullEm.size) return { ok: false, mensagem: 'A tabela tab_empresa do EMSys3 não tem nenhum CNPJ válido (14 dígitos).' };
 
     const raizAS = new Set([...fullAS].map((c) => c.slice(0, 8)));

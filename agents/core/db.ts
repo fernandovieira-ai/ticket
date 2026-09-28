@@ -435,13 +435,6 @@ export async function bancoEmUsoPorOutroCliente(
   return rows[0]?.nome ?? null;
 }
 
-export async function obterBase(id: string, empresa_id: string): Promise<AgenteClienteBase | null> {
-  return queryOne<AgenteClienteBase>(
-    `SELECT * FROM agente_clientes_bases WHERE id = $1 AND empresa_id = $2`,
-    [id, empresa_id],
-  );
-}
-
 export async function criarCliente(
   empresa_id: string,
   dados: Omit<AgenteCliente, 'id' | 'empresa_id' | 'ultimo_scan' | 'criado_em' | 'atualizado_em' | 'vinculo_validado_em' | 'vinculo_cnpjs' | 'vinculo_erro'>,
@@ -541,10 +534,11 @@ export async function deletarCliente(id: string, empresa_id: string): Promise<bo
 // Bases adicionais por cliente
 // ----------------------------------------------------------------
 
+// Só a base EMSys3 é usada pelo agente (além do AS). Bases 'outro' antigas, se existirem, são ignoradas.
 export async function listarBases(cliente_id: string, empresa_id: string): Promise<AgenteClienteBase[]> {
   return query<AgenteClienteBase>(
     `SELECT * FROM agente_clientes_bases
-     WHERE cliente_id = $1 AND empresa_id = $2
+     WHERE cliente_id = $1 AND empresa_id = $2 AND papel = 'emsys'
      ORDER BY nome ASC`,
     [cliente_id, empresa_id],
   );
@@ -608,14 +602,6 @@ export async function atualizarBase(
   const sql = `UPDATE agente_clientes_bases SET ${setClauses.join(', ')} WHERE id = $1 AND empresa_id = $2 RETURNING *`;
   if (client) return ((await client.query(sql, params)).rows[0] as AgenteClienteBase | undefined) ?? null;
   return queryOne<AgenteClienteBase>(sql, params);
-}
-
-export async function deletarBase(id: string, empresa_id: string): Promise<boolean> {
-  const rows = await query(
-    `DELETE FROM agente_clientes_bases WHERE id = $1 AND empresa_id = $2 RETURNING id`,
-    [id, empresa_id],
-  );
-  return rows.length > 0;
 }
 
 // ----------------------------------------------------------------

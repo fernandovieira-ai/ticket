@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { atualizarStatusProposta } from '@/agents/core/db';
+import { atualizarStatusProposta, registrarFalhaAutonomia } from '@/agents/core/db';
+import { assinaturaErro } from '@/agents/core/assinatura';
 import { salvarAprendizado } from '@/agents/core/aprendizado';
 import { marcarReprocessarPainel } from '@/agents/core/painel';
 import { z } from 'zod';
@@ -33,6 +34,12 @@ export async function PATCH(
 
     if (!proposta) {
       return NextResponse.json({ error: 'Proposta não encontrada' }, { status: 404 });
+    }
+
+    // O operador rejeitou a correção proposta: para esta família de erro o agente não merece autonomia
+    // até acumular novos sucessos confirmados.
+    if (parsed.data.status === 'rejeitada') {
+      registrarFalhaAutonomia(session.empresaId, assinaturaErro(proposta.descricao_erro)).catch(() => {});
     }
 
     // Aprender é automático, não uma escolha do operador. Se a correção não tem SQL

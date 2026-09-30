@@ -73,6 +73,10 @@ async function analisarDireto(input: AnalisarErroInput): Promise<AnalisarErroOut
     );
   }
 
+  if (input.caso_analogo?.trim()) {
+    partes.push(`\n\n${input.caso_analogo.slice(0, 1800)}`);
+  }
+
   if (input.dados_reais?.trim()) {
     partes.push(
       `\n\n=== DADOS REAIS DO BANCO (única fonte confiável de nomes/códigos/IDs — use para confirmar e resolver a correção, não apenas sugerir verificação) ===\n${input.dados_reais.slice(0, 4500)}\n=== FIM ===`,

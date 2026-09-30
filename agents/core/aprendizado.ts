@@ -2,7 +2,7 @@
 // pelo backend (aprovar sem SQL, ou aplicar SQL com sucesso), nunca por escolha manual
 // do operador na tela. Alimenta as duas camadas de memória: agente_regras (reaplicação
 // instantânea do mesmo erro exato) e agente_conhecimento (lição generalizada, deduplicada).
-import { criarOuAtualizarRegra, upsertConhecimento } from './db';
+import { buscarLicoesRelevantes, criarOuAtualizarRegra, upsertConhecimento } from './db';
 import { extrairLicao } from './licoes';
 import type { AgenteProposta } from './types';
 
@@ -25,7 +25,11 @@ export async function salvarAprendizado(empresa_id: string, proposta: AgenteProp
 
   // Extrai a lição GENERALIZADA (sem valores específicos desta ocorrência) em paralelo —
   // não bloqueia a resposta ao operador, é permitido terminar depois.
-  extrairLicao(proposta)
+  // O extrator vê as lições já salvas sobre o mesmo assunto para reaproveitar o tópico e mesclar o
+  // resumo, em vez de criar uma linha quase duplicada (ou sobrescrever e perder o que a antiga dizia).
+  buscarLicoesRelevantes(empresa_id, null, `${proposta.titulo} ${proposta.analise.slice(0, 400)}`, 8)
+    .catch(() => [])
+    .then((existentes) => extrairLicao(proposta, existentes))
     .then((licao) => {
       if (!licao) return;
       return upsertConhecimento(empresa_id, {

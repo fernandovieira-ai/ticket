@@ -1,6 +1,5 @@
 // Lógica de varredura automática de erros nos bancos dos clientes.
 // Chamada pelo endpoint /api/agentes/varrer (manual) e /api/cron/agentes/varrer (agendado).
-import { createHash } from 'node:crypto';
 import pg from 'pg';
 import {
   listarClientes,
@@ -15,17 +14,27 @@ import {
   degradarRegra,
   obterPropostaParaReanalise,
   criarProposta,
-  atualizarStatusProposta,
-  listarConhecimentoAtivo,
+  buscarLicoesRelevantes,
+  buscarRegraAnaloga,
+  preencherAssinaturasRegras,
+  registrarFalhaAutonomia,
   listarAguardandoComCodigoPainel,
   listarAguardandoSemCodigoPainel,
   marcarObsoleta,
 } from '../core/db';
 import { processarErro } from './index';
+import { assinaturaErro, hashErro } from '../core/assinatura';
+import { tentarAutoAplicar, confirmarAplicadas } from '../core/autonomia';
 import { investigarErro, type FonteBase } from '../core/investigar';
 import { descriptografar } from '../core/crypto';
-import { garantirVinculo } from '../core/vinculo';
-import type { BaseContexto, AnalisarErroOutput, TipoCorrecao, NivelRisco } from '../core/types';
+import { garantirVinculo, type ConexaoCfg } from '../core/vinculo';
+import { classificarErro, type InfoAlmoxarifado } from '../core/classificar';
+import { obterRegrasPainel, resolverRegra, MODOS_SEM_ANALISE_IA } from '../core/regras-painel';
+import { almoxarifadosDe } from '../core/painel-erros';
+import type {
+  BaseContexto, AnalisarErroOutput, TipoCorrecao, NivelRisco, AgenteRegra,
+  AgenteConfig, AgenteCliente, AgenteClienteBase, ProcessarErroResult,
+} from '../core/types';
 
 export interface ResultadoVarredura {
   cliente_id: string;
@@ -37,6 +46,8 @@ export interface ResultadoVarredura {
   erros_reanalise: number;   // foram aplicados mas voltaram, ou foram rejeitados/falharam
   erros_ignorados: number;
   erros_obsoletos: number;  // pendentes cujo erro já não existe mais no painel (resolvido por fora)
+  erros_auto_aplicados: number;   // SQL aplicado pelo próprio agente (autonomia)
+  correcoes_confirmadas: number;  // correções aplicadas cujo erro comprovadamente sumiu (+1 sucesso na família)
   erro?: string;
 }
 
@@ -75,8 +86,15 @@ function sanitizarTexto(s: string): string {
   return out;
 }
 
-function hashErro(descricao: string): string {
-  return createHash('sha256').update(descricao.trim().toLowerCase()).digest('hex').slice(0, 32);
+// Caso já resolvido e aprovado de OUTRA ocorrência da mesma família de erro. Os valores específicos dele
+// (códigos, IDs) não valem para o erro atual — a IA reaproveita a estratégia e confirma os valores com dados reais.
+function montarCasoAnalogo(r: AgenteRegra): string {
+  return [
+    'CASO ANÁLOGO JÁ RESOLVIDO E APROVADO — é de OUTRA ocorrência do mesmo tipo de erro. Os valores específicos dele (códigos, IDs, nomes) NÃO valem para o erro atual: reaproveite a ESTRATÉGIA e confirme cada valor com dados reais deste erro.',
+    `Erro naquele caso: ${r.pattern.slice(0, 250)}`,
+    `Correção aprovada: ${r.solucao.slice(0, 500)}`,
+    r.sql_correcao ? `SQL aprovado (modelo, não copie os valores): ${r.sql_correcao.slice(0, 600)}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 async function buscarErrosCliente(cliente: {
@@ -275,6 +293,122 @@ function extrairPalavrasChave(descricao: string): string[] {
     .slice(0, 8);
 }
 
+export interface ParamsAnaliseIA {
+  empresa_id: string;
+  config: AgenteConfig | null;
+  cliente: AgenteCliente;
+  basesAtivas: AgenteClienteBase[];
+  erro: { descricao: string; contexto?: string; stack?: string; codigo_painel?: string };
+  hash: string;
+  ehReanalise: boolean;
+  contextoReanalise?: string;
+  /** Objetivo da investigação; o padrão busca a correção definitiva de UM erro */
+  objetivo?: string;
+  /** true (varredura): aprende a regra e pode aplicar sozinha. false (sob demanda): só gera a proposta */
+  automatico: boolean;
+}
+
+export interface ResultadoAnaliseIA {
+  resultado: ProcessarErroResult;
+  autoAplicada: boolean;
+}
+
+const OBJETIVO_PADRAO =
+  'Investigar a causa raiz e reunir os dados reais necessários para uma correção definitiva e pronta para executar — sem intervenção manual depois.';
+
+/**
+ * Investiga o erro contra as bases reais e gera a proposta (aguardando). Usada pela varredura e pela análise
+ * sob demanda do Painel de Erros. Lança se a análise falhar.
+ */
+export async function analisarComIA(p: ParamsAnaliseIA): Promise<ResultadoAnaliseIA> {
+  const { empresa_id, config, cliente, basesAtivas, erro, hash, ehReanalise, contextoReanalise } = p;
+
+  // Coleta contexto das bases adicionais + schema do banco principal
+  const palavras = extrairPalavrasChave(erro.descricao);
+
+  let basesContexto: BaseContexto[] = [];
+  if (basesAtivas.length > 0) {
+    const contextos = await Promise.all(basesAtivas.map((b) => coletarContextoBase(b, palavras)));
+    basesContexto = contextos.filter((c): c is BaseContexto => c !== null);
+  }
+
+  const schemaPrincipal = await coletarSchemaPrincipal(cliente, palavras);
+
+  // Conhecimento escolhido por relevância PARA ESTE erro (não as N mais reforçadas da empresa) e,
+  // se já resolvemos um erro da mesma família com valores diferentes, esse caso como modelo.
+  const analoga = ehReanalise
+    ? null
+    : await buscarRegraAnaloga(empresa_id, assinaturaErro(erro.descricao).hash, hash).catch(() => null);
+  const casoAnalogo = analoga ? montarCasoAnalogo(analoga) : undefined;
+  const licoes = await buscarLicoesRelevantes(empresa_id, cliente.id, `${erro.descricao} ${erro.contexto ?? ''}`, 8)
+    .then((ls) => ls.map((l) => l.resumo))
+    .catch(() => [] as string[]);
+
+  // Monta contexto final: re-análise tem prioridade, depois contexto do erro original
+  const contextoFinal = contextoReanalise
+    ? [contextoReanalise, erro.contexto].filter(Boolean).join('\n\n')
+    : erro.contexto;
+
+  // Investiga contra o(s) banco(s) real(is) antes de analisar — evita respostas
+  // genéricas tipo "verificar se existe" e resolve a causa raiz com dados reais.
+  const fontes: FonteBase[] = [
+    { nome: 'principal', config: cliente },
+    ...basesAtivas.map((b) => ({ nome: b.nome, config: b })),
+  ];
+  const dadosReais = await investigarErro(
+    erro.descricao,
+    p.objetivo ?? OBJETIVO_PADRAO,
+    contextoFinal ?? '',
+    fontes,
+    { maxIteracoes: 10, licoes: casoAnalogo ? [casoAnalogo, ...licoes] : licoes, cache: { cliente_id: cliente.id, empresa_id } },
+  ).catch((e: any) => {
+    console.error(`[analise] investigação falhou para ${cliente.nome}:`, e?.message);
+    return '';
+  });
+
+  const resultado = await processarErro({
+    empresa_id,
+    descricao_erro:  erro.descricao,
+    contexto:        contextoFinal,
+    stack_trace:     erro.stack,
+    cliente_id:      cliente.id,
+    erro_hash:       hash,
+    bases_contexto:  basesContexto.length > 0 ? basesContexto : undefined,
+    schema_tabelas:  schemaPrincipal || undefined,
+    dados_reais:     dadosReais || undefined,
+    codigo_painel:   erro.codigo_painel,
+    caso_analogo:    casoAnalogo,
+  });
+
+  let autoAplicada = false;
+  // Só a varredura aprende regra sozinha e pode aplicar sem operador
+  if (p.automatico && resultado?.proposta.analise) {
+    // Atualiza a regra aprendida (ou cria nova) com a nova análise
+    const baseNomes = basesContexto.map((b) => b.nome);
+    await criarOuAtualizarRegra(empresa_id, {
+      cliente_id:        cliente.id,
+      pattern:           erro.descricao.slice(0, 500),
+      pattern_hash:      hash,
+      resumo:            resultado.proposta.titulo,
+      solucao:           resultado.proposta.correcao_proposta,
+      bases_consultadas: ['principal', ...baseNomes],
+      // Re-análise começa com confiança menor (precisa ser validada)
+      confianca: ehReanalise ? 0.65
+        : resultado.proposta.nivel_risco === 'baixo'  ? 0.90
+        : resultado.proposta.nivel_risco === 'medio'  ? 0.80
+        : 0.70,
+    }).catch(() => {});
+
+    // Autonomia também para erro novo (valores diferentes de casos antigos): se o tipo de erro foi marcado
+    // pelo operador (ou a família tem sucessos confirmados), o SQL gerado agora é aplicado sozinho.
+    const auto = await tentarAutoAplicar(empresa_id, resultado.proposta, config);
+    autoAplicada = auto.aplicada;
+    if (!auto.aplicada) console.log(`[varrer] ${cliente.nome}: aguardando operador — ${auto.motivo}`);
+  }
+
+  return { resultado, autoAplicada };
+}
+
 export async function varrerClientes(empresa_id: string): Promise<ResultadoVarredura[]> {
   const [clientes, config] = await Promise.all([
     listarClientes(empresa_id),
@@ -288,10 +422,8 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
   // Inclui clientes com query customizada OU com análise de painel ativa
   const ativos = clientes.filter((c) => c.ativo && (c.query_erros || c.analise_painel));
 
-  // Lições generalizadas de correções já aprovadas — reusadas em toda a varredura desta empresa
-  const licoesAprendidas = await listarConhecimentoAtivo(empresa_id)
-    .then((ls) => ls.map((l) => l.resumo))
-    .catch(() => [] as string[]);
+  // Regras salvas antes da coluna de assinatura existir ganham a assinatura (permite achar caso análogo)
+  await preencherAssinaturasRegras(empresa_id);
   const resultados: ResultadoVarredura[] = [];
 
   for (const cliente of ativos) {
@@ -305,6 +437,8 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
       erros_reanalise:   0,
       erros_ignorados:   0,
       erros_obsoletos:   0,
+      erros_auto_aplicados:  0,
+      correcoes_confirmadas: 0,
     };
 
     // Trava de segurança: só opera no cliente se AS e EMSys3 forem comprovadamente da mesma empresa (CNPJ)
@@ -319,6 +453,15 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
     try {
       const erros = await buscarErrosCliente(cliente);
       resultado.erros_encontrados = erros.length;
+
+      // Correções aplicadas antes cujo erro comprovadamente sumiu: cada uma soma um sucesso confirmado
+      // para a família do erro — é o que libera a aplicação automática nas próximas ocorrências.
+      // A lista só prova "sumiu" quando está completa: vazia, ou do painel abaixo do limite de linhas.
+      const listaCompleta = erros.length === 0 || (cliente.analise_painel && erros.length < PAINEL_LIMIT);
+      resultado.correcoes_confirmadas = await confirmarAplicadas(empresa_id, cliente, erros, listaCompleta).catch((e: any) => {
+        console.error(`[varrer] falha ao confirmar correções (${cliente.nome}):`, e?.message);
+        return 0;
+      });
 
       // Propostas pendentes cujo erro pode ter sido resolvido por fora do sistema (ex:
       // alguém corrigiu manualmente no painel AS) — verifica direcionadamente por código,
@@ -364,9 +507,39 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
       const basesAdicionais = await listarBases(cliente.id, empresa_id).catch(() => []);
       const basesAtivas = basesAdicionais.filter((b) => b.ativo);
 
+      // Erros do painel builtin com ação própria e determinística (combustível, ajuste de forma de
+      // pagamento, ajuste de estoque) não passam pela IA aqui — têm sua ação na tela Painel de Erros.
+      // Evita gastar IA e criar proposta que dá a entender que precisa de aprovação de SQL.
+      let almoxMap: Map<number, InfoAlmoxarifado> | null = null;
+      let regrasPainel = new Map<string, ReturnType<typeof resolverRegra>>();
+      if (cliente.analise_painel) {
+        const baseEmsys = basesAtivas.find((b) => b.papel === 'emsys');
+        if (baseEmsys) {
+          try {
+            const cfgEm: ConexaoCfg = { ...baseEmsys, db_senha: descriptografar(baseEmsys.db_senha) };
+            almoxMap = await almoxarifadosDe(cfgEm, erros.map((e) => e.descricao));
+          } catch (e: any) {
+            console.error(`[varrer] falha ao ler almoxarifados (${cliente.nome}):`, e?.message);
+          }
+        }
+        regrasPainel = await obterRegrasPainel(empresa_id).catch(() => new Map());
+      }
+
       for (const erro of erros) {
+        if (cliente.analise_painel && erro.codigo_painel) {
+          const categoria = classificarErro(erro.descricao, null, almoxMap).categoria;
+          const regra = resolverRegra(regrasPainel, categoria);
+          if (MODOS_SEM_ANALISE_IA.includes(regra.modo)) {
+            resultado.erros_ignorados++;
+            continue;
+          }
+        }
+
         const hash = hashErro(erro.descricao);
-        const existente = await verificarAnalise(empresa_id, hash);
+        const ultima = await verificarAnalise(empresa_id, hash);
+        // Erro que volta DEPOIS de uma correção já confirmada (o erro tinha sumido) é uma nova ocorrência,
+        // não uma recaída: segue o fluxo normal e pode reaproveitar/aplicar a regra aprendida.
+        const existente = ultima?.status === 'aplicada' && ultima.confirmado_em ? null : ultima;
 
         // Contexto extra para re-análise (quando correção anterior não funcionou)
         let ehReanalise = false;
@@ -395,8 +568,10 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
                 linhas.push('Sugira uma abordagem diferente da tentativa anterior.');
                 contextoReanalise = linhas.join('\n');
               }
-              // Degrada a regra que não funcionou para não ser reutilizada
+              // Degrada a regra que não funcionou para não ser reutilizada, e tira a confiança da família
+              // (volta a exigir operador até novos sucessos confirmados)
               await degradarRegra(empresa_id, hash).catch(() => {});
+              await registrarFalhaAutonomia(empresa_id, assinaturaErro(erro.descricao)).catch(() => {});
               console.log(`[varrer] erro reapareceu após correção (${cliente.nome}): ${erro.descricao.slice(0, 80)}`);
               break;
             }
@@ -445,13 +620,11 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
                   empresa_id, erro.descricao, analise,
                   { id: cliente.id, nome: cliente.nome }, hash, erro.codigo_painel,
                 );
-                const deveAutoAprovar =
-                  config?.ativo === true &&
-                  analise.nivel_risco !== 'critico' &&
-                  config.auto_aprovar_tipos.includes(analise.tipo);
-                if (deveAutoAprovar) {
-                  await atualizarStatusProposta(proposta.id, empresa_id, 'aprovada');
-                }
+                // Autonomia: família com sucessos confirmados → o agente aplica sozinho. Senão, fluxo normal.
+                const auto = await tentarAutoAplicar(empresa_id, proposta, config);
+                // Sem aplicação automática a proposta fica "aguardando" o operador (sem auto-aprovação)
+                if (auto.aplicada) resultado.erros_auto_aplicados++;
+                else console.log(`[varrer] ${cliente.nome}: aguardando operador — ${auto.motivo}`);
                 resultado.erros_analisados++;
               } catch (e: any) {
                 console.error(`[varrer] erro ao reaplicar regra (SQL salvo) ${cliente.nome}:`, e?.message);
@@ -479,73 +652,12 @@ export async function varrerClientes(empresa_id: string): Promise<ResultadoVarre
           }
         }
 
-        // Coleta contexto das bases adicionais + schema do banco principal
-        const palavras = extrairPalavrasChave(erro.descricao);
-
-        let basesContexto: BaseContexto[] = [];
-        if (basesAtivas.length > 0) {
-          const contextos = await Promise.all(
-            basesAtivas.map((b) => coletarContextoBase(b, palavras)),
-          );
-          basesContexto = contextos.filter((c): c is BaseContexto => c !== null);
-        }
-
-        const schemaPrincipal = await coletarSchemaPrincipal(cliente, palavras);
-
-        // Monta contexto final: re-análise tem prioridade, depois contexto do erro original
-        const contextoFinal = contextoReanalise
-          ? [contextoReanalise, erro.contexto].filter(Boolean).join('\n\n')
-          : erro.contexto;
-
-        // Investiga contra o(s) banco(s) real(is) antes de analisar — evita respostas
-        // genéricas tipo "verificar se existe" e resolve a causa raiz com dados reais.
-        const fontes: FonteBase[] = [
-          { nome: 'principal', config: cliente },
-          ...basesAtivas.map((b) => ({ nome: b.nome, config: b })),
-        ];
-        const dadosReais = await investigarErro(
-          erro.descricao,
-          'Investigar a causa raiz e reunir os dados reais necessários para uma correção definitiva e pronta para executar — sem intervenção manual depois.',
-          contextoFinal ?? '',
-          fontes,
-          { maxIteracoes: 10, licoes: licoesAprendidas, cache: { cliente_id: cliente.id, empresa_id } },
-        ).catch((e: any) => {
-          console.error(`[varrer] investigação falhou para ${cliente.nome}:`, e?.message);
-          return '';
-        });
-
+        // Análise por IA: investiga as bases, gera a proposta, aprende a regra e (autonomia) aplica se a família merece
         try {
-          const proposta = await processarErro({
-            empresa_id,
-            descricao_erro:  erro.descricao,
-            contexto:        contextoFinal,
-            stack_trace:     erro.stack,
-            cliente_id:      cliente.id,
-            erro_hash:       hash,
-            bases_contexto:  basesContexto.length > 0 ? basesContexto : undefined,
-            schema_tabelas:  schemaPrincipal || undefined,
-            dados_reais:     dadosReais || undefined,
-            codigo_painel:   erro.codigo_painel,
+          const r = await analisarComIA({
+            empresa_id, config, cliente, basesAtivas, erro, hash, ehReanalise, contextoReanalise, automatico: true,
           });
-
-          // Atualiza a regra aprendida (ou cria nova) com a nova análise
-          if (proposta?.proposta.analise) {
-            const baseNomes = basesContexto.map((b) => b.nome);
-            await criarOuAtualizarRegra(empresa_id, {
-              cliente_id:        cliente.id,
-              pattern:           erro.descricao.slice(0, 500),
-              pattern_hash:      hash,
-              resumo:            proposta.proposta.titulo,
-              solucao:           proposta.proposta.correcao_proposta,
-              bases_consultadas: ['principal', ...baseNomes],
-              // Re-análise começa com confiança menor (precisa ser validada)
-              confianca: ehReanalise ? 0.65
-                : proposta.proposta.nivel_risco === 'baixo'  ? 0.90
-                : proposta.proposta.nivel_risco === 'medio'  ? 0.80
-                : 0.70,
-            }).catch(() => {});
-          }
-
+          if (r.autoAplicada) resultado.erros_auto_aplicados++;
           resultado.erros_analisados++;
         } catch (e: any) {
           console.error(`[varrer] erro ao analisar para ${cliente.nome}:`, e?.message);

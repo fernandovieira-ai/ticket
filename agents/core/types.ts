@@ -2,6 +2,21 @@ export type PropostaStatus = 'aguardando' | 'aprovada' | 'rejeitada' | 'aplicada
 export type TipoCorrecao = 'configuracao' | 'dados' | 'codigo' | 'infraestrutura' | 'outro';
 export type NivelRisco = 'baixo' | 'medio' | 'alto' | 'critico';
 
+const TIPOS_CORRECAO: readonly TipoCorrecao[] = ['configuracao', 'dados', 'codigo', 'infraestrutura', 'outro'];
+// Nomes antigos que ainda podem estar salvos em agente_config.auto_aprovar_tipos (a migration que
+// renomeou os tipos só atualizou agente_propostas)
+const TIPO_CORRECAO_LEGADO: Record<string, TipoCorrecao> = { query_sql: 'dados', logica: 'codigo', permissao: 'configuracao' };
+
+/** Converte nomes antigos de tipo para os atuais, descarta valores desconhecidos e remove duplicados. */
+export function normalizarTiposCorrecao(tipos: readonly string[] | null | undefined): TipoCorrecao[] {
+  const saida = new Set<TipoCorrecao>();
+  for (const t of tipos ?? []) {
+    const atual = TIPO_CORRECAO_LEGADO[t] ?? t;
+    if ((TIPOS_CORRECAO as readonly string[]).includes(atual)) saida.add(atual as TipoCorrecao);
+  }
+  return [...saida];
+}
+
 export interface InstrucaoRefinamento {
   instrucao: string;
   titulo: string;
@@ -33,6 +48,10 @@ export interface AgenteProposta {
   instrucoes_anteriores: InstrucaoRefinamento[];
   aplicado_em: string | null;
   aplicacao_erro: string | null;
+  /** true quando o próprio agente aplicou o SQL (autonomia), sem clique de operador */
+  aplicado_por_agente: boolean;
+  /** Quando a varredura confirmou que o erro realmente sumiu depois de aplicada */
+  confirmado_em: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -42,6 +61,12 @@ export interface AgenteConfig {
   empresa_id: string;
   ativo: boolean;
   auto_aprovar_tipos: TipoCorrecao[];
+  /** Liga a aplicação automática de SQL, por família de erro com histórico de sucessos confirmados */
+  autonomia_ativa: boolean;
+  /** Sucessos confirmados seguidos que uma família de erro precisa ter antes de ser aplicada sozinha */
+  autonomia_min_sucessos: number;
+  /** Máximo de aplicações automáticas por empresa nas últimas 24h */
+  autonomia_limite_diario: number;
   notificar_email: boolean;
   notificar_whatsapp: boolean;
   webhook_token: string;
@@ -141,8 +166,26 @@ export interface AgenteRegra {
   confianca: number;
   vezes_aplicada: number;
   ativa: boolean;
+  /** Hash da descrição do erro sem valores específicos — liga regras de uma mesma família de erros */
+  assinatura_hash: string | null;
   criado_em: string;
   atualizado_em: string;
+}
+
+/** Confiança acumulada por família de erro (assinatura) — decide se o agente pode aplicar sozinho */
+export interface AgenteAutonomia {
+  empresa_id: string;
+  assinatura_hash: string;
+  assinatura: string;
+  sucessos_confirmados: number;
+  falhas_consecutivas: number;
+  total_sucessos: number;
+  total_falhas: number;
+  ultima_confirmacao_em: string | null;
+  ultima_falha_em: string | null;
+  /** Operador marcou este tipo de erro para o agente executar sozinho (independe da autonomia geral) */
+  auto_aplicar?: boolean;
+  auto_aplicar_em?: string | null;
 }
 
 export interface AnalisarErroInput {
@@ -156,6 +199,8 @@ export interface AnalisarErroInput {
   schema_tabelas?: string; // definições de colunas das tabelas relevantes do cliente
   dados_reais?: string; // resultado de queries de investigação executadas contra o banco real
   codigo_painel?: string; // "codigo" da linha no painel AS, quando a origem foi o painel builtin
+  /** Caso semelhante já resolvido e aprovado antes (outra ocorrência da mesma família de erro) */
+  caso_analogo?: string;
 }
 
 /** Contexto coletado de uma base adicional para enriquecer a analise */

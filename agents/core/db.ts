@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { query, queryOne, transaction } from '@/lib/db';
 import { criptografar } from './crypto';
+import { assinaturaErro } from './assinatura';
 import type {
   AgenteProposta,
   AgenteConfig,
@@ -8,6 +9,7 @@ import type {
   AgenteClienteBase,
   AgenteRegra,
   AgenteConhecimento,
+  AgenteAutonomia,
   AnalisarErroOutput,
   TipoCorrecao,
   NivelRisco,
@@ -59,9 +61,9 @@ export async function criarProposta(
 export async function verificarAnalise(
   empresa_id: string,
   hash: string,
-): Promise<{ id: string; status: import('./types').PropostaStatus } | null> {
-  return queryOne<{ id: string; status: import('./types').PropostaStatus }>(
-    `SELECT id, status FROM agente_propostas
+): Promise<{ id: string; status: import('./types').PropostaStatus; confirmado_em: string | null } | null> {
+  return queryOne<{ id: string; status: import('./types').PropostaStatus; confirmado_em: string | null }>(
+    `SELECT id, status, confirmado_em FROM agente_propostas
      WHERE empresa_id = $1 AND erro_hash = $2
        AND criado_em > NOW() - INTERVAL '7 days'
      ORDER BY criado_em DESC LIMIT 1`,
@@ -310,17 +312,26 @@ export async function upsertConfig(
     auto_aprovar_tipos?: TipoCorrecao[];
     notificar_email?: boolean;
     notificar_whatsapp?: boolean;
+    autonomia_ativa?: boolean;
+    autonomia_min_sucessos?: number;
+    autonomia_limite_diario?: number;
   },
 ): Promise<AgenteConfig> {
+  // Campos de autonomia omitidos preservam o valor atual (o padrão de uma config nova é DESLIGADO)
   const rows = await query<AgenteConfig>(
-    `INSERT INTO agente_config (empresa_id, ativo, auto_aprovar_tipos, notificar_email, notificar_whatsapp)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO agente_config
+       (empresa_id, ativo, auto_aprovar_tipos, notificar_email, notificar_whatsapp,
+        autonomia_ativa, autonomia_min_sucessos, autonomia_limite_diario)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6, FALSE), COALESCE($7, 2), COALESCE($8, 10))
      ON CONFLICT (empresa_id) DO UPDATE SET
-       ativo               = EXCLUDED.ativo,
-       auto_aprovar_tipos  = EXCLUDED.auto_aprovar_tipos,
-       notificar_email     = EXCLUDED.notificar_email,
-       notificar_whatsapp  = EXCLUDED.notificar_whatsapp,
-       atualizado_em       = NOW()
+       ativo                   = EXCLUDED.ativo,
+       auto_aprovar_tipos      = EXCLUDED.auto_aprovar_tipos,
+       notificar_email         = EXCLUDED.notificar_email,
+       notificar_whatsapp      = EXCLUDED.notificar_whatsapp,
+       autonomia_ativa         = COALESCE($6, agente_config.autonomia_ativa),
+       autonomia_min_sucessos  = COALESCE($7, agente_config.autonomia_min_sucessos),
+       autonomia_limite_diario = COALESCE($8, agente_config.autonomia_limite_diario),
+       atualizado_em           = NOW()
      RETURNING *`,
     [
       empresa_id,
@@ -328,6 +339,9 @@ export async function upsertConfig(
       dados.auto_aprovar_tipos ?? [],
       dados.notificar_email ?? false,
       dados.notificar_whatsapp ?? false,
+      dados.autonomia_ativa ?? null,
+      dados.autonomia_min_sucessos ?? null,
+      dados.autonomia_limite_diario ?? null,
     ],
   );
   return rows[0];
@@ -650,9 +664,10 @@ export async function criarOuAtualizarRegra(
 ): Promise<AgenteRegra> {
   const rows = await query<AgenteRegra>(
     `INSERT INTO agente_regras
-       (empresa_id, cliente_id, pattern, pattern_hash, resumo, solucao, sql_correcao, base_alvo, tipo, nivel_risco, bases_consultadas, confianca)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       (empresa_id, cliente_id, pattern, pattern_hash, resumo, solucao, sql_correcao, base_alvo, tipo, nivel_risco, bases_consultadas, confianca, assinatura_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (empresa_id, pattern_hash) DO UPDATE SET
+       assinatura_hash   = EXCLUDED.assinatura_hash,
        resumo            = EXCLUDED.resumo,
        solucao           = EXCLUDED.solucao,
        -- só sobrescreve o SQL aprendido quando o novo vier preenchido — preserva um SQL
@@ -678,6 +693,7 @@ export async function criarOuAtualizarRegra(
       dados.nivel_risco ?? null,
       dados.bases_consultadas,
       dados.confianca,
+      assinaturaErro(dados.pattern).hash,
     ],
   );
   return rows[0];
@@ -703,6 +719,14 @@ export async function degradarRegra(empresa_id: string, pattern_hash: string): P
 }
 
 /** Busca campos relevantes de uma proposta para compor contexto de re-análise. */
+export async function obterPropostaPorId(id: string, empresa_id: string): Promise<AgenteProposta | null> {
+  return queryOne<AgenteProposta>(
+    `SELECT *, NULL::text AS aprovado_por_nome, NULL::text AS aplicacao_erro
+       FROM agente_propostas WHERE id = $1 AND empresa_id = $2`,
+    [id, empresa_id],
+  );
+}
+
 export async function obterPropostaParaReanalise(id: string): Promise<{
   sql_correcao: string | null;
   correcao_proposta: string;
@@ -761,4 +785,191 @@ export async function upsertConhecimento(
     [empresa_id, dados.cliente_id ?? null, dados.topico.slice(0, 120), latin1Safe(dados.resumo)],
   );
   return rows[0];
+}
+
+/**
+ * Lições mais relevantes para um texto (erro + contexto), por busca full-text com OR entre os termos —
+ * websearch/plainto puros exigiriam TODOS os termos na mesma lição e quase nunca casariam com uma
+ * mensagem de erro real. Se nada casar, cai nas lições mais reforçadas (comportamento antigo, mas com
+ * limite menor) para não deixar o prompt sem nenhum conhecimento.
+ */
+export async function buscarLicoesRelevantes(
+  empresa_id: string,
+  cliente_id: string | null,
+  texto: string,
+  limite = 8,
+): Promise<AgenteConhecimento[]> {
+  const relevantes = await query<AgenteConhecimento>(
+    // Só ficam as lições com rank de pelo menos 25% do melhor: casar apenas com palavras comuns
+    // ("tabela", "erro") não é relevância e só gasta token do prompt.
+    `WITH q AS (
+       SELECT NULLIF(replace(plainto_tsquery('portuguese', $3)::text, ' & ', ' | '), '')::tsquery AS q
+     ), r AS (
+       SELECT k.*, ts_rank(to_tsvector('portuguese', k.topico || ' ' || k.resumo), q.q) AS rank
+         FROM agente_conhecimento k, q
+        WHERE k.empresa_id = $1 AND k.ativa = TRUE
+          AND (k.cliente_id IS NULL OR k.cliente_id = $2::uuid)
+          AND q.q IS NOT NULL
+          AND to_tsvector('portuguese', k.topico || ' ' || k.resumo) @@ q.q
+     )
+     SELECT r.id, r.empresa_id, r.cliente_id, r.topico, r.resumo, r.vezes_reforcada, r.ativa, r.criado_em, r.atualizado_em
+       FROM r
+      WHERE r.rank >= (SELECT MAX(rank) FROM r) * 0.25
+      ORDER BY r.rank DESC, r.vezes_reforcada DESC
+      LIMIT $4`,
+    [empresa_id, cliente_id, texto.slice(0, 1500), limite],
+  );
+  if (relevantes.length > 0) return relevantes;
+
+  return query<AgenteConhecimento>(
+    `SELECT * FROM agente_conhecimento
+      WHERE empresa_id = $1 AND ativa = TRUE AND (cliente_id IS NULL OR cliente_id = $2::uuid)
+      ORDER BY vezes_reforcada DESC LIMIT $3`,
+    [empresa_id, cliente_id, Math.min(limite, 5)],
+  );
+}
+
+// ----------------------------------------------------------------
+// Autonomia: confiança por família de erro (assinatura)
+// ----------------------------------------------------------------
+
+/** Caso semelhante já resolvido: regra validada, com SQL, de OUTRA ocorrência da mesma assinatura. */
+export async function buscarRegraAnaloga(
+  empresa_id: string,
+  assinatura_hash: string,
+  excluirPatternHash: string,
+): Promise<AgenteRegra | null> {
+  return queryOne<AgenteRegra>(
+    `SELECT * FROM agente_regras
+      WHERE empresa_id = $1 AND assinatura_hash = $2 AND pattern_hash <> $3
+        AND ativa = TRUE AND sql_correcao IS NOT NULL AND confianca >= 0.85
+      ORDER BY confianca DESC, vezes_aplicada DESC, atualizado_em DESC
+      LIMIT 1`,
+    [empresa_id, assinatura_hash, excluirPatternHash],
+  );
+}
+
+/** Regras salvas antes da coluna assinatura_hash existir: calcula e preenche (barato, em lote). */
+export async function preencherAssinaturasRegras(empresa_id: string): Promise<void> {
+  try {
+    const pendentes = await query<{ id: string; pattern: string }>(
+      `SELECT id, pattern FROM agente_regras
+        WHERE empresa_id = $1 AND assinatura_hash IS NULL LIMIT 500`,
+      [empresa_id],
+    );
+    for (const r of pendentes) {
+      await query(`UPDATE agente_regras SET assinatura_hash = $1 WHERE id = $2`, [assinaturaErro(r.pattern).hash, r.id]);
+    }
+  } catch (e: any) {
+    console.error('[agentes] falha ao preencher assinaturas das regras:', e?.message);
+  }
+}
+
+export async function obterAutonomia(empresa_id: string, assinatura_hash: string): Promise<AgenteAutonomia | null> {
+  return queryOne<AgenteAutonomia>(
+    `SELECT * FROM agente_autonomia WHERE empresa_id = $1 AND assinatura_hash = $2`,
+    [empresa_id, assinatura_hash],
+  );
+}
+
+/** O erro sumiu depois da correção aplicada: +1 sucesso confirmado para a família. */
+export async function registrarSucessoAutonomia(
+  empresa_id: string,
+  assinatura: { hash: string; normalizada: string },
+): Promise<void> {
+  await query(
+    `INSERT INTO agente_autonomia
+       (empresa_id, assinatura_hash, assinatura, sucessos_confirmados, total_sucessos, ultima_confirmacao_em)
+     VALUES ($1, $2, $3, 1, 1, NOW())
+     ON CONFLICT (empresa_id, assinatura_hash) DO UPDATE SET
+       sucessos_confirmados  = agente_autonomia.sucessos_confirmados + 1,
+       total_sucessos        = agente_autonomia.total_sucessos + 1,
+       falhas_consecutivas   = 0,
+       ultima_confirmacao_em = NOW(),
+       atualizado_em         = NOW()`,
+    [empresa_id, assinatura.hash, assinatura.normalizada],
+  );
+}
+
+/** Recaída, SQL que falhou ou rejeição humana: zera os sucessos seguidos — volta a exigir humano. */
+export async function registrarFalhaAutonomia(
+  empresa_id: string,
+  assinatura: { hash: string; normalizada: string },
+): Promise<void> {
+  await query(
+    `INSERT INTO agente_autonomia
+       (empresa_id, assinatura_hash, assinatura, sucessos_confirmados, falhas_consecutivas, total_falhas, ultima_falha_em)
+     VALUES ($1, $2, $3, 0, 1, 1, NOW())
+     ON CONFLICT (empresa_id, assinatura_hash) DO UPDATE SET
+       sucessos_confirmados = 0,
+       falhas_consecutivas  = agente_autonomia.falhas_consecutivas + 1,
+       total_falhas         = agente_autonomia.total_falhas + 1,
+       ultima_falha_em      = NOW(),
+       atualizado_em        = NOW()`,
+    [empresa_id, assinatura.hash, assinatura.normalizada],
+  );
+}
+
+/**
+ * Marca (ou desmarca) um tipo de erro para o agente executar sozinho. A marcação é decisão do operador
+ * e independe dos sucessos confirmados; as travas de segurança do `tentarAutoAplicar` continuam valendo.
+ */
+export async function definirAutoAplicar(
+  empresa_id: string,
+  assinatura: { hash: string; normalizada: string },
+  ligado: boolean,
+  usuario_id?: string | null,
+): Promise<void> {
+  await query(
+    `INSERT INTO agente_autonomia
+       (empresa_id, assinatura_hash, assinatura, auto_aplicar, auto_aplicar_em, auto_aplicar_por)
+     VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN NOW() ELSE NULL END, CASE WHEN $4 THEN $5::uuid ELSE NULL END)
+     ON CONFLICT (empresa_id, assinatura_hash) DO UPDATE SET
+       auto_aplicar     = EXCLUDED.auto_aplicar,
+       auto_aplicar_em  = EXCLUDED.auto_aplicar_em,
+       auto_aplicar_por = EXCLUDED.auto_aplicar_por,
+       atualizado_em    = NOW()`,
+    [empresa_id, assinatura.hash, latin1Safe(assinatura.normalizada), ligado, usuario_id ?? null],
+  );
+}
+
+/** Tipos de erro marcados para execução automática (tela de Configuração). */
+export async function listarAutoAplicar(empresa_id: string): Promise<AgenteAutonomia[]> {
+  return query<AgenteAutonomia>(
+    `SELECT * FROM agente_autonomia
+      WHERE empresa_id = $1 AND auto_aplicar = TRUE
+      ORDER BY auto_aplicar_em DESC NULLS LAST`,
+    [empresa_id],
+  );
+}
+
+export async function contarAplicacoesDoAgente24h(empresa_id: string): Promise<number> {
+  const r = await queryOne<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM agente_propostas
+      WHERE empresa_id = $1 AND aplicado_por_agente = TRUE AND aplicado_em > NOW() - INTERVAL '24 hours'`,
+    [empresa_id],
+  );
+  return Number(r?.n ?? 0);
+}
+
+/** Propostas aplicadas (por humano ou agente) ainda sem confirmação de que o erro sumiu. */
+export async function listarAplicadasNaoConfirmadas(
+  empresa_id: string,
+  cliente_id: string,
+  minutosCarencia: number,
+): Promise<Array<{ id: string; erro_hash: string | null; painel_codigo: string | null; descricao_erro: string }>> {
+  return query(
+    `SELECT id, erro_hash, painel_codigo, descricao_erro FROM agente_propostas
+      WHERE empresa_id = $1 AND cliente_id = $2 AND status = 'aplicada' AND confirmado_em IS NULL
+        AND aplicado_em < NOW() - make_interval(mins => $3::int)
+        AND aplicado_em > NOW() - INTERVAL '7 days'`,
+    [empresa_id, cliente_id, minutosCarencia],
+  );
+}
+
+export async function marcarConfirmada(id: string, empresa_id: string): Promise<void> {
+  await query(
+    `UPDATE agente_propostas SET confirmado_em = NOW() WHERE id = $1 AND empresa_id = $2`,
+    [id, empresa_id],
+  );
 }

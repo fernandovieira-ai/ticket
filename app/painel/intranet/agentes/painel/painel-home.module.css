@@ -1,0 +1,16 @@
+/* Tela principal de Agentes: cards das bases com erro (abrem a página própria do painel). Os tokens (--surface, --line, --accent...) vêm do .root de painel-erros.module.css */
+/* tela principal: um card por base COM erro */
+.grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.card { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; transition: border-color .12s, box-shadow .12s; }
+.card:hover { border-color: var(--accent-text); box-shadow: 0 4px 16px rgba(14, 19, 38, .08); }
+.cardTopo { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.cardNome { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.cardNum { font-size: 34px; font-weight: 700; line-height: 1; color: var(--alto); font-variant-numeric: tabular-nums; }
+.cardLegenda { font-size: 12px; color: var(--muted); }
+.cardLinhas { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.cardLinhas span { color: var(--muted); }
+.cardLinhas b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cardRodape { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.cardAbrir { background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 12.5px; border-radius: 8px; padding: 5px 12px; }
+.cardFalha { border-color: var(--medio); background: var(--medio-bg); cursor: default; }
+.cardFalha .cardNome { color: var(--medio); }

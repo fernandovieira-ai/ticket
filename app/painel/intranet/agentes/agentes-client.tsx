@@ -22,6 +22,8 @@ import {
   Sparkles,
   History,
   Archive,
+  Activity,
+  ExternalLink,
 } from "lucide-react";
 import type {
   AgenteProposta,
@@ -60,6 +62,23 @@ const TIPO_LABEL: Record<string, string> = {
   outro:          "Outro",
 };
 
+interface CandidatoFP { id: number; tipo: string; descricao: string }
+interface ItemPrevFP { codigo: string; empresa: string; valorAdiantamento: number; formaAtual: CandidatoFP }
+interface PagAjuste {
+  estado: "buscando" | "candidatos" | "preview" | "aplicando" | "ok" | "erro";
+  candidatos?: CandidatoFP[];
+  escolhida?: CandidatoFP;
+  itens?: ItemPrevFP[];
+  semAdiantamento?: string[];
+  resultado?: { ajustados: number; ignorados: number; valorTotal: number };
+  erro?: string;
+}
+// Mesma checagem usada no servidor (agents/core/classificar.ts) — repetida aqui, sem importar o
+// módulo, porque ele puxa node:crypto e não roda no bundle do client.
+function ehAjustePagamento(p: AgenteProposta): boolean {
+  return !!p.painel_codigo && !!p.cliente_id && /saldo de adiantamento/i.test(p.descricao_erro);
+}
+
 function agruparPorCliente(propostas: AgenteProposta[]) {
   const mapa = new Map<string, AgenteProposta[]>();
   for (const p of propostas) {
@@ -83,6 +102,8 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
   const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
   const [novoErro, setNovoErro] = useState({ descricao: "", contexto: "", stack: "", cliente_id: "" });
   const [showForm, setShowForm] = useState(false);
+  const [pagMsg, setPagMsg] = useState<Record<string, string>>({});
+  const [pagAjuste, setPagAjuste] = useState<Record<string, PagAjuste>>({});
   const [clientes, setClientes] = useState<AgenteClientePublico[]>([]);
   const [, startTransition] = useTransition();
   const [loading, setLoading] = useState<string | null>(null);
@@ -91,6 +112,8 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
   // Refinamento inline por proposta — a proposta em si atualiza no lugar (mesmo id),
   // aqui só guardamos o histórico de instruções já enviadas (mais recente primeiro).
   const [refinarAberto, setRefinarAberto] = useState<Set<string>>(new Set());
+  // Propostas em que o operador marcou "executar automaticamente esse tipo de erro"
+  const [autoMarcado, setAutoMarcado] = useState<Set<string>>(new Set());
   const [instrucoes, setInstrucoes] = useState<Record<string, string>>({});
 
   // Carrega lista de clientes ao abrir o formulario
@@ -248,11 +271,71 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
     }
   }
 
+  // Busca/prévia/aplica a troca de forma de pagamento (mesma lógica testada no Painel de Erros),
+  // aqui restrita ao único código desta proposta.
+  async function buscarFormaPagto(p: AgenteProposta) {
+    const mensagem = (pagMsg[p.id] ?? "").trim();
+    if (!mensagem || !p.cliente_id) return;
+    setPagAjuste((s) => ({ ...s, [p.id]: { estado: "buscando" } }));
+    try {
+      const res = await fetch("/api/agentes/painel-erros/formas-pagto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliente_id: p.cliente_id, mensagem }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.erro ?? j.error ?? "Falha na busca");
+      if (!j.candidatos.length) throw new Error(`Nenhuma forma de pagamento encontrada para "${mensagem}". Tente outro termo.`);
+      setPagAjuste((s) => ({ ...s, [p.id]: { estado: "candidatos", candidatos: j.candidatos } }));
+    } catch (e: any) {
+      setPagAjuste((s) => ({ ...s, [p.id]: { estado: "erro", erro: e?.message ?? "Falha na busca" } }));
+    }
+  }
+
+  async function previewFormaPagtoProposta(p: AgenteProposta, escolhida: CandidatoFP) {
+    if (!p.cliente_id || !p.painel_codigo) return;
+    setPagAjuste((s) => ({ ...s, [p.id]: { estado: "preview", escolhida } }));
+    try {
+      const res = await fetch("/api/agentes/painel-erros/ajuste-pagamento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliente_id: p.cliente_id, codigos: [p.painel_codigo] }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.erro ?? j.error ?? "Falha na prévia");
+      setPagAjuste((s) => ({ ...s, [p.id]: { estado: "preview", escolhida, itens: j.itens, semAdiantamento: j.semAdiantamento } }));
+    } catch (e: any) {
+      setPagAjuste((s) => ({ ...s, [p.id]: { estado: "erro", erro: e?.message ?? "Falha na prévia" } }));
+    }
+  }
+
+  async function aplicarFormaPagtoProposta(p: AgenteProposta) {
+    const atual = pagAjuste[p.id];
+    if (!atual?.escolhida || !p.cliente_id || !p.painel_codigo) return;
+    setPagAjuste((s) => ({ ...s, [p.id]: { ...atual, estado: "aplicando" } }));
+    try {
+      const res = await fetch("/api/agentes/painel-erros/ajuste-pagamento/aplicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliente_id: p.cliente_id, codigos: [p.painel_codigo], forma: atual.escolhida }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.erro ?? j.error ?? "Falha ao aplicar");
+      setPagAjuste((s) => ({ ...s, [p.id]: { ...atual, estado: "ok", resultado: { ajustados: j.ajustados, ignorados: j.ignorados, valorTotal: j.valorTotal } } }));
+    } catch (e: any) {
+      setPagAjuste((s) => ({ ...s, [p.id]: { ...atual, estado: "erro", erro: e?.message ?? "Falha ao aplicar" } }));
+    }
+  }
+
   async function handleAplicar(id: string) {
     setLoading(id + "aplicar");
     setErro(null);
     try {
-      const res = await fetch(`/api/agentes/propostas/${id}/aplicar`, { method: "POST" });
+      const res = await fetch(`/api/agentes/propostas/${id}/aplicar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_aplicar: autoMarcado.has(id) }),
+      });
       const data = await res.json();
       if (!res.ok) { setErro(data.error); return; }
       setPropostas(propostas.map((p) => (p.id === id ? data.proposta : p)));
@@ -280,6 +363,13 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => startTransition(() => router.push("/painel/intranet/agentes"))}
+            title="Voltar ao painel de erros pendentes, por base"
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border, #e5e7eb)", background: "transparent", cursor: "pointer", fontSize: 13 }}
+          >
+            <Activity size={14} /> Painel
+          </button>
           <button
             onClick={() => startTransition(() => router.push("/painel/intranet/agentes/clientes"))}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border, #e5e7eb)", background: "transparent", cursor: "pointer", fontSize: 13 }}
@@ -525,6 +615,27 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
                                 </div>
                               )}
 
+                              {p.status === "aguardando" && p.sql_correcao && p.cliente_id && (
+                                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 12, fontSize: 13, cursor: "pointer" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={autoMarcado.has(p.id)}
+                                    onChange={(e) => setAutoMarcado((prev) => {
+                                      const next = new Set(prev);
+                                      e.target.checked ? next.add(p.id) : next.delete(p.id);
+                                      return next;
+                                    })}
+                                    style={{ marginTop: 2, accentColor: "#6366f1", width: 15, height: 15 }}
+                                  />
+                                  <span>
+                                    Executar automaticamente as próximas vezes que este tipo de erro aparecer
+                                    <span style={{ display: "block", fontSize: 11, opacity: 0.55 }}>
+                                      Vale ao clicar em &quot;Aprovar e Aplicar&quot; e o SQL rodar com sucesso. Só INSERT/UPDATE de risco baixo ou médio; qualquer falha volta a pedir aprovação. Pode ser desativado em Configuração.
+                                    </span>
+                                  </span>
+                                </label>
+                              )}
+
                               {p.status === "aguardando" && (
                                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                   {p.sql_correcao && p.cliente_id ? (
@@ -574,6 +685,108 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
                                     <Sparkles size={14} /> Refinar análise com IA
                                   </p>
 
+                                  {/* Este tipo de erro não se corrige por SQL — ação própria (busca no
+                                      catálogo real + prévia + aplica e reprocessa), a mesma do Painel de Erros. */}
+                                  {ehAjustePagamento(p) && (
+                                    <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 8, background: "white", border: "1px solid #c7d2fe" }}>
+                                      <p style={{ margin: "0 0 8px", fontSize: 12, color: "#4338ca" }}>
+                                        Ajustar forma de pagamento (código {p.painel_codigo}) — troca só o registro do caixa; a nota fiscal já emitida não é alterada.
+                                      </p>
+                                      {(() => {
+                                        const pa = pagAjuste[p.id];
+                                        if (!pa || pa.estado === "buscando" || pa.estado === "erro") {
+                                          return (
+                                            <>
+                                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                                <input
+                                                  type="text"
+                                                  value={pagMsg[p.id] ?? ""}
+                                                  placeholder="Ex.: dinheiro"
+                                                  disabled={pa?.estado === "buscando"}
+                                                  onChange={(e) => setPagMsg((s) => ({ ...s, [p.id]: e.target.value }))}
+                                                  onKeyDown={(e) => { if (e.key === "Enter") buscarFormaPagto(p); }}
+                                                  style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #a5b4fc", fontSize: 13, flex: 1, minWidth: 160 }}
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={() => buscarFormaPagto(p)}
+                                                  disabled={pa?.estado === "buscando" || !(pagMsg[p.id] ?? "").trim()}
+                                                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "none", background: "#4f46e5", color: "white", cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: (pa?.estado === "buscando" || !(pagMsg[p.id] ?? "").trim()) ? 0.6 : 1 }}
+                                                >
+                                                  {pa?.estado === "buscando" ? <Loader2 size={13} className="animate-spin" /> : null} Buscar forma de pagamento
+                                                </button>
+                                              </div>
+                                              {pa?.estado === "erro" && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b91c1c" }}>{pa.erro}</p>}
+                                            </>
+                                          );
+                                        }
+                                        if (pa.estado === "candidatos") {
+                                          return (
+                                            <>
+                                              <p style={{ margin: "0 0 8px", fontSize: 12 }}>Encontrei estas formas no EMSys3 — qual usar?</p>
+                                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                {pa.candidatos?.map((c) => (
+                                                  <button
+                                                    key={c.id}
+                                                    type="button"
+                                                    onClick={() => previewFormaPagtoProposta(p, c)}
+                                                    style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #a5b4fc", background: "white", color: "#3730a3", cursor: "pointer", fontSize: 13 }}
+                                                  >
+                                                    {c.descricao}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            </>
+                                          );
+                                        }
+                                        if (pa.estado === "preview" && !pa.itens) {
+                                          return <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} className="animate-spin" /> Carregando prévia…</div>;
+                                        }
+                                        if (pa.estado === "preview" && pa.itens) {
+                                          return (
+                                            <>
+                                              <p style={{ margin: "0 0 8px", fontSize: 13 }}>
+                                                Vai trocar <b>{pa.itens.length}</b> {pa.itens.length === 1 ? "venda" : "vendas"} de{" "}
+                                                <b>{pa.itens[0]?.formaAtual.descricao ?? "Adiantamento Cliente"}</b> para <b>{pa.escolhida?.descricao}</b>, total{" "}
+                                                <b>{pa.itens.reduce((t, x) => t + x.valorAdiantamento, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</b>.
+                                                {" "}Isso muda só o registro interno (caixa); a nota fiscal já emitida não é alterada.
+                                                {(pa.semAdiantamento?.length ?? 0) > 0 && <> {pa.semAdiantamento!.length} código(s) sem pagamento em adiantamento não serão tocados.</>}
+                                              </p>
+                                              <div style={{ display: "flex", gap: 8 }}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => aplicarFormaPagtoProposta(p)}
+                                                  style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#4f46e5", color: "white", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+                                                >
+                                                  Confirmar ajuste e reprocessar
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setPagAjuste((s) => { const c = { ...s }; delete c[p.id]; return c; })}
+                                                  style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #a5b4fc", background: "white", color: "#3730a3", cursor: "pointer", fontSize: 13 }}
+                                                >
+                                                  Cancelar
+                                                </button>
+                                              </div>
+                                            </>
+                                          );
+                                        }
+                                        if (pa.estado === "aplicando") {
+                                          return <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} className="animate-spin" /> Aplicando…</div>;
+                                        }
+                                        if (pa.estado === "ok" && pa.resultado) {
+                                          return (
+                                            <div style={{ padding: "8px 10px", borderRadius: 8, background: "#ecfdf5", border: "1px solid #a7f3d0", fontSize: 13, color: "#065f46" }}>
+                                              <b>{pa.resultado.ajustados}</b> {pa.resultado.ajustados === 1 ? "venda ajustada" : "vendas ajustadas"} para {pa.escolhida?.descricao} e marcada(s) para reprocessar
+                                              {pa.resultado.ignorados > 0 && <> · {pa.resultado.ignorados} ignorada(s)</>}. O erro deve sumir do painel após o próximo processamento — você pode rejeitar esta proposta.
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+                                  )}
+
                                   {/* Histórico de instruções já enviadas — mais recente no topo */}
                                   {(p.instrucoes_anteriores?.length ?? 0) > 0 && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
@@ -613,6 +826,15 @@ export function AgentesClient({ propostas: inicial, config }: Props) {
                                       title="Gera na hora o UPDATE reprocessar=true para este registro, sem consultar a IA"
                                     >
                                       Ajuste já feito: só reprocessar painel (instantâneo)
+                                    </button>
+                                  )}
+                                  {p.painel_codigo && p.cliente_id && (
+                                    <button
+                                      onClick={() => router.push(`/painel/intranet/agentes/painel/${p.cliente_id}`)}
+                                      style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, border: "1px solid #a5b4fc", background: "white", color: "#3730a3", cursor: "pointer", fontSize: 13 }}
+                                      title="Abre o Painel de Erros desta base — código, análise e ações reais (reprocessar, ajustar forma de pagamento) ficam lá"
+                                    >
+                                      <ExternalLink size={13} /> Abrir no Painel de Erros (código {p.painel_codigo})
                                     </button>
                                   )}
                                 </div>

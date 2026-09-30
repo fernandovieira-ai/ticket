@@ -35,6 +35,17 @@ export function normalizarCnpj(v: unknown): string | null {
 
 export const formatarRaiz = (r: string) => `${r.slice(0, 2)}.${r.slice(2, 5)}.${r.slice(5, 8)}`;
 
+const lista = (a: string[]) =>
+  a.length > 15 ? a.slice(0, 15).map(formatarRaiz).join(', ') + ` … (+${a.length - 15})` : a.map(formatarRaiz).join(', ');
+
+// Percentual mínimo das empresas ativas do EMSys3 (por CNPJ raiz) que precisa existir no AS.
+// Ajuste pela variável de ambiente VINCULO_PERCENTUAL_MIN (0–100); 100 = exige todas.
+const PERCENTUAL_MIN_PADRAO = 90;
+export function percentualMinimoVinculo(): number {
+  const v = Number(String(process.env.VINCULO_PERCENTUAL_MIN ?? '').replace(',', '.'));
+  return Number.isFinite(v) && v > 0 && v <= 100 ? v : PERCENTUAL_MIN_PADRAO;
+}
+
 export function mesmaConexaoFisica(a: ConexaoCfg, b: ConexaoCfg): boolean {
   return (
     a.db_host.trim().toLowerCase() === b.db_host.trim().toLowerCase() &&
@@ -90,9 +101,10 @@ async function lerCnpjsEmsys(client: pg.Client, schema: string): Promise<string[
 }
 
 /**
- * Conecta nas duas bases (somente leitura) e compara os CNPJs. Regra: todo CNPJ raiz das empresas ATIVAS
- * do EMSys3 (tab_empresa.ind_ativo = 'S') precisa existir no AS (o AS pode ter mais empresas) e ao menos
- * um CNPJ completo deve ser igual nas duas bases.
+ * Conecta nas duas bases (somente leitura) e compara os CNPJs. Regra: pelo menos VINCULO_PERCENTUAL_MIN %
+ * (padrão 90) dos CNPJs raiz das empresas ATIVAS do EMSys3 (tab_empresa.ind_ativo = 'S') precisam existir
+ * no AS (o AS pode ter mais empresas; holdings só do EMSys3 são toleradas) e ao menos um CNPJ completo
+ * deve ser igual nas duas bases.
  */
 export async function validarVinculo(as: ConexaoCfg, emsys: ConexaoCfg): Promise<ResultadoVinculo> {
   if (mesmaConexaoFisica(as, emsys)) {
@@ -117,26 +129,32 @@ export async function validarVinculo(as: ConexaoCfg, emsys: ConexaoCfg): Promise
 
     const raizAS = new Set([...fullAS].map((c) => c.slice(0, 8)));
     const raizEm = new Set([...fullEm].map((c) => c.slice(0, 8)));
-    const faltando = [...raizEm].filter((r) => !raizAS.has(r));
+    const confirmadas = [...raizEm].filter((r) => raizAS.has(r)).sort();
+    const faltando = [...raizEm].filter((r) => !raizAS.has(r)).sort();
     const comuns = [...fullEm].filter((c) => fullAS.has(c));
+    const percentual = (confirmadas.length / raizEm.size) * 100;
+    const minimo = percentualMinimoVinculo();
+    const pct = (n: number) => n.toFixed(1).replace('.', ',') + '%';
 
-    if (faltando.length || !comuns.length) {
-      const detalhe = faltando.length
-        ? `CNPJ raiz ativo no EMSys3 que não existe no AS: ${faltando.map(formatarRaiz).join(', ')}.`
-        : 'Nenhum CNPJ completo é igual nas duas bases.';
+    if (percentual < minimo || !comuns.length) {
+      const detalhe = !comuns.length
+        ? 'Nenhum CNPJ completo é igual nas duas bases.'
+        : `Só ${confirmadas.length} de ${raizEm.size} CNPJs raiz ativos do EMSys3 (${pct(percentual)}) existem no AS; o mínimo exigido é ${pct(minimo)}.`;
       return {
         ok: false,
         mensagem:
           `Os CNPJs da base EMSys3 não batem com os da base AS — as conexões parecem ser de clientes diferentes. ${detalhe} ` +
-          `EMSys3 (ativas): ${[...raizEm].map(formatarRaiz).join(', ')} | AS: ${[...raizAS].map(formatarRaiz).join(', ')}.`,
+          (faltando.length ? `Ativos no EMSys3 e ausentes no AS: ${lista(faltando)}.` : ''),
       };
     }
 
-    const raizes = [...raizEm].sort();
+    const aviso = faltando.length
+      ? ` Atenção: ${faltando.length} CNPJ raiz ativo no EMSys3 não existe no AS (${lista(faltando)}); aceito porque ${pct(percentual)} bate (mínimo ${pct(minimo)}).`
+      : '';
     return {
       ok: true,
-      raizes,
-      mensagem: `Vínculo validado: CNPJ raiz ${raizes.map(formatarRaiz).join(', ')} das empresas ativas do EMSys3 (${fullEm.size} CNPJ) existe no AS (${fullAS.size} CNPJ).`,
+      raizes: confirmadas,
+      mensagem: `Vínculo validado: ${confirmadas.length} de ${raizEm.size} CNPJs raiz ativos do EMSys3 (${pct(percentual)}) existem no AS (${fullAS.size} CNPJ).${aviso}`,
     };
   } catch (e: any) {
     if (e instanceof ErroVinculo) return { ok: false, mensagem: e.message };

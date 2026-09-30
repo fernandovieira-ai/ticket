@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { analisarErro } from '../analyzer';
-import { criarProposta, obterConfig, obterCliente, atualizarStatusProposta, registrarContextoProposta } from '../core/db';
+import { criarProposta, obterCliente, registrarContextoProposta } from '../core/db';
 import { mesclarInvestigacoes } from '../core/investigar';
 import type { AnalisarErroInput, ProcessarErroResult } from '../core/types';
 
@@ -10,9 +10,8 @@ export async function processarErro(input: AnalisarErroInput): Promise<Processar
     ? obterCliente(input.cliente_id, input.empresa_id)
     : Promise.resolve(null);
 
-  const [analise, config, cliente] = await Promise.all([
+  const [analise, cliente] = await Promise.all([
     analisarErro(input),
-    obterConfig(input.empresa_id),
     clientePromise,
   ]);
 
@@ -32,20 +31,8 @@ export async function processarErro(input: AnalisarErroInput): Promise<Processar
     });
   }
 
-  // Auto-aprova se configurado para este tipo E risco nao for critico
-  const deveAutoAprovar =
-    config?.ativo === true &&
-    analise.nivel_risco !== 'critico' &&
-    config.auto_aprovar_tipos.includes(analise.tipo);
-
-  if (deveAutoAprovar) {
-    const propostaAprovada = await atualizarStatusProposta(
-      proposta.id,
-      input.empresa_id,
-      'aprovada',
-    );
-    return { proposta: propostaAprovada ?? proposta, auto_aprovada: true };
-  }
-
+  // Toda proposta nasce "aguardando" o operador. A aprovação automática por tipo de correção
+  // (agente_config.auto_aprovar_tipos) foi desativada: o que roda sozinho são os tipos de erro que o
+  // operador marca ao aplicar uma proposta (ver tentarAutoAplicar em core/autonomia.ts).
   return { proposta, auto_aprovada: false };
 }

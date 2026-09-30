@@ -116,6 +116,11 @@ const MENU: MenuItem[] = [
         href: "/painel/intranet/agentes",
         icon: <Bot size={13} />,
       },
+      {
+        label: "Propostas dos Agentes",
+        href: "/painel/intranet/agentes/propostas",
+        icon: <ClipboardList size={13} />,
+      },
     ],
   },
   {

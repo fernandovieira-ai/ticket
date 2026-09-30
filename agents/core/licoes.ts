@@ -12,14 +12,32 @@ export interface LicaoExtraida {
   resumo: string; // a lição em si, curta e sem valores específicos de uma ocorrência
 }
 
-export async function extrairLicao(proposta: AgenteProposta): Promise<LicaoExtraida | null> {
+export interface LicaoExistente {
+  topico: string;
+  resumo: string;
+}
+
+export async function extrairLicao(
+  proposta: AgenteProposta,
+  existentes: LicaoExistente[] = [],
+): Promise<LicaoExtraida | null> {
+  // O slug do tópico é a chave de deduplicação. Se o modelo inventar um slug novo a cada vez, o mesmo
+  // assunto vira várias linhas — por isso ele vê as lições já salvas e decide reaproveitar/mesclar.
+  const blocoExistentes = existentes.length
+    ? `\nLIÇÕES JÁ SALVAS QUE PODEM SER DO MESMO ASSUNTO:\n${existentes
+        .map((l) => `- topico "${l.topico}": ${l.resumo.slice(0, 300)}`)
+        .join('\n')}\n
+- Se a nova lição REFINA, COMPLETA ou CORRIGE uma das lições salvas acima, REUTILIZE EXATAMENTE o "topico" dela e devolva em "resumo" o texto JÁ MESCLADO (mantenha o que continua válido da lição antiga e incorpore o que a nova acrescenta — não perca informação útil).
+- Se a nova lição é de outro assunto, crie um "topico" novo.\n`
+    : '';
+
   const prompt = `Você mantém uma base de conhecimento técnico enxuta e sem repetição. Abaixo está uma correção de erro que um operador acabou de aprovar:
 
 TÍTULO: ${proposta.titulo}
 ANÁLISE: ${proposta.analise.slice(0, 800)}
 CORREÇÃO: ${proposta.correcao_proposta.slice(0, 800)}
 SQL APLICADO: ${proposta.sql_correcao ? proposta.sql_correcao.slice(0, 500) : '(nenhum)'}
-
+${blocoExistentes}
 Extraia APENAS a lição técnica GENERALIZÁVEL desta correção — o padrão/regra de negócio que ajuda a resolver QUALQUER erro semelhante no futuro, não os detalhes desta ocorrência específica.
 
 REGRAS:

@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { obterConfig, upsertConfig } from '@/agents/core/db';
+import { normalizarTiposCorrecao } from '@/agents/core/types';
 import { z } from 'zod';
 
 const schemaPut = z.object({
   ativo: z.boolean(),
-  auto_aprovar_tipos: z.array(
-    z.enum(['configuracao', 'dados', 'codigo', 'infraestrutura', 'outro']),
-  ),
+  // Aceita também os nomes antigos de tipo (query_sql, logica, permissao) e converte para os atuais
+  auto_aprovar_tipos: z.array(z.string()).transform(normalizarTiposCorrecao),
   notificar_email: z.boolean(),
   notificar_whatsapp: z.boolean(),
+  autonomia_ativa: z.boolean().optional(),
+  autonomia_min_sucessos: z.number().int().min(1).max(20).optional(),
+  autonomia_limite_diario: z.number().int().min(1).max(100).optional(),
 });
 
 export async function GET() {
@@ -24,6 +27,9 @@ export async function GET() {
         auto_aprovar_tipos: [],
         notificar_email: false,
         notificar_whatsapp: false,
+        autonomia_ativa: false,
+        autonomia_min_sucessos: 2,
+        autonomia_limite_diario: 10,
       },
     );
   } catch (err) {

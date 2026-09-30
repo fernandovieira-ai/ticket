@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { queryOne } from '@/lib/db';
-import { atualizarConteudoProposta, obterCliente, listarBases, listarConhecimentoAtivo, registrarContextoProposta } from '@/agents/core/db';
+import { atualizarConteudoProposta, obterCliente, listarBases, buscarLicoesRelevantes, registrarContextoProposta } from '@/agents/core/db';
 import { investigarErro, mesclarInvestigacoes, type FonteBase } from '@/agents/core/investigar';
 import { garantirVinculo } from '@/agents/core/vinculo';
+import { classificarErro, ehSaldoAdiantamento } from '@/agents/core/classificar';
+import { buscarFormasPagtoDoCliente } from '@/agents/core/ajuste-pagamento';
 import type { AgenteProposta, AnalisarErroOutput } from '@/agents/core/types';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -111,6 +113,16 @@ ESTRUTURA E TOM:
   return parsed;
 }
 
+/**
+ * "Cliente sem saldo de adiantamento" nunca se corrige com SQL (instrução do operador: a troca de
+ * forma de pagamento tem ação própria, no Painel de Erros — ver agents/core/ajuste-pagamento.ts).
+ * Refinar aqui com a IA só repetiria a mesma conclusão gastando uma chamada; aponta direto pro
+ * lugar certo, já com o catálogo consultado quando dá.
+ */
+function ehSaldoAdiantamentoProposta(descricao_erro: string): boolean {
+  return ehSaldoAdiantamento(classificarErro(descricao_erro, null, null).categoria);
+}
+
 function pedidoApenasReprocessarPainel(instrucao: string, proposta: AgenteProposta): boolean {
   if (!proposta.painel_codigo || !/^\d+$/.test(proposta.painel_codigo)) return false;
   if (instrucao.length > 200 || !/reprocess/i.test(instrucao)) return false;
@@ -156,6 +168,33 @@ export async function POST(
     return NextResponse.json({ proposta: atualizada });
   }
 
+  // Atalho sem IA: este tipo de erro não se corrige por SQL — a ação real é "Ajustar forma de
+  // pagamento" no Painel de Erros (busca no catálogo + prévia + aplicar, com transação própria).
+  if (original.painel_codigo && ehSaldoAdiantamentoProposta(original.descricao_erro)) {
+    let achou = '';
+    if (original.cliente_id) {
+      const r = await buscarFormasPagtoDoCliente(original.cliente_id, session.empresaId, instrucao).catch(() => null);
+      if (r?.ok && r.candidatos.length) {
+        achou = ` No catálogo desta base, o termo bateu com: ${r.candidatos.slice(0, 3).map((c) => `"${c.descricao}"`).join(', ')}.`;
+      }
+    }
+    await registrarContextoProposta(id, session.empresaId, {
+      instrucao: { instrucao, titulo: 'Ajustar forma de pagamento (ação própria)' },
+    });
+    const atualizada = await atualizarConteudoProposta(id, session.empresaId, {
+      titulo: 'Ajustar forma de pagamento — use a ação do Painel de Erros',
+      analise: original.analise,
+      correcao_proposta: `Cliente sem saldo de adiantamento não é corrigido por SQL. Abra o Painel de Erros desta base, localize o código ${original.painel_codigo} e use "Ajustar forma de pagamento": digite a forma desejada, confira a prévia e confirme — isso troca só o registro do caixa (a nota fiscal já emitida não é alterada) e marca o código para reprocessar.${achou}`,
+      sql_correcao: null,
+      base_alvo: 'principal',
+      tipo: 'dados',
+      nivel_risco: 'baixo',
+      confianca: 1,
+    });
+    if (!atualizada) return NextResponse.json({ error: 'Falha ao atualizar proposta' }, { status: 500 });
+    return NextResponse.json({ proposta: atualizada });
+  }
+
   const cliente = original.cliente_id
     ? await obterCliente(original.cliente_id, session.empresaId)
     : null;
@@ -178,7 +217,13 @@ export async function POST(
     ...basesAtivas.map((b) => ({ nome: b.nome, config: b })),
   ];
 
-  const licoesAprendidas = await listarConhecimentoAtivo(session.empresaId)
+  // Lições relevantes para ESTE erro e para o que o operador pediu agora (não só as mais reforçadas)
+  const licoesAprendidas = await buscarLicoesRelevantes(
+    session.empresaId,
+    original.cliente_id,
+    `${original.descricao_erro} ${instrucao}`,
+    8,
+  )
     .then((ls) => ls.map((l) => l.resumo))
     .catch(() => [] as string[]);
 

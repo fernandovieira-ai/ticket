@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import MonitoradorClient from './monitorador-client';
 import { getSession } from '@/lib/auth';
 import { getMonitoradorData } from '@/lib/monitorador';
+import { listarSmartpos } from '@/lib/smartpos';
 import { verificarPermissao } from '@/lib/permissoes';
 
 export const dynamic = 'force-dynamic';
@@ -39,11 +40,16 @@ export default async function MonitoradorPage() {
     'pode_editar'
   );
 
-  try {
-    const dados = await getMonitoradorData();
-    return <MonitoradorClient inicial={dados} podeEditar={podeEditar} />;
-  } catch (error) {
-    console.error('Erro ao buscar dados do monitorador:', error);
-    return <MonitoradorClient inicial={[]} podeEditar={podeEditar} />;
-  }
+  const [dados, smartpos] = await Promise.all([
+    getMonitoradorData().catch((error) => {
+      console.error('Erro ao buscar dados do monitorador:', error);
+      return [];
+    }),
+    listarSmartpos().catch((error) => {
+      console.error('Erro ao buscar clientes Smart POS:', error);
+      return [];
+    }),
+  ]);
+
+  return <MonitoradorClient inicial={dados} smartposInicial={smartpos} podeEditar={podeEditar} />;
 }

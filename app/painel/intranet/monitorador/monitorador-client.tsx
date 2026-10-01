@@ -20,7 +20,11 @@ import {
   Pencil,
   Save,
   X as XIcon,
+  Smartphone,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import type { SmartposCliente } from "@/lib/smartpos";
 
 // Adiciona animação CSS para o toast
 if (typeof document !== "undefined") {
@@ -102,10 +106,12 @@ interface Rede {
 
 interface Props {
   inicial: Rede[];
+  smartposInicial: SmartposCliente[];
   podeEditar: boolean;
 }
 
-export default function MonitoradorClient({ inicial, podeEditar }: Props) {
+export default function MonitoradorClient({ inicial, smartposInicial, podeEditar }: Props) {
+  const [aba, setAba] = useState<"rede" | "smartpos">("rede");
   const [dados, setDados] = useState<Rede[]>(inicial);
   const [redesAbertas, setRedesAbertas] = useState<Set<string>>(new Set());
   const [empresasAbertas, setEmpresasAbertas] = useState<Set<string>>(new Set());
@@ -118,6 +124,17 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
   const [novoNomeRede, setNovoNomeRede] = useState("");
   const [salvandoRede, setSalvandoRede] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Smart POS
+  const [smartpos, setSmartpos] = useState<SmartposCliente[]>(smartposInicial);
+  const [filtroSmartpos, setFiltroSmartpos] = useState("");
+  const [formSmartposAberto, setFormSmartposAberto] = useState(false);
+  const [editandoSmartposId, setEditandoSmartposId] = useState<number | null>(null);
+  const [formCnpj, setFormCnpj] = useState("");
+  const [formNomeCliente, setFormNomeCliente] = useState("");
+  const [formIndAtivo, setFormIndAtivo] = useState(true);
+  const [salvandoSmartpos, setSalvandoSmartpos] = useState(false);
+  const [removendoSmartposId, setRemovendoSmartposId] = useState<number | null>(null);
 
   // Evita erro de hidratação com datas dinâmicas
   useEffect(() => {
@@ -311,6 +328,148 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
       setSalvandoRede(false);
     }
   };
+
+  const abrirNovoSmartpos = () => {
+    if (!podeEditar) return;
+    setEditandoSmartposId(null);
+    setFormCnpj("");
+    setFormNomeCliente("");
+    setFormIndAtivo(true);
+    setFormSmartposAberto(true);
+  };
+
+  const abrirEdicaoSmartpos = (cliente: SmartposCliente) => {
+    if (!podeEditar) return;
+    setEditandoSmartposId(cliente.id);
+    setFormCnpj(cliente.cnpj);
+    setFormNomeCliente(cliente.nome_cliente);
+    setFormIndAtivo(cliente.ind_ativo);
+    setFormSmartposAberto(true);
+  };
+
+  const cancelarFormSmartpos = () => {
+    setFormSmartposAberto(false);
+    setEditandoSmartposId(null);
+    setFormCnpj("");
+    setFormNomeCliente("");
+    setFormIndAtivo(true);
+  };
+
+  const salvarSmartpos = async () => {
+    if (!podeEditar) return;
+    const cnpjLimpo = formCnpj.replace(/\D/g, "");
+    if (cnpjLimpo.length !== 14) {
+      alert("Informe um CNPJ válido (14 dígitos)");
+      return;
+    }
+    if (!formNomeCliente.trim()) {
+      alert("Informe o nome do cliente");
+      return;
+    }
+
+    setSalvandoSmartpos(true);
+    try {
+      const url = editandoSmartposId
+        ? `/api/intranet/monitorador/smartpos/${editandoSmartposId}`
+        : "/api/intranet/monitorador/smartpos";
+      const method = editandoSmartposId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cnpj: cnpjLimpo,
+          nome_cliente: formNomeCliente.trim(),
+          ind_ativo: formIndAtivo,
+        }),
+      });
+
+      const response = await res.json();
+
+      if (res.ok) {
+        if (editandoSmartposId) {
+          setSmartpos(prev =>
+            prev.map(c => (c.id === editandoSmartposId ? response.data : c))
+          );
+        } else {
+          setSmartpos(prev => [...prev, response.data].sort((a, b) => a.nome_cliente.localeCompare(b.nome_cliente)));
+        }
+        setMensagemSucesso(editandoSmartposId ? "Cliente atualizado com sucesso" : "Cliente cadastrado com sucesso");
+        setTimeout(() => setMensagemSucesso(null), 3000);
+        cancelarFormSmartpos();
+      } else {
+        alert(response.error || "Erro ao salvar cliente");
+      }
+    } catch (error) {
+      console.error("Erro ao salvar cliente Smart POS:", error);
+      alert("Erro ao salvar cliente");
+    } finally {
+      setSalvandoSmartpos(false);
+    }
+  };
+
+  const alternarAtivoSmartpos = async (cliente: SmartposCliente) => {
+    if (!podeEditar) return;
+    try {
+      const res = await fetch(`/api/intranet/monitorador/smartpos/${cliente.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cnpj: cliente.cnpj,
+          nome_cliente: cliente.nome_cliente,
+          ind_ativo: !cliente.ind_ativo,
+        }),
+      });
+
+      const response = await res.json();
+
+      if (res.ok) {
+        setSmartpos(prev => prev.map(c => (c.id === cliente.id ? response.data : c)));
+      } else {
+        alert(response.error || "Erro ao atualizar cliente");
+      }
+    } catch (error) {
+      console.error("Erro ao atualizar cliente Smart POS:", error);
+      alert("Erro ao atualizar cliente");
+    }
+  };
+
+  const removerClienteSmartpos = async (cliente: SmartposCliente) => {
+    if (!podeEditar) return;
+    if (!confirm(`Remover o cliente "${cliente.nome_cliente}" do cadastro Smart POS?`)) return;
+
+    setRemovendoSmartposId(cliente.id);
+    try {
+      const res = await fetch(`/api/intranet/monitorador/smartpos/${cliente.id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setSmartpos(prev => prev.filter(c => c.id !== cliente.id));
+        setMensagemSucesso("Cliente removido com sucesso");
+        setTimeout(() => setMensagemSucesso(null), 3000);
+      } else {
+        const response = await res.json();
+        alert(response.error || "Erro ao remover cliente");
+      }
+    } catch (error) {
+      console.error("Erro ao remover cliente Smart POS:", error);
+      alert("Erro ao remover cliente");
+    } finally {
+      setRemovendoSmartposId(null);
+    }
+  };
+
+  const smartposFiltrados = useMemo(() => {
+    if (!filtroSmartpos.trim()) return smartpos;
+    const termo = filtroSmartpos.toLowerCase();
+    const termoDigitos = filtroSmartpos.replace(/\D/g, "");
+    return smartpos.filter(
+      c =>
+        c.nome_cliente.toLowerCase().includes(termo) ||
+        (termoDigitos !== "" && c.cnpj.includes(termoDigitos))
+    );
+  }, [smartpos, filtroSmartpos]);
 
   const dadosFiltrados = useMemo(() => {
     if (!filtro.trim()) return dados;
@@ -689,6 +848,97 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
       border: "none",
       transition: "all 0.2s",
     } as React.CSSProperties,
+    tabs: {
+      display: "flex",
+      gap: 4,
+      marginBottom: 20,
+      borderBottom: "1px solid #e5e7eb",
+    } as React.CSSProperties,
+    tab: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "10px 18px",
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: "pointer",
+      border: "none",
+      background: "transparent",
+      color: "#6b7280",
+      borderBottom: "2px solid transparent",
+      transition: "all 0.2s",
+    } as React.CSSProperties,
+    tabAtiva: {
+      color: "#1e1b4b",
+      borderBottom: "2px solid #1e1b4b",
+    } as React.CSSProperties,
+    table: {
+      width: "100%",
+      borderCollapse: "collapse" as const,
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+      borderRadius: 12,
+      overflow: "hidden",
+    } as React.CSSProperties,
+    th: {
+      textAlign: "left" as const,
+      padding: "12px 16px",
+      fontSize: 12,
+      fontWeight: 700,
+      textTransform: "uppercase" as const,
+      letterSpacing: "0.5px",
+      color: "#6b7280",
+      background: "#f9fafb",
+      borderBottom: "1px solid #e5e7eb",
+    } as React.CSSProperties,
+    td: {
+      padding: "12px 16px",
+      fontSize: 14,
+      color: "#111827",
+      borderBottom: "1px solid #f3f4f6",
+    } as React.CSSProperties,
+    btnPrimario: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      background: "#1e1b4b",
+      border: "none",
+      borderRadius: 8,
+      padding: "9px 18px",
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: "pointer",
+      color: "#fff",
+    } as React.CSSProperties,
+    formCard: {
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+      borderRadius: 12,
+      padding: 20,
+      marginBottom: 20,
+      display: "flex",
+      flexWrap: "wrap" as const,
+      gap: 12,
+      alignItems: "flex-end",
+    } as React.CSSProperties,
+    formGroup: {
+      display: "flex",
+      flexDirection: "column" as const,
+      gap: 6,
+    } as React.CSSProperties,
+    formLabel: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#374151",
+    } as React.CSSProperties,
+    formInput: {
+      border: "1px solid #d1d5db",
+      borderRadius: 8,
+      padding: "9px 12px",
+      fontSize: 14,
+      outline: "none",
+      minWidth: 220,
+    } as React.CSSProperties,
   };
 
   return (
@@ -723,24 +973,46 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
       <div style={s.header}>
         <div style={s.titulo}>
           <Activity size={24} />
-          Monitorador de Rede
+          Monitoramento
         </div>
+        {aba === "rede" && (
+          <button
+            style={s.btnAtualizar}
+            onClick={atualizar}
+            disabled={atualizando}
+          >
+            <RefreshCw
+              size={16}
+              style={{
+                transform: atualizando ? "rotate(360deg)" : "rotate(0deg)",
+                transition: atualizando ? "transform 1s linear infinite" : "none",
+              }}
+            />
+            {atualizando ? "Atualizando..." : "Atualizar"}
+          </button>
+        )}
+      </div>
+
+      {/* Abas */}
+      <div style={s.tabs}>
         <button
-          style={s.btnAtualizar}
-          onClick={atualizar}
-          disabled={atualizando}
+          style={{ ...s.tab, ...(aba === "rede" ? s.tabAtiva : {}) }}
+          onClick={() => setAba("rede")}
         >
-          <RefreshCw
-            size={16}
-            style={{
-              transform: atualizando ? "rotate(360deg)" : "rotate(0deg)",
-              transition: atualizando ? "transform 1s linear infinite" : "none",
-            }}
-          />
-          {atualizando ? "Atualizando..." : "Atualizar"}
+          <Network size={16} />
+          Rede
+        </button>
+        <button
+          style={{ ...s.tab, ...(aba === "smartpos" ? s.tabAtiva : {}) }}
+          onClick={() => setAba("smartpos")}
+        >
+          <Smartphone size={16} />
+          Smartpos
         </button>
       </div>
 
+      {aba === "rede" && (
+      <>
       {/* Estatísticas */}
       <div style={s.statsContainer}>
         <div style={s.statCard}>
@@ -1161,6 +1433,162 @@ export default function MonitoradorClient({ inicial, podeEditar }: Props) {
             )}
           </div>
         ))
+      )}
+      </>
+      )}
+
+      {aba === "smartpos" && (
+        <>
+          {/* Filtro + novo cliente */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 20,
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Buscar por CNPJ ou nome do cliente..."
+              value={filtroSmartpos}
+              onChange={e => setFiltroSmartpos(e.target.value)}
+              style={s.inputFiltro}
+            />
+            {podeEditar && !formSmartposAberto && (
+              <button style={s.btnPrimario} onClick={abrirNovoSmartpos}>
+                <Plus size={16} />
+                Novo cliente
+              </button>
+            )}
+          </div>
+
+          {/* Formulário de cadastro/edição */}
+          {formSmartposAberto && (
+            <div style={s.formCard}>
+              <div style={s.formGroup}>
+                <label style={s.formLabel}>CNPJ</label>
+                <input
+                  type="text"
+                  placeholder="00.000.000/0000-00"
+                  value={formCnpj}
+                  onChange={e => setFormCnpj(e.target.value)}
+                  style={s.formInput}
+                />
+              </div>
+              <div style={s.formGroup}>
+                <label style={s.formLabel}>Nome do cliente</label>
+                <input
+                  type="text"
+                  placeholder="Nome do cliente"
+                  value={formNomeCliente}
+                  onChange={e => setFormNomeCliente(e.target.value)}
+                  style={{ ...s.formInput, minWidth: 280 }}
+                />
+              </div>
+              <div style={s.formGroup}>
+                <label style={s.formLabel}>Ind. Ativo</label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, height: 38 }}>
+                  <input
+                    type="checkbox"
+                    checked={formIndAtivo}
+                    onChange={e => setFormIndAtivo(e.target.checked)}
+                  />
+                  {formIndAtivo ? "Ativo" : "Inativo"}
+                </label>
+              </div>
+              <button
+                style={{ ...s.btnPrimario, opacity: salvandoSmartpos ? 0.6 : 1 }}
+                onClick={salvarSmartpos}
+                disabled={salvandoSmartpos}
+              >
+                <Save size={16} />
+                {salvandoSmartpos ? "Salvando..." : "Salvar"}
+              </button>
+              <button
+                style={{ ...s.btnAtualizar }}
+                onClick={cancelarFormSmartpos}
+                disabled={salvandoSmartpos}
+              >
+                <XIcon size={16} />
+                Cancelar
+              </button>
+            </div>
+          )}
+
+          {/* Tabela de clientes Smart POS */}
+          {smartposFiltrados.length === 0 ? (
+            <div style={s.emptyState}>
+              {filtroSmartpos ? "Nenhum resultado encontrado." : "Nenhum cliente cadastrado para o Smart POS."}
+            </div>
+          ) : (
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  <th style={s.th}>CNPJ</th>
+                  <th style={s.th}>Nome do cliente</th>
+                  <th style={s.th}>Ind. Ativo</th>
+                  {podeEditar && <th style={s.th}>Ações</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {smartposFiltrados.map(cliente => (
+                  <tr key={cliente.id}>
+                    <td style={{ ...s.td, fontFamily: "monospace" }}>{formatarCNPJ(cliente.cnpj)}</td>
+                    <td style={s.td}>{cliente.nome_cliente}</td>
+                    <td style={s.td}>
+                      <span
+                        style={{
+                          ...s.statusBadge,
+                          background: cliente.ind_ativo ? "#dcfce7" : "#fee2e2",
+                          color: cliente.ind_ativo ? "#166534" : "#991b1b",
+                          cursor: podeEditar ? "pointer" : "default",
+                        }}
+                        onClick={() => podeEditar && alternarAtivoSmartpos(cliente)}
+                        title={podeEditar ? "Clique para alternar" : undefined}
+                      >
+                        {cliente.ind_ativo ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                        {cliente.ind_ativo ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    {podeEditar && (
+                      <td style={s.td}>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={() => abrirEdicaoSmartpos(cliente)}
+                            style={{
+                              ...s.btnToggleProcesso,
+                              background: "#e5e7eb",
+                              color: "#374151",
+                            }}
+                            title="Editar"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => removerClienteSmartpos(cliente)}
+                            disabled={removendoSmartposId === cliente.id}
+                            style={{
+                              ...s.btnToggleProcesso,
+                              background: "#ef4444",
+                              color: "#fff",
+                              opacity: removendoSmartposId === cliente.id ? 0.5 : 1,
+                            }}
+                            title="Remover"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );

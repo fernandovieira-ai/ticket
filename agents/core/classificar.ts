@@ -120,6 +120,19 @@ export function quantidadeRealDaVenda(conteudoJson: string, cod_item: number): n
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * `idTurno` do JSON da venda (`conteudo.idTurno`) — é o mesmo valor gravado em
+ * `tab_fechamento_caixa_pdv.id_origem` no EMSys3 (confirmado num caso real), a forma confiável de achar o
+ * fechamento de caixa exato (`seq_fechamento`) que gerou a venda. Retorna null se o JSON não puder ser lido
+ * ou não tiver o campo.
+ */
+export function idTurnoDaVenda(conteudoJson: string): number | null {
+  let obj: any;
+  try { obj = JSON.parse(conteudoJson); } catch { return null; }
+  const n = Number(obj?.idTurno);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function classificarErro(
   retornoBruto: string,
   requisicao: string | null,

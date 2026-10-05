@@ -15,6 +15,8 @@ interface PropostaResumo {
 }
 interface AnaliseGrupo { estado: "rodando" | "ok" | "erro"; erro?: string; existente?: boolean; proposta?: PropostaResumo; total?: number }
 interface ReprocGrupo { estado: "confirmar" | "rodando" | "ok" | "erro"; marcados?: number; ignorados?: number; erro?: string }
+/** Aplicar (rodar de verdade) o SQL de uma proposta gerada pela análise por IA, direto desta tela. */
+interface AplicProposta { estado: "confirmar" | "rodando" | "ok" | "erro"; erro?: string; linhas?: number }
 interface CandidatoFP { id: number; tipo: string; descricao: string }
 interface ItemPrevFP { codigo: string; empresa: string; valorAdiantamento: number; formaAtual: CandidatoFP }
 interface CandidatoTM { id: number; descricao: string }
@@ -25,8 +27,10 @@ interface ItemPrevEQ {
   /** Texto gravado em des_observacao do movimento — "AJUSTE DO PAINEL" + origem (caixa/turno/mlid) da(s) venda(s) */
   observacao: string;
 }
+/** Um grupo cujo déficit já tinha sido coberto por um ajuste automático NOSSO anterior (ver agents/core/ajuste-estoque.ts) */
+interface AjusteJaFeito { codigos: string[]; quando: string | null; observacao: string }
 /** Resultado de aplicar o ajuste de estoque (entrada lançada ou só reprocessado, ver AjusteEstoqueBloco) */
-interface ResultadoAjusteEQ { entradasLancadas: number; codigosReprocessados: number; valorTotal: number; erro?: string }
+interface ResultadoAjusteEQ { entradasLancadas: number; codigosReprocessados: number; valorTotal: number; erro?: string; jaAjustado?: AjusteJaFeito[] }
 interface ItemConfComb {
   codigos: string[]; empresa: number; cod_item: number; des_item: string; cod_almoxarifado: number; des_almoxarifado: string;
   saldoReal: number; quantidadeNecessaria: number; deficit: number; dataReferencia: string;
@@ -63,6 +67,10 @@ const REGRA_PADRAO: Regra = { categoria: "", modo: "manual", titulo: "Manual", d
 
 const n0 = (n: number) => n.toLocaleString("pt-BR");
 const fmtData = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+/** ISO (UTC, como vem de dta_alteracao) → "dd/mm HH:MM" no fuso do navegador. null (movimento antigo, sem
+ *  a coluna preenchida) vira um texto genérico em vez de quebrar a tela. */
+const fmtQuando = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "em data não registrada";
 const pill = (r: "alto" | "medio") => <span className={`${s.pill} ${s[r]}`}>{r === "alto" ? "Alto" : "Médio"}</span>;
 const riscoMax = (its: ErroPainel[]): "alto" | "medio" => (its.some((e) => e.risco === "alto") ? "alto" : "medio");
 
@@ -81,7 +89,7 @@ function agrupar(items: ErroPainel[], dim: Dim): [string, ErroPainel[]][] {
 type FaseAjusteEQ =
   | { fase: "carregando" }
   | { fase: "erro"; mensagem: string }
-  | { fase: "preview"; itens: ItemPrevEQ[]; semDeficit: string[]; semCusto: ItemPrevEQ[] }
+  | { fase: "preview"; itens: ItemPrevEQ[]; semDeficit: string[]; jaAjustado: AjusteJaFeito[]; semCusto: ItemPrevEQ[] }
   | { fase: "aplicando" }
   | { fase: "ok"; resultado: ResultadoAjusteEQ };
 
@@ -115,7 +123,7 @@ function AjusteEstoqueBloco({ baseId, codigos, onAplicado }: { baseId: string; c
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setFase({ fase: "erro", mensagem: j.erro ?? j.error ?? "Falha ao calcular o saldo real" }); return; }
-      setFase({ fase: "preview", itens: j.itens ?? [], semDeficit: j.semDeficit ?? [], semCusto: j.semCusto ?? [] });
+      setFase({ fase: "preview", itens: j.itens ?? [], semDeficit: j.semDeficit ?? [], jaAjustado: j.jaAjustado ?? [], semCusto: j.semCusto ?? [] });
     } catch (e: any) {
       setFase({ fase: "erro", mensagem: e?.message ?? "Falha ao calcular o saldo real" });
     }
@@ -174,7 +182,7 @@ function AjusteEstoqueBloco({ baseId, codigos, onAplicado }: { baseId: string; c
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) throw new Error(j.erro ?? j.error ?? "Falha ao aplicar");
       onAplicado();
-      setFase({ fase: "ok", resultado: { entradasLancadas: j.entradasLancadas, codigosReprocessados: j.codigosReprocessados, valorTotal: j.valorTotal, erro: j.erro } });
+      setFase({ fase: "ok", resultado: { entradasLancadas: j.entradasLancadas, codigosReprocessados: j.codigosReprocessados, valorTotal: j.valorTotal, erro: j.erro, jaAjustado: j.jaAjustado ?? [] } });
     } catch (e: any) {
       setFase({ fase: "erro", mensagem: e?.message ?? "Falha ao aplicar" });
     }
@@ -208,6 +216,7 @@ function AjusteEstoqueBloco({ baseId, codigos, onAplicado }: { baseId: string; c
     return <div className={s.confirma}><div className={s.andamento}><Loader2 size={14} className="animate-spin" /> Aplicando…</div></div>;
   }
   if (fase.fase === "ok") {
+    const jaAjustado = fase.resultado.jaAjustado ?? [];
     return (
       <div className={s.confirma}>
         <div className={s.okBox}>
@@ -217,12 +226,20 @@ function AjusteEstoqueBloco({ baseId, codigos, onAplicado }: { baseId: string; c
             {fase.resultado.erro && <> {fase.resultado.erro}</>} Ao fechar, a lista é atualizada.
           </span>
         </div>
+        {jaAjustado.length > 0 && (
+          <p className={s.aviso2} style={{ margin: 0 }}>
+            <Info size={13} />
+            {jaAjustado.reduce((t, x) => t + x.codigos.length, 0)} código(s) já tinham sido ajustados automaticamente antes (não precisaram de entrada nova) — só foram reprocessados de novo.
+          </p>
+        )}
       </div>
     );
   }
 
-  const { itens, semDeficit, semCusto } = fase;
+  const { itens, semDeficit, jaAjustado, semCusto } = fase;
   const tipoAtual = escolhido ?? (!trocando && padrao !== "carregando" ? padrao : null);
+  const codigosJaAjustados = new Set(jaAjustado.flatMap((x) => x.codigos));
+  const semDeficitSemAjusteAnterior = semDeficit.length - codigosJaAjustados.size;
 
   return (
     <div className={s.confirma}>
@@ -240,8 +257,18 @@ function AjusteEstoqueBloco({ baseId, codigos, onAplicado }: { baseId: string; c
           <span><b>Total: {itens.reduce((t, x) => t + (x.valorEntrada ?? 0), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</b></span>
         </div>
       )}
-      {semDeficit.length > 0 && (
-        <span style={{ fontSize: 13 }}>{semDeficit.length} código(s) já têm saldo real suficiente agora — só serão reprocessados, sem lançar entrada.</span>
+      {jaAjustado.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+          <span><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> Já foi ajustado antes — {codigosJaAjustados.size} código(s) estão cobertos por um lançamento automático anterior:</span>
+          {jaAjustado.map((a, i) => (
+            <span key={i} style={{ paddingLeft: 8, fontSize: 12, opacity: 0.8 }}>
+              • {fmtQuando(a.quando)} — {a.observacao} ({a.codigos.length} {a.codigos.length === 1 ? "código" : "códigos"})
+            </span>
+          ))}
+        </div>
+      )}
+      {semDeficitSemAjusteAnterior > 0 && (
+        <span style={{ fontSize: 13 }}>{semDeficitSemAjusteAnterior} código(s) já têm saldo real suficiente agora (sem relação com um ajuste nosso) — só serão reprocessados, sem lançar entrada.</span>
       )}
       {semCusto.length > 0 && (
         <p className={s.aviso2} style={{ margin: 0 }}>
@@ -650,6 +677,7 @@ export function PainelClient({ bases, header }: { bases: BaseInfo[]; header?: Re
   const [gaveta, setGaveta] = useState<{ codes: string[]; titulo: string } | null>(null);
   const [analises, setAnalises] = useState<Record<string, AnaliseGrupo>>({});
   const [reproc, setReproc] = useState<Record<string, ReprocGrupo>>({});
+  const [aplic, setAplic] = useState<Record<string, AplicProposta>>({});
   const [regras, setRegras] = useState<Record<string, Regra>>({});
   const [combAjuste, setCombAjuste] = useState<Record<string, CombConferencia>>({});
   const regraDe = useCallback((categoria: string): Regra => regras[categoria] ?? { ...REGRA_PADRAO, categoria }, [regras]);
@@ -889,6 +917,30 @@ export function PainelClient({ bases, header }: { bases: BaseInfo[]; header?: Re
     }
   }
 
+  /* aplica (roda de verdade) o SQL de uma proposta já analisada — mesma rota/serviço que a tela de
+     Propostas usa ("Aprovar e Aplicar"), só que disparada direto daqui pra não precisar navegar.
+     Reprocessa só o código representante da proposta (mesmo comportamento de sempre); o resto do
+     grupo continua precisando de "Só reprocessar no painel" depois de confirmado o efeito. */
+  async function aplicarProposta(chave: string, propostaId: string) {
+    setAplic((p) => ({ ...p, [chave]: { estado: "rodando" } }));
+    try {
+      const res = await fetch(`/api/agentes/propostas/${propostaId}/aplicar`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "Falha ao aplicar a proposta");
+      const linhas = (j.resultados ?? []).reduce((t: number, r: any) => t + (r.rowCount ?? 0), 0);
+      setAnalises((p) => {
+        const a = p[chave];
+        return a?.proposta ? { ...p, [chave]: { ...a, proposta: { ...a.proposta, status: "aplicada" } } } : p;
+      });
+      setSujo(true);
+      setAplic((p) => ({ ...p, [chave]: { estado: "ok", linhas } }));
+    } catch (e: any) {
+      setAplic((p) => ({ ...p, [chave]: { estado: "erro", erro: e?.message ?? "Falha ao aplicar a proposta" } }));
+    }
+  }
+
   /* ajuste de forma de pagamento (ex.: "cliente sem saldo de adiantamento") e ajuste de estoque (ex.:
      "saldo insuficiente · produto de loja") são tratados por <AjustePagamentoBloco>/<AjusteEstoqueBloco>,
      componentes próprios (recalculam a prévia assim que montam, sem esperar o operador escolher a forma de
@@ -960,6 +1012,7 @@ export function PainelClient({ bases, header }: { bases: BaseInfo[]; header?: Re
                   const ne = new Set(p.g.map((e) => e.empresa)).size;
                   const an = analises[chave];
                   const rp = reproc[chave];
+                  const ap = aplic[chave];
                   const codigos = p.g.map((e) => e.codigo);
                   const n = codigos.length;
                   const ehComb = p.cat.endsWith("Combustível");
@@ -1093,6 +1146,47 @@ export function PainelClient({ bases, header }: { bases: BaseInfo[]; header?: Re
                             <>
                               <div className={s.secTitle}><Code2 size={13} /> SQL de correção</div>
                               <pre className={s.sql}>{an.proposta.sql_correcao}</pre>
+
+                              {an.proposta.status === "aplicada" || ap?.estado === "ok" ? (
+                                <div className={s.okBox}>
+                                  <CheckCircle2 size={15} />
+                                  <span>
+                                    Correção aplicada{ap?.linhas != null ? <> — <b>{n0(ap.linhas)}</b> linha(s) afetada(s)</> : null}.
+                                    {" "}O código representante ({an.proposta.painel_codigo ?? "—"}) já foi marcado para reprocessar; o resto do grupo continua precisando de &quot;Só reprocessar no painel&quot;.
+                                  </span>
+                                </div>
+                              ) : (an.proposta.status === "aguardando" || an.proposta.status === "aprovada" || an.proposta.status === "falhou") ? (
+                                <>
+                                  {(!ap || ap.estado === "erro") && (
+                                    <div className={s.acoesItem}>
+                                      <button type="button" className={`${s.btn} ${s.primary}`} onClick={() => setAplic((x) => ({ ...x, [chave]: { estado: "confirmar" } }))}>
+                                        Aplicar esta correção
+                                      </button>
+                                    </div>
+                                  )}
+                                  {ap?.estado === "erro" && (
+                                    <p className={s.aviso2}><XCircle size={13} />{ap.erro}</p>
+                                  )}
+                                  {ap?.estado === "confirmar" && (
+                                    <div className={s.confirma}>
+                                      <span className={s.confirmaMsg}>
+                                        <AlertTriangle size={15} />
+                                        Vai rodar esse SQL de verdade no banco de <b>{nomeBase}</b> e marcar reprocessar só o código representante ({an.proposta.painel_codigo ?? "—"}).
+                                        Os demais códigos deste grupo continuam precisando de &quot;Só reprocessar no painel&quot; depois.
+                                      </span>
+                                      <div className={s.acoesItem}>
+                                        <button type="button" className={`${s.btn} ${s.primary}`} onClick={() => aplicarProposta(chave, an.proposta!.id)}>Confirmar e aplicar</button>
+                                        <button type="button" className={s.btn} onClick={() => setAplic((x) => { const c = { ...x }; delete c[chave]; return c; })}>Cancelar</button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {ap?.estado === "rodando" && (
+                                    <div className={s.andamento}><Loader2 size={14} className="animate-spin" /> Aplicando…</div>
+                                  )}
+                                </>
+                              ) : (
+                                <p className={s.aviso2}><Info size={13} /> Proposta {an.proposta.status} — sem ação disponível aqui.</p>
+                              )}
                             </>
                           ) : (
                             <p className={s.aviso2}><Info size={13} /> Sem SQL pronto: este grupo exige ação manual ou mais informação, descrita acima.</p>
@@ -1122,7 +1216,7 @@ export function PainelClient({ bases, header }: { bases: BaseInfo[]; header?: Re
                 <p><Info size={13} /><span><b>Ajuste de forma de pagamento e de estoque</b> aplicam direto aqui (com prévia antes de confirmar), sem passar por análise de IA nem proposta.</span></p>
               )}
               {planos.some((p) => !MODOS_SEM_ANALISE.has(regraDe(p.cat).modo)) && (
-                <p><Info size={13} /><span>A análise investiga as bases reais e cria uma proposta <b>Aguardando</b>; nada é aplicado nesta tela. Uma proposta de SQL reprocessa apenas o código representante ao ser aplicada; para reprocessar o grupo todo use <b>Só reprocessar no painel</b>.</span></p>
+                <p><Info size={13} /><span>A análise investiga as bases reais e cria uma proposta <b>Aguardando</b>. Se tiver SQL, dá pra aplicar direto aqui (com confirmação); a aplicação reprocessa apenas o código representante — para reprocessar o grupo todo use <b>Só reprocessar no painel</b>.</span></p>
               )}
             </div>
           </div>

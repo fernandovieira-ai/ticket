@@ -22,6 +22,6 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
 
-  const r = await aplicarAjusteEstoque(parsed.data.cliente_id, session.empresaId, parsed.data.codigos, parsed.data.tipoMovimento, session.sub);
+  const r = await aplicarAjusteEstoque(parsed.data.cliente_id, session.empresaId, parsed.data.codigos, parsed.data.tipoMovimento, session.sub, session.nome);
   return NextResponse.json(r);
 }

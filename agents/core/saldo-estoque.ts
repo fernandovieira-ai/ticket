@@ -17,3 +17,28 @@ export async function saldoRealAteData(c: pg.Client, cod_empresa: number, cod_it
   );
   return Number(r.rows[0]?.saldo ?? 0);
 }
+
+/**
+ * Mesmo cálculo de `saldoRealAteData`, mas pra VÁRIAS combinações numa ÚNICA ida ao banco (via `UNNEST`)
+ * em vez de uma chamada sequencial por combinação — cada chamada sequencial paga uma rodada de rede
+ * inteira (o protocolo do Postgres não faz pipeline de query/resposta numa `pg.Client` só), então N
+ * combinações sequenciais custam ~N rodadas; em lote custa 1, não importa quantas combinações tenham.
+ * Usada por `ajuste-estoque.ts` ao montar a prévia de vários grupos de erro de uma vez.
+ */
+export async function saldoRealAteDataEmLote(
+  c: pg.Client,
+  combos: { empresa: number; item: number; almoxarifado: number; data: string }[],
+): Promise<Map<string, number>> {
+  const mapa = new Map<string, number>();
+  if (!combos.length) return mapa;
+  const r = await c.query(
+    `SELECT v.empresa, v.item, v.almoxarifado, v.data::text AS data,
+            sp_obtem_saldo_item_qtde(v.empresa, v.item, v.almoxarifado, v.data, 'N') AS saldo
+       FROM UNNEST($1::int[], $2::int[], $3::int[], $4::date[]) AS v(empresa, item, almoxarifado, data)`,
+    [combos.map((x) => x.empresa), combos.map((x) => x.item), combos.map((x) => x.almoxarifado), combos.map((x) => x.data)],
+  );
+  for (const row of r.rows) {
+    mapa.set(`${row.empresa}|${row.item}|${row.almoxarifado}|${row.data}`, Number(row.saldo ?? 0));
+  }
+  return mapa;
+}

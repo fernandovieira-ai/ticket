@@ -91,6 +91,25 @@ export interface Departamento {
 }
 
 // ============================================================
+// SAAS — controle de liberação de clientes (ERP DigitalRF)
+// ============================================================
+export type SaasStatus = "ativo" | "suspenso" | "cancelado" | "trial";
+
+export interface SaasInstancia {
+  id: string;
+  slug: string;
+  database_name: string;
+  nome_cliente: string;
+  dominio: string | null;
+  plano: string;
+  status: SaasStatus;
+  token_api: string | null;
+  obs: string | null;
+  criado_em: Date;
+  atualizado_em: Date;
+}
+
+// ============================================================
 // USUÁRIO
 // ============================================================
 export interface Usuario {

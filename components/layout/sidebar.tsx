@@ -291,6 +291,11 @@ const MENU: MenuItem[] = [
         href: "/painel/configuracoes/permissoes",
         icon: <Shield size={13} />,
       },
+      {
+        label: "SaaS",
+        href: "/painel/configuracoes/saas",
+        icon: <Globe size={13} />,
+      },
     ],
   },
 ];

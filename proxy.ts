@@ -49,6 +49,7 @@ const PUBLIC_PATHS = [
   "/api/cron/monitorar-grupos",
   "/api/cron/agentes/varrer",
   "/api/cron/alertar-chamados-atrasados",
+  "/api/remoteassist/licencas/verificar",
 ];
 
 // Rotas exclusivas de admin/supervisor (configurações de sistema)

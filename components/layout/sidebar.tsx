@@ -296,6 +296,11 @@ const MENU: MenuItem[] = [
         href: "/painel/configuracoes/saas",
         icon: <Globe size={13} />,
       },
+      {
+        label: "Remote Assist",
+        href: "/painel/configuracoes/remoteassist",
+        icon: <Monitor size={13} />,
+      },
     ],
   },
 ];

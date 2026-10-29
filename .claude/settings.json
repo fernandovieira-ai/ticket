@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"c:\\\\Linx\\\\cliente\\\\digitalrf\\\\projeto\\\\digitalrf-help\"; $env:NODE_OPTIONS=\"--max-old-space-size=4096\"; npx next build)",
+      "Bash(git push origin master)",
+      "Bash(git push:*)"
+    ]
+  }
+}

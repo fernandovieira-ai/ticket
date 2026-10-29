@@ -110,6 +110,23 @@ export interface SaasInstancia {
 }
 
 // ============================================================
+// REMOTE ASSIST — controle de liberação das instalações
+// ============================================================
+export type RemoteAssistStatus = "pendente" | "ativo" | "suspenso" | "cancelado";
+
+export interface RemoteAssistLicenca {
+  id: string;
+  device_id: string;
+  nome_cliente: string | null;
+  status: RemoteAssistStatus;
+  vencimento: string | null;
+  obs: string | null;
+  ultimo_contato_em: Date | null;
+  criado_em: Date;
+  atualizado_em: Date;
+}
+
+// ============================================================
 // USUÁRIO
 // ============================================================
 export interface Usuario {

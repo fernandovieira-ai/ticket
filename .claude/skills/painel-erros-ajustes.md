@@ -3,7 +3,7 @@
 ## 📋 Visão Geral
 **Área:** Módulo Agentes IA (`agents/`, `app/painel/intranet/agentes/`, `app/api/agentes/`)
 **Status:** 🟢 CONSTRUÍDO (pagamento e estoque testados com dado real só-leitura; escrita testada em Postgres local descartável; nunca aplicado em produção)
-**Última atualização:** 29/09/2026
+**Última atualização:** 30/09/2026
 
 ## 🎯 Objetivo
 Documentar a arquitetura do Painel de Erros e dos "ajustes determinísticos" (pagamento, estoque) para
@@ -93,22 +93,36 @@ Todos os três chamam `investigarErro()` (`agents/core/investigar.ts`), que:
 
 ### Lições gravadas em `agente_conhecimento` (28/09/2026)
 Tabela é `empresa_id` + `cliente_id` (NULL = vale pra qualquer cliente da empresa) + `topico` + `resumo`
-(≤400 chars, texto puro ASCII — caracteres especiais tipo en-dash "–" quebram porque a coluna é gravada
-como LATIN1-safe via `latin1Safe()`). Duas lições específicas de EMSys3/estoque:
+(texto puro ASCII — caracteres especiais tipo en-dash "–" quebram porque a coluna é gravada como
+LATIN1-safe via `latin1Safe()`; sem limite de 400 chars de verdade — confirmado 30/09/2026, um resumo de
+quase 2900 chars gravou sem erro). Duas lições específicas de EMSys3/estoque:
 
 - `emsys3_saldo_item_estoque_sp_obtem_saldo`: usar `sp_obtem_saldo_item_qtde`/`sp_obtem_saldo_item_valor`
   pra saldo real, e o sinal correto (`tab_tipo_movimento_estoque.ind_tipo_movimento = 'E'` → +1, senão −1).
 - `emsys3_saldo_produto_loja_insert_entrada_inventario`: pra "Saldo insuficiente · Produto de loja"
   (nunca combustível), propor um INSERT em `tab_movimento_estoque` (tipo 2 = ENTRADA POR INVENTARIO na
   maioria dos casos) em vez de só relatar o problema.
-- `erro_pessoa_nao_cliente_emsys3` (reforçada 29/09/2026): erro "Pessoa não configurada como cliente(X)"
-  vem de `sp_int_gera_venda()` checando `tab_pessoa.ind_cliente='S'`. **Não propor só
+- `erro_pessoa_nao_cliente_emsys3` (reforçada 30/09/2026, 3ª vez): erro "Pessoa não configurada como
+  cliente(X)" vem de `sp_int_gera_venda()` checando `tab_pessoa.ind_cliente='S'`. **Não propor só
   `UPDATE tab_pessoa SET ind_cliente='S'`** — antes de concluir, SEMPRE checar também
   `tab_pessoa_cliente WHERE cod_pessoa=X` e `tab_pessoa_cliente_empresa WHERE cod_pessoa=X`: a tela de
   cadastro do EMSys3 que marca "Cliente" não mexe só no flag, também grava/depende de linhas nessas duas
   tabelas. Só é seguro propor apenas o UPDATE do flag se as 2 tabelas já tiverem linha pra essa pessoa
   (só faltava marcar o flag); se estiverem vazias, é preciso investigar o schema delas e um exemplo de
   cliente real já cadastrado antes de montar a correção completa (flag + INSERTs necessários).
+  **Extensão 30/09/2026 — caso também precise ser SACADO** (`ind_sacado='S'`, faturamento por sacado):
+  mesma lógica, checando `tab_pessoa_sacado WHERE cod_pessoa=X` e
+  `tab_pessoa_sacado_empresa WHERE cod_pessoa=X`. `tab_pessoa_sacado_empresa` tem várias colunas
+  `NOT NULL` sem default (ciclo de fechamento/vencimento de fatura por empresa — `ind_tipo_vencimento`,
+  `num_dia_fecha_fatura_1..5`, `num_dia_vencto_fatura_1..5`, etc.) que são config específica da empresa:
+  **nunca inventar esses valores, copiar de uma linha real já existente da MESMA empresa**
+  (`INSERT...SELECT` de um sacado exemplo trocando `cod_pessoa`). `cod_tipo_cobranca`/`cod_tipo_cobranca_cf`
+  vêm de `tab_parametro_sistema WHERE cod_parametro=425` (`des_parametro='Tipo de Cobrança Padrão'`) —
+  **nunca hardcodar**, o valor muda por cliente. Exemplo real confirmado: cliente Dunapetro,
+  `cod_pessoa=3031` — parâmetro 425=502, bate com o `cod_tipo_cobranca=502` usado nos sacados reais dessa
+  base; `tab_pessoa` (`ind_cliente='S'` e `ind_sacado='S'`), as 4 tabelas filhas (1 linha por empresa cada)
+  todas com dados completos — pessoa ajustada manualmente pelo operador como modelo de referência, usar
+  como exemplo de estrutura completa se precisar comparar.
 
 Essas lições valem pro pipeline de IA (Propostas/refinar/varredura). O ajuste de estoque **determinístico**
 (`ajuste-estoque.ts`) não depende delas — já tem a lógica embutida em código, sem IA.

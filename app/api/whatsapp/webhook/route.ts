@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
 import { gerarEmbedding } from "@/lib/ia";
-import { getEvolutionConfig } from "@/lib/whatsapp";
+import { getEvolutionConfig, notificarWhatsappRespostaCliente } from "@/lib/whatsapp";
 import type { PoolClient } from "pg";
+
+interface NotifRespostaCtx {
+  empresaId: string;
+  ticketId: string;
+  ticketNumero: string;
+  ticketTitulo: string;
+  operadorTelefone: string;
+  clienteNome: string | null;
+  mensagemTexto: string;
+}
 
 // Remove characters that cannot be represented in LATIN1 (code point > 255).
 // Necessary because the PostgreSQL instance uses LATIN1 encoding.
@@ -79,9 +89,15 @@ export async function POST(req: NextRequest) {
             msg as Record<string, unknown>,
           );
         } else {
+          let notifCtx: NotifRespostaCtx | null = null;
           await transaction(async (client) => {
-            await processarMensagemEntrada(instancia, msg, client);
+            notifCtx = await processarMensagemEntrada(instancia, msg, client);
           });
+          if (notifCtx) {
+            notificarWhatsappRespostaCliente(notifCtx).catch((err) =>
+              console.error("[webhook] Erro ao notificar operador sobre resposta cliente:", err),
+            );
+          }
         }
       }
       return NextResponse.json({ ok: true });
@@ -98,7 +114,7 @@ async function processarMensagemEntrada(
   instancia: { id: string; empresa_id: string },
   msg: Record<string, unknown>,
   client: PoolClient,
-) {
+): Promise<NotifRespostaCtx | null> {
   const q = <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
     client.query(sql, params).then((r) => r.rows as T[]);
   const q1 = async <T = Record<string, unknown>>(
@@ -108,11 +124,11 @@ async function processarMensagemEntrada(
 
   // Evolution message structure
   const key = msg.key as Record<string, unknown> | undefined;
-  if (!key || key.fromMe) return; // Ignore messages sent by us
+  if (!key || key.fromMe) return null; // Ignore messages sent by us
 
   const messageId = key.id as string;
   const remoteJid = key.remoteJid as string;
-  if (!remoteJid || remoteJid.endsWith("@g.us")) return; // Groups are handled by processarMensagemGrupo
+  if (!remoteJid || remoteJid.endsWith("@g.us")) return null; // Groups are handled by processarMensagemGrupo
 
   const numero = remoteJid.replace("@s.whatsapp.net", "").replace(/\D/g, "");
   const pushName = san((msg.pushName as string) ?? null);
@@ -125,7 +141,7 @@ async function processarMensagemEntrada(
     null;
   const texto = san(textoRaw);
 
-  if (!texto) return; // Only handle text messages for now
+  if (!texto) return null; // Only handle text messages for now
 
   // Find or create contato
   let contato = await q1<{ id: string; usuario_id: string | null }>(
@@ -164,7 +180,7 @@ async function processarMensagemEntrada(
     `SELECT id FROM whatsapp_mensagens WHERE message_id = $1 AND empresa_id = $2`,
     [messageId, instancia.empresa_id],
   );
-  if (existing) return;
+  if (existing) return null;
 
   // Get whatsapp_config to check if auto-ticket creation is enabled
   const config = await q1<{
@@ -177,35 +193,82 @@ async function processarMensagemEntrada(
     [instancia.empresa_id],
   );
 
-  // Find open ticket for this contact to add message to, or create new one
-  let ticketId: string | null = null;
+  // Find open ticket for this contact to add message to, or create new one.
+  // Primary: whatsapp canal tickets linked to this client.
+  // Secondary: any open ticket opened by this user (catches replies to overdue alerts).
+  type TicketRow = {
+    id: string;
+    numero: string;
+    titulo: string;
+    atribuido_a: string | null;
+    operador_telefone: string | null;
+    cliente_nome: string | null;
+  };
 
-  const ticketAberto = await q1<{ id: string; numero: string }>(
-    `SELECT t.id, t.numero
-     FROM tickets t
-     WHERE t.empresa_id = $1
-       AND t.canal = 'whatsapp'
-       AND t.cliente_id = $2
-       AND EXISTS (
-         SELECT 1 FROM ticket_status ts
-         WHERE ts.id = t.status_id AND ts.encerra = FALSE
-       )
-     ORDER BY t.criado_em DESC
-     LIMIT 1`,
-    [instancia.empresa_id, clienteId],
-  );
+  const ticketQuery = `
+    SELECT t.id, t.numero, t.titulo, t.atribuido_a,
+           u.telefone AS operador_telefone,
+           c.nome_razao AS cliente_nome
+    FROM tickets t
+    LEFT JOIN usuarios u ON u.id = t.atribuido_a
+    LEFT JOIN clientes  c ON c.id = t.cliente_id
+    WHERE t.empresa_id = $1
+      AND {FILTRO}
+      AND EXISTS (
+        SELECT 1 FROM ticket_status ts
+        WHERE ts.id = t.status_id AND ts.encerra = FALSE
+      )
+    ORDER BY t.criado_em DESC
+    LIMIT 1`;
+
+  let ticketAberto: TicketRow | null = null;
+  if (clienteId) {
+    ticketAberto = await q1<TicketRow>(
+      ticketQuery.replace("{FILTRO}", "t.canal = 'whatsapp' AND t.cliente_id = $2"),
+      [instancia.empresa_id, clienteId],
+    );
+  }
+  if (!ticketAberto && contato.usuario_id) {
+    ticketAberto = await q1<TicketRow>(
+      ticketQuery.replace("{FILTRO}", "t.aberto_por = $2"),
+      [instancia.empresa_id, contato.usuario_id],
+    );
+  }
+
+  let ticketId: string | null = null;
+  let notifCtx: NotifRespostaCtx | null = null;
 
   if (ticketAberto) {
     ticketId = ticketAberto.id;
-    // Add message to existing ticket
-    await q(
-      `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna, autor_id)
-       SELECT $1, $2, $3, FALSE, u.id
-       FROM usuarios u
-       WHERE u.empresa_id = $2 AND u.perfil = 'admin'
-       LIMIT 1`,
-      [ticketId, instancia.empresa_id, texto],
-    );
+    // Add message using the client's user ID when known, admin fallback otherwise
+    if (contato.usuario_id) {
+      await q(
+        `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna, autor_id) VALUES ($1, $2, $3, FALSE, $4)`,
+        [ticketId, instancia.empresa_id, texto, contato.usuario_id],
+      );
+    } else {
+      await q(
+        `INSERT INTO mensagens (ticket_id, empresa_id, corpo, interna, autor_id)
+         SELECT $1, $2, $3, FALSE, u.id
+         FROM usuarios u
+         WHERE u.empresa_id = $2 AND u.perfil = 'admin'
+         LIMIT 1`,
+        [ticketId, instancia.empresa_id, texto],
+      );
+    }
+
+    // Prepara contexto para notificar o operador fora da transação
+    if (ticketAberto.operador_telefone) {
+      notifCtx = {
+        empresaId: instancia.empresa_id,
+        ticketId: ticketAberto.id,
+        ticketNumero: ticketAberto.numero,
+        ticketTitulo: ticketAberto.titulo,
+        operadorTelefone: ticketAberto.operador_telefone,
+        clienteNome: ticketAberto.cliente_nome ?? pushName,
+        mensagemTexto: texto,
+      };
+    }
   } else if (config?.criar_ticket_auto) {
     // Create new ticket automatically
     const statusAberto = await q1<{ id: string }>(
@@ -265,6 +328,8 @@ async function processarMensagemEntrada(
      VALUES ($1, $2, $3, $4, 'entrada', 'texto', $5, 'recebida')`,
     [instancia.empresa_id, ticketId, contato.id, messageId, texto],
   );
+
+  return notifCtx;
 }
 
 // ------------------------------------------------------------

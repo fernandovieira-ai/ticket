@@ -67,6 +67,9 @@ ZAPI_TOKEN=
 ANTHROPIC_API_KEY=
 AI_MODEL=claude-sonnet-4-20250514
 AI_MAX_TOKENS=1024
+
+# Remote Assist DRF — segredo compartilhado com o relay (RemoteAssist.Relay --license-secret)
+REMOTEASSIST_RELAY_SECRET=
 ```
 
 ---
@@ -243,6 +246,18 @@ CREATE TABLE ia_logs (
 CREATE INDEX idx_ia_logs_ticket ON ia_logs(ticket_id);
 CREATE INDEX idx_ia_logs_empresa ON ia_logs(empresa_id, criado_em DESC);
 ```
+
+---
+
+## Módulo Remote Assist (controle de licença)
+
+Controla a liberação das instalações do produto **Remote Assist DRF** (acesso remoto Windows↔Windows, repositório `remotodrf`). Só a edição Cliente (quem recebe conexões num computador de cliente) exige licença; a edição completa (usada pelos técnicos) nunca é verificada.
+
+- Tabela: `remoteassist_licencas` (migração `database/migrations/add_remoteassist_licencas.sql`) — `device_id` (ID de 9 dígitos do app), `status` (`pendente`|`ativo`|`suspenso`|`cancelado`), `vencimento` (opcional), `ultimo_contato_em`.
+- `POST /api/remoteassist/licencas/verificar`: chamado pelo relay (`RemoteAssist.Relay`, não pelo browser) a cada registro de anfitrião e periodicamente enquanto online. Autenticado por `x-relay-secret` = `REMOTEASSIST_RELAY_SECRET` (sem sessão de usuário). Cria a licença como `pendente` no primeiro contato com um `device_id` novo.
+- CRUD administrativo (sessão + perfil admin): `GET/POST /api/remoteassist/licencas`, `GET/PATCH/DELETE /api/remoteassist/licencas/[id]`.
+- Painel: `Configurações > Remote Assist` (`app/painel/configuracoes/remoteassist`) — liberar/suspender, definir vencimento.
+- Se a digitalrf-help ficar fora do ar, o relay usa o último status conhecido (cache local) por algumas horas antes de negar.
 
 ---
 

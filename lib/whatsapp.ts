@@ -13,16 +13,14 @@ export interface EvolutionConfig {
 export async function generateWPPToken(
   baseUrl: string,
   secretKey: string,
-  session: string
+  session: string,
 ): Promise<string | null> {
   try {
     const res = await fetch(`${baseUrl}/api/${session}/${secretKey}/generate-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
-
     if (!res.ok) return null;
-
     const data = await res.json();
     return data.token ?? null;
   } catch {
@@ -70,10 +68,7 @@ export async function getEvolutionConfig(
 /**
  * Normaliza número de telefone para o formato esperado pela WPPConnect API.
  * Remove caracteres não-dígitos e adiciona o DDI 55 (Brasil) se ausente.
- *
- * **FORMATO WPPConnect:**
- * Retorna apenas os 13 dígitos (DDI + DDD + 9 + número).
- * WPPConnect NÃO requer '@lid' ou '@s.whatsapp.net' - ele adiciona automaticamente.
+ * WPPConnect NÃO requer '@s.whatsapp.net' — usa apenas os dígitos.
  *
  * Exemplos:
  *   "(34) 9 9193-1617"  → "5534991931617"
@@ -90,16 +85,15 @@ export function normalizarTelefone(tel: string): string {
     return digitos; // Ex: 5534991234567
   }
 
-  // 12 dígitos com DDI mas SEM o 9 → inserir 9 após DDD
+  // 12 dígitos com DDI → só insere 9 se o número (após DDD) não começa com 9
   if (digitos.length === 12 && digitos.startsWith("55")) {
     const ddd = digitos.substring(2, 4);
+    const num8 = digitos.substring(4);
 
-    // DDD 11 (SP): alguns fixos não usam 9
-    if (ddd === "11") {
-      return digitos; // Mantém 12 dígitos
+    if (ddd === "11" || num8.startsWith("9")) {
+      return digitos; // DDD 11 (SP) ou já tem 9 — mantém como está
     }
 
-    // Outros DDDs: inserir 9
     const corrigido = digitos.substring(0, 4) + "9" + digitos.substring(4);
     console.log('[WhatsApp] Número corrigido (inserido 9):', {
       original: tel,
@@ -114,11 +108,15 @@ export function normalizarTelefone(tel: string): string {
     return "55" + digitos; // Ex: 34991234567 → 5534991234567
   }
 
-  // 10 dígitos (DDD + número SEM 9) → adicionar DDI e 9
+  // 10 dígitos (DDD + número) → adicionar DDI; adiciona 9 apenas se número não começa com 9
   if (digitos.length === 10) {
     const ddd = digitos.substring(0, 2);
-    const numero = digitos.substring(2);
-    const corrigido = "55" + ddd + "9" + numero;
+    const numero8 = digitos.substring(2);
+    if (numero8.startsWith("9")) {
+      // Número já tem o 9 do formato pós-migração — só adiciona DDI
+      return "55" + digitos; // Ex: 6499826408 → 556499826408
+    }
+    const corrigido = "55" + ddd + "9" + numero8;
     console.log('[WhatsApp] Número corrigido (adicionado DDI + 9):', {
       original: tel,
       antes: digitos,
@@ -165,7 +163,7 @@ async function aguardarLimite(instancia: string): Promise<void> {
 }
 
 /**
- * Envia mensagem WhatsApp via Evolution API para um número,
+ * Envia mensagem WhatsApp via WPPConnect para um número,
  * respeita o rate limit e persiste o registro em whatsapp_mensagens.
  */
 async function enviarMensagem(
@@ -178,10 +176,9 @@ async function enviarMensagem(
     contatoId?: string | null;
     agenteId?: string | null;
   },
-): Promise<void> {
+): Promise<{ isSendFailure: boolean }> {
   await aguardarLimite(config.instance);
 
-  // ✅ VALIDAR NÚMERO ANTES DE ENVIAR
   if (numero.length < 12 || numero.length > 13) {
     console.error('[WhatsApp] ❌ Número com tamanho inválido:', {
       numero,
@@ -191,31 +188,28 @@ async function enviarMensagem(
     throw new Error(`Número inválido: ${numero} (tamanho: ${numero.length})`);
   }
 
-  // Gerar token temporário usando SECRET_KEY
   const token = await generateWPPToken(config.url, config.key, config.instance);
   if (!token) {
-    throw new Error('Não foi possível gerar token de autenticação WPPConnect');
+    throw new Error("Não foi possível gerar token de autenticação WPPConnect");
   }
 
-  // WPPConnect API - URL format: /api/{session}/send-message
   const apiUrl = `${config.url}/api/${config.instance}/send-message`;
   const resp = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,  // Token gerado dinamicamente
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      phone: numero,     // WPPConnect usa "phone" (13 dígitos sem @lid)
-      message: texto,    // WPPConnect usa "message"
-      isGroup: false
+      phone: numero,
+      message: texto,
+      isGroup: false,
     }),
   });
 
-  // ✅ VALIDAR RESPONSE HTTP
   if (!resp.ok) {
-    const errorText = await resp.text().catch(() => 'Sem resposta');
-    console.error('[WhatsApp] ❌ WPPConnect API erro HTTP:', {
+    const errorText = await resp.text().catch(() => "Sem resposta");
+    console.error("[WhatsApp] ❌ WPPConnect API erro HTTP:", {
       status: resp.status,
       statusText: resp.statusText,
       body: errorText.substring(0, 500),
@@ -224,34 +218,27 @@ async function enviarMensagem(
     throw new Error(`WPPConnect API HTTP ${resp.status}: ${resp.statusText}`);
   }
 
-  // ✅ PARSE JSON E VERIFICAR ERRO
   let messageId: string | null = null;
+  let isSendFailure = false;
   try {
     const json = (await resp.json()) as Record<string, unknown>;
-
-    // WPPConnect retorna {status: "success", response: [...]}
-    if (json.status === 'error' || json.error) {
-      console.error('[WhatsApp] ❌ WPPConnect API retornou erro:', {
-        response: json,
-        numero,
-      });
+    if (json.status === "error" || json.error) {
       throw new Error(`WPPConnect API error: ${JSON.stringify(json)}`);
     }
-
-    // Extrair message ID do primeiro item da resposta
     const responseArray = json.response as Array<Record<string, unknown>>;
-    messageId = responseArray?.[0]?.id as string ?? null;
+    const firstMsg = responseArray?.[0];
+    messageId = (firstMsg?.id as string) ?? null;
+    isSendFailure = (firstMsg?.isSendFailure as boolean) === true;
+    if (isSendFailure) {
+      console.warn("[WhatsApp] ⚠️  isSendFailure=true para:", numero);
+    }
   } catch (err) {
-    // Se já foi lançado acima, re-throw
-    if (err instanceof Error && err.message.includes('WPPConnect API error')) {
+    if (err instanceof Error && err.message.includes("WPPConnect API error")) {
       throw err;
     }
-    // Senão, API não retornou JSON válido — continua mesmo assim
-    console.warn('[WhatsApp] ⚠️  Response não é JSON válido (mensagem pode ter sido enviada)');
+    console.warn("[WhatsApp] ⚠️  Response não é JSON válido (mensagem pode ter sido enviada)");
   }
 
-  // Persiste no banco (fire-and-forget — não bloqueia em caso de falha)
-  // Sanitiza emojis/caracteres fora de LATIN1 antes de gravar
   const textoDb = sanitizarLatin1(texto);
   query(
     `INSERT INTO whatsapp_mensagens
@@ -268,6 +255,8 @@ async function enviarMensagem(
   ).catch((err) =>
     console.error("[WhatsApp] Falha ao salvar mensagem enviada:", err),
   );
+
+  return { isSendFailure };
 }
 
 /** Verifica se as colunas extras existem na tabela whatsapp_contatos */
@@ -442,6 +431,266 @@ export async function notificarWhatsappNovoTicket(params: {
   }
 }
 
+export interface ResultadoAlertaAtraso {
+  empresa_id: string;
+  tickets_atrasados: number;
+  tickets_filtrados_operador_ativo: number;
+  alertas_enviados: number;
+  alertas_falhos: number;
+  sem_telefone: number;
+  alertas_cliente_enviados: number;
+  alertas_cliente_falhos: number;
+}
+
+/**
+ * Busca e alerta (via WhatsApp) os operadores responsáveis por chamados
+ * com prazo de resolução vencido e ainda não fechados.
+ *
+ * Anti-spam: só reenvia se o último alerta foi há mais de 2 horas.
+ * Requer coluna `ultimo_alerta_atraso_em` na tabela tickets (migration v1.14).
+ */
+export async function notificarWhatsappChamadosAtrasados(
+  empresaId: string,
+): Promise<ResultadoAlertaAtraso> {
+  const resultado: ResultadoAlertaAtraso = {
+    empresa_id: empresaId,
+    tickets_atrasados: 0,
+    tickets_filtrados_operador_ativo: 0,
+    alertas_enviados: 0,
+    alertas_falhos: 0,
+    sem_telefone: 0,
+    alertas_cliente_enviados: 0,
+    alertas_cliente_falhos: 0,
+  };
+
+  try {
+    const config = await getEvolutionConfig(empresaId);
+    if (!config) {
+      console.warn("[WhatsApp-Atraso] Config WPPConnect não encontrada para empresa %s", empresaId);
+      return resultado;
+    }
+
+    // Tickets vencidos, abertos, atribuídos a um operador com telefone cadastrado.
+    // Anti-spam: último alerta há mais de 2h ou nunca alertado.
+    // Opção B: ignora chamado se o operador respondeu (mensagem pública) nas últimas 8h.
+    const ticketsAtrasados = await query<{
+      id: string;
+      numero: string;
+      titulo: string;
+      prioridade_nome: string;
+      sla_resolucao_deadline: Date;
+      operador_id: string;
+      operador_nome: string;
+      operador_telefone: string | null;
+      cliente_nome: string | null;
+      cliente_usuario_id: string | null;
+      cliente_usuario_nome: string | null;
+      cliente_usuario_telefone: string | null;
+    }>(
+      `SELECT
+         t.id, t.numero, t.titulo,
+         tp.nome AS prioridade_nome,
+         t.sla_resolucao_deadline,
+         u.id  AS operador_id, u.nome AS operador_nome, u.telefone AS operador_telefone,
+         c.nome_razao AS cliente_nome,
+         ub.id        AS cliente_usuario_id,
+         ub.nome      AS cliente_usuario_nome,
+         ub.telefone  AS cliente_usuario_telefone
+       FROM tickets t
+       JOIN ticket_status     ts ON ts.id = t.status_id
+       JOIN ticket_prioridades tp ON tp.id = t.prioridade_id
+       JOIN usuarios           u  ON u.id  = t.atribuido_a
+       LEFT JOIN clientes      c  ON c.id  = t.cliente_id
+       LEFT JOIN usuarios      ub ON ub.id = t.aberto_por
+       WHERE t.empresa_id = $1
+         AND ts.encerra  = FALSE
+         AND t.fechado_em IS NULL
+         AND t.sla_resolucao_deadline IS NOT NULL
+         AND t.sla_resolucao_deadline < NOW()
+         AND (
+           t.ultimo_alerta_atraso_em IS NULL
+           OR t.ultimo_alerta_atraso_em < NOW() - INTERVAL '2 hours'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM mensagens m
+           WHERE m.ticket_id = t.id
+             AND m.autor_id  = t.atribuido_a
+             AND m.interna   = FALSE
+             AND m.criado_em > NOW() - INTERVAL '8 hours'
+         )
+       ORDER BY t.sla_resolucao_deadline ASC`,
+      [empresaId],
+    );
+
+    resultado.tickets_atrasados = ticketsAtrasados.length;
+
+    if (ticketsAtrasados.length === 0) {
+      console.log("[WhatsApp-Atraso] Nenhum chamado atrasado para empresa %s", empresaId);
+      return resultado;
+    }
+
+    console.log(
+      "[WhatsApp-Atraso] empresa=%s chamados_a_alertar=%d",
+      empresaId,
+      ticketsAtrasados.length,
+    );
+
+    for (const ticket of ticketsAtrasados) {
+      if (!ticket.operador_telefone) {
+        resultado.sem_telefone++;
+        console.warn(
+          "[WhatsApp-Atraso] Operador %s sem telefone (ticket #%s)",
+          ticket.operador_nome,
+          ticket.numero,
+        );
+        continue;
+      }
+
+      // Calcula quanto tempo está atrasado
+      const atrasoMs = Date.now() - new Date(ticket.sla_resolucao_deadline).getTime();
+      const atrasoHoras = Math.floor(atrasoMs / (1000 * 60 * 60));
+      const atrasoMinutos = Math.floor((atrasoMs % (1000 * 60 * 60)) / (1000 * 60));
+      const atrasoTexto =
+        atrasoHoras > 0
+          ? `${atrasoHoras}h${atrasoMinutos > 0 ? ` ${atrasoMinutos}min` : ""}`
+          : `${atrasoMinutos}min`;
+
+      const prazoTexto = new Date(Date.now() + 3 * 60 * 60 * 1000).toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // --- NOTIFICAÇÃO AO CLIENTE (aberto_por) ---
+      // Aviso extra a incluir na mensagem do operador caso o cliente não possa ser notificado
+      let avisoNumeroCliente = "";
+
+      const clienteEhDiferenteDoOperador =
+        ticket.cliente_usuario_id && ticket.cliente_usuario_id !== ticket.operador_id;
+
+      if (clienteEhDiferenteDoOperador) {
+        if (!ticket.cliente_usuario_telefone) {
+          avisoNumeroCliente =
+            `\n\n⚠️ O cliente "${ticket.cliente_usuario_nome}" não possui telefone cadastrado.` +
+            ` Adicione o contato no chamado #${ticket.numero} para que ele possa ser notificado.`;
+          resultado.alertas_cliente_falhos++;
+        } else {
+          try {
+            const numCliente = normalizarTelefone(ticket.cliente_usuario_telefone);
+            const textoCliente =
+              `📋 Chamado #${ticket.numero} — Aguardando retorno\n` +
+              `\nOlá, ${ticket.cliente_usuario_nome}!\n` +
+              `\nSeu chamado "${ticket.titulo}" está pendente de atualização pela nossa equipe.\n` +
+              `\nCaso você já tenha mais informações ou precise de urgência, responda esta mensagem e nossa equipe será notificada.\n` +
+              `\nDigitalRF`;
+
+            const resCliente = await enviarMensagem(config, numCliente, textoCliente, {
+              empresaId,
+              ticketId: ticket.id,
+              contatoId: null,
+              agenteId: null,
+            });
+
+            if (resCliente.isSendFailure) {
+              resultado.alertas_cliente_falhos++;
+              avisoNumeroCliente =
+                `\n\n⚠️ Número do cliente parece inválido ou sem WhatsApp ativo.` +
+                ` Atualize o telefone de "${ticket.cliente_usuario_nome}" no chamado #${ticket.numero}.`;
+              console.warn(
+                "[WhatsApp-Atraso] ⚠️  isSendFailure cliente ticket=#%s tel=%s",
+                ticket.numero,
+                ticket.cliente_usuario_telefone,
+              );
+            } else {
+              resultado.alertas_cliente_enviados++;
+              console.log(
+                "[WhatsApp-Atraso] ✅ Cliente notificado ticket=#%s numero=%s",
+                ticket.numero,
+                numCliente,
+              );
+            }
+
+            // Pequena pausa entre envio ao cliente e ao operador
+            await new Promise((r) => setTimeout(r, 1500));
+          } catch (err) {
+            resultado.alertas_cliente_falhos++;
+            avisoNumeroCliente =
+              `\n\n⚠️ Falha ao contatar o cliente "${ticket.cliente_usuario_nome}".` +
+              ` Verifique o número cadastrado no chamado #${ticket.numero}.`;
+            console.error(
+              "[WhatsApp-Atraso] ❌ Erro ao notificar cliente ticket=#%s: %s",
+              ticket.numero,
+              err,
+            );
+          }
+        }
+      }
+
+      // --- NOTIFICAÇÃO AO OPERADOR ---
+      const texto =
+        `⚠️ Chamado em atraso\n` +
+        `\nNúmero: #${ticket.numero}` +
+        `\nTítulo: ${ticket.titulo}` +
+        `\nPrioridade: ${ticket.prioridade_nome}` +
+        (ticket.cliente_nome ? `\nCliente: ${ticket.cliente_nome}` : "") +
+        `\nTempo em atraso: ${atrasoTexto}` +
+        `\n\nSolicitamos atuação neste chamado. Atualize o andamento, realize a resolução ou registre o motivo do impedimento.` +
+        `\n\nPrazo para atualização: ${prazoTexto}` +
+        avisoNumeroCliente +
+        `\n\nDigitalRF`;
+
+      try {
+        const numeroNormalizado = normalizarTelefone(ticket.operador_telefone);
+
+        // Busca contato cadastrado para registrar mensagem corretamente
+        const contato = await queryOne<{ id: string }>(
+          `SELECT id FROM whatsapp_contatos WHERE empresa_id = $1 AND numero = $2`,
+          [empresaId, numeroNormalizado],
+        );
+
+        await enviarMensagem(config, numeroNormalizado, texto, {
+          empresaId,
+          ticketId: ticket.id,
+          contatoId: contato?.id ?? null,
+          agenteId: null,
+        });
+
+        // Atualiza timestamp do último alerta para controle anti-spam
+        await query(
+          `UPDATE tickets SET ultimo_alerta_atraso_em = NOW() WHERE id = $1`,
+          [ticket.id],
+        );
+
+        resultado.alertas_enviados++;
+        console.log(
+          "[WhatsApp-Atraso] ✅ Alerta enviado ticket=#%s operador=%s numero=%s",
+          ticket.numero,
+          ticket.operador_nome,
+          numeroNormalizado,
+        );
+      } catch (err) {
+        resultado.alertas_falhos++;
+        console.error(
+          "[WhatsApp-Atraso] ❌ Falha ao alertar ticket=#%s operador=%s: %s",
+          ticket.numero,
+          ticket.operador_nome,
+          err,
+        );
+      }
+
+      // Pausa entre tickets para não sobrecarregar a instância WhatsApp
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  } catch (err) {
+    console.error("[WhatsApp-Atraso] Erro crítico empresa=%s:", empresaId, err);
+  }
+
+  return resultado;
+}
+
 /**
  * Notifica via WhatsApp o atendente que recebeu a transferência de um chamado.
  * Usa o telefone cadastrado no usuário (campo telefone da tabela usuarios).
@@ -494,5 +743,57 @@ export async function notificarWhatsappTransferencia(params: {
     console.log("[WhatsApp] Transferência notificada para", numeroNormalizado);
   } catch (err) {
     console.error("[WhatsApp] Erro na notificação de transferência:", err);
+  }
+}
+
+/**
+ * Notifica via WhatsApp o operador responsável quando um cliente responde
+ * numa conversa vinculada a um chamado.
+ */
+export async function notificarWhatsappRespostaCliente(params: {
+  empresaId: string;
+  ticketId: string;
+  ticketNumero: string;
+  ticketTitulo: string;
+  operadorTelefone: string;
+  clienteNome: string | null;
+  mensagemTexto: string;
+}): Promise<void> {
+  try {
+    const config = await getEvolutionConfig(params.empresaId);
+    if (!config) return;
+
+    const numeroNormalizado = normalizarTelefone(params.operadorTelefone);
+
+    const textoMsg =
+      params.mensagemTexto.length > 300
+        ? params.mensagemTexto.substring(0, 297) + "..."
+        : params.mensagemTexto;
+
+    const texto =
+      `💬 Resposta do cliente no chamado\n` +
+      `\nNúmero: #${params.ticketNumero}` +
+      `\nTítulo: ${params.ticketTitulo}` +
+      (params.clienteNome ? `\nCliente: ${params.clienteNome}` : "") +
+      `\n\n"${textoMsg}"\n\nDigitalRF`;
+
+    const contato = await queryOne<{ id: string }>(
+      `SELECT id FROM whatsapp_contatos WHERE empresa_id = $1 AND numero = $2`,
+      [params.empresaId, numeroNormalizado],
+    );
+
+    await enviarMensagem(config, numeroNormalizado, texto, {
+      empresaId: params.empresaId,
+      ticketId: params.ticketId,
+      contatoId: contato?.id ?? null,
+      agenteId: null,
+    });
+
+    console.log(
+      "[WhatsApp] ✅ Operador notificado resposta cliente ticket=#%s",
+      params.ticketNumero,
+    );
+  } catch (err) {
+    console.error("[WhatsApp] ❌ Erro ao notificar operador sobre resposta cliente:", err);
   }
 }

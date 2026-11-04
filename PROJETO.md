@@ -260,10 +260,11 @@ Controla a liberação das instalações do produto **Remote Assist DRF** (acess
 - Se a digitalrf-help ficar fora do ar, o relay usa o último status conhecido (cache local) por algumas horas antes de negar.
 
 **Favoritos compartilhados** (sincronização de ID+senha salvos entre máquinas do mesmo usuário):
-- Tabela: `remoteassist_favoritos` (migração `database/migrations/add_remoteassist_favoritos.sql`) — `device_id` (único), `senha`, `apelido`, `seq` (bigint crescente via sequence, usado para sync incremental), `removido` (soft delete).
+- Tabela: `remoteassist_favoritos` (migrações `add_remoteassist_favoritos.sql` + `add_remoteassist_favoritos_grupos.sql`) — `device_id` (único), `senha`, `apelido`, `grupo` (texto livre, nome do grupo), `seq` (bigint crescente via sequence, usado para sync incremental), `removido` (soft delete).
 - `GET /api/remoteassist/favoritos?since=<seq>&limit=<n>`: devolve `{items, nextCursor, hasMore}` com as linhas com `seq > since` (inclui `removido=true`, pra cliente aplicar a remoção local).
-- `PUT /api/remoteassist/favoritos`: body `{device_id, senha, apelido, removido}`, upsert por `device_id`, sempre gera `seq` novo (insert e update), devolve a linha gravada.
-- Mesma autenticação por `x-relay-secret` (sem sessão, não é rota de admin) — endpoint usado pelo app (edição completa), não pelo relay.
+- `PUT /api/remoteassist/favoritos`: body `{device_id, senha, apelido, grupo, removido}`, upsert por `device_id`, sempre gera `seq` novo (insert e update), devolve a linha gravada.
+- Tabela `remoteassist_favoritos_grupos` — catálogo dos grupos (`nome` único, `seq`, `removido`), com mesma sincronização incremental: `GET /api/remoteassist/favoritos/grupos?since=<seq>&limit=<n>` e `PUT /api/remoteassist/favoritos/grupos` (body `{nome, removido}`, upsert por `nome`).
+- Mesma autenticação por `x-relay-secret` (sem sessão, não é rota de admin) — endpoints usados pelo app (edição completa), não pelo relay.
 
 ---
 

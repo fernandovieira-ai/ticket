@@ -16,6 +16,7 @@ interface Row {
   device_id: string;
   senha: string | null;
   apelido: string | null;
+  grupo: string | null;
   seq: string;
   removido: boolean;
   criado_em: Date;
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = await query<Row>(
-      `SELECT id, device_id, senha, apelido, seq::text AS seq, removido, criado_em, atualizado_em
+      `SELECT id, device_id, senha, apelido, grupo, seq::text AS seq, removido, criado_em, atualizado_em
        FROM remoteassist_favoritos
        WHERE seq > $1
        ORDER BY seq ASC
@@ -70,6 +71,7 @@ const putSchema = z.object({
   device_id: z.string().trim().regex(/^\d{9}$/, "ID deve ter 9 dígitos"),
   senha: z.string().max(500).nullable().optional(),
   apelido: z.string().trim().max(200).nullable().optional(),
+  grupo: z.string().trim().max(200).nullable().optional(),
   removido: z.boolean().optional().default(false),
 });
 
@@ -89,20 +91,21 @@ export async function PUT(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Dados inválidos", detalhes: parsed.error.flatten() }, { status: 400 });
   }
-  const { device_id, senha, apelido, removido } = parsed.data;
+  const { device_id, senha, apelido, grupo, removido } = parsed.data;
 
   try {
     const row = await queryOne<Row>(
-      `INSERT INTO remoteassist_favoritos (device_id, senha, apelido, removido, seq)
-       VALUES ($1, $2, $3, $4, nextval('remoteassist_favoritos_seq'))
+      `INSERT INTO remoteassist_favoritos (device_id, senha, apelido, grupo, removido, seq)
+       VALUES ($1, $2, $3, $4, $5, nextval('remoteassist_favoritos_seq'))
        ON CONFLICT (device_id) DO UPDATE SET
          senha = EXCLUDED.senha,
          apelido = EXCLUDED.apelido,
+         grupo = EXCLUDED.grupo,
          removido = EXCLUDED.removido,
          seq = nextval('remoteassist_favoritos_seq'),
          atualizado_em = NOW()
-       RETURNING id, device_id, senha, apelido, seq::text AS seq, removido, criado_em, atualizado_em`,
-      [device_id, senha ?? null, apelido ?? null, removido],
+       RETURNING id, device_id, senha, apelido, grupo, seq::text AS seq, removido, criado_em, atualizado_em`,
+      [device_id, senha ?? null, apelido ?? null, grupo ?? null, removido],
     );
 
     return NextResponse.json(row);

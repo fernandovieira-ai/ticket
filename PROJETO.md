@@ -261,9 +261,10 @@ Controla a liberação das instalações do produto **Remote Assist DRF** (acess
 
 **Favoritos compartilhados** (sincronização de ID+senha salvos entre máquinas do mesmo usuário):
 - Tabela: `remoteassist_favoritos` (migrações `add_remoteassist_favoritos.sql` + `add_remoteassist_favoritos_grupos.sql`) — `device_id` (único), `senha`, `apelido`, `grupo` (texto livre, nome do grupo), `seq` (bigint crescente via sequence, usado para sync incremental), `removido` (soft delete).
-- `GET /api/remoteassist/favoritos?since=<seq>&limit=<n>`: devolve `{items, nextCursor, hasMore}` com as linhas com `seq > since` (inclui `removido=true`, pra cliente aplicar a remoção local).
-- `PUT /api/remoteassist/favoritos`: body `{device_id, senha, apelido, grupo, removido}`, upsert por `device_id`, sempre gera `seq` novo (insert e update), devolve a linha gravada.
-- Tabela `remoteassist_favoritos_grupos` — catálogo dos grupos (`nome` único, `seq`, `removido`), com mesma sincronização incremental: `GET /api/remoteassist/favoritos/grupos?since=<seq>&limit=<n>` e `PUT /api/remoteassist/favoritos/grupos` (body `{nome, removido}`, upsert por `nome`).
+- `GET /api/remoteassist/favoritos?since=<seq>&limit=<n>` (limite padrão 20, máximo 50): devolve `{items, nextCursor, hasMore}` com as linhas com `seq > since` (inclui `removido=true`, pra cliente aplicar a remoção local). `seq`/`nextCursor` vêm como **número** no JSON (não string), por contrato com o cliente C#.
+- `PUT /api/remoteassist/favoritos`: body `{device_id, senha, apelido, grupo, removido}`, upsert por `device_id`, sempre gera `seq` novo (insert e update); string vazia em `senha`/`apelido`/`grupo` é normalizada para `null`. Devolve `{device_id, senha, apelido, grupo, seq, removido}` (sem `id`/timestamps).
+- Tabela `remoteassist_favoritos_grupos` — catálogo dos grupos (`nome` único, `seq`, `removido`), com mesma sincronização incremental e mesmo contrato: `GET /api/remoteassist/favoritos/grupos?since=<seq>&limit=<n>` e `PUT /api/remoteassist/favoritos/grupos` (body `{nome, removido}`, upsert por `nome`).
+- Contrato completo (shape, tipos, paginação) em `SPEC-FAVORITOS-COMPARTILHADOS.md` no projeto `remotodrf`.
 - Mesma autenticação por `x-relay-secret` (sem sessão, não é rota de admin) — endpoints usados pelo app (edição completa), não pelo relay.
 
 ---

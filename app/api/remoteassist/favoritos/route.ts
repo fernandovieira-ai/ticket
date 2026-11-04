@@ -2,25 +2,34 @@
 // máquinas do mesmo usuário. Chamado pelo app (edição completa), não pelo relay.
 // Não usa sessão de usuário: autentica por segredo compartilhado.
 // Header: x-relay-secret=<REMOTEASSIST_RELAY_SECRET>
+// Contrato (shape da resposta, tipos, limites) definido em SPEC-FAVORITOS-COMPARTILHADOS.md
+// (projeto remotodrf) — mantido em sincronia com o cliente C#.
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { query, queryOne } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_LIMIT = 500;
-const MAX_LIMIT = 2000;
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 50;
 
 interface Row {
-  id: string;
   device_id: string;
   senha: string | null;
   apelido: string | null;
   grupo: string | null;
   seq: string;
   removido: boolean;
-  criado_em: Date;
-  atualizado_em: Date;
+}
+
+function serialize(row: Row) {
+  return {
+    device_id: row.device_id,
+    senha: row.senha,
+    apelido: row.apelido,
+    grupo: row.grupo,
+    seq: Number(row.seq),
+    removido: row.removido,
+  };
 }
 
 function authorized(req: NextRequest): boolean {
@@ -28,75 +37,73 @@ function authorized(req: NextRequest): boolean {
   return !!secret && !!process.env.REMOTEASSIST_RELAY_SECRET && secret === process.env.REMOTEASSIST_RELAY_SECRET;
 }
 
-const querySchema = z.object({
-  since: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
-});
+function unauthorized() {
+  return NextResponse.json({ error: "não autorizado" }, { status: 401 });
+}
 
+/** GET /api/remoteassist/favoritos?since=<seq>&limit=<n> — página de mudanças desde o cursor. */
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!authorized(req)) return unauthorized();
+
+  const { searchParams } = req.nextUrl;
+  const since = Number(searchParams.get("since") ?? "0");
+  const limitParam = Number(searchParams.get("limit") ?? String(DEFAULT_LIMIT));
+
+  if (!Number.isFinite(since) || since < 0) {
+    return NextResponse.json({ error: "since inválido" }, { status: 400 });
   }
 
-  const parsed = querySchema.safeParse({
-    since: req.nextUrl.searchParams.get("since") ?? undefined,
-    limit: req.nextUrl.searchParams.get("limit") ?? undefined,
-  });
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Parâmetros inválidos" }, { status: 400 });
-  }
-  const { since, limit } = parsed.data;
+  const limit = Math.min(Math.max(Number.isFinite(limitParam) ? Math.trunc(limitParam) : DEFAULT_LIMIT, 1), MAX_LIMIT);
 
   try {
+    // Pede um a mais do que o limite só pra saber se existe próxima página, sem contar linhas à parte.
     const rows = await query<Row>(
-      `SELECT id, device_id, senha, apelido, grupo, seq::text AS seq, removido, criado_em, atualizado_em
+      `SELECT device_id, senha, apelido, grupo, seq::text AS seq, removido
        FROM remoteassist_favoritos
        WHERE seq > $1
        ORDER BY seq ASC
        LIMIT $2`,
-      [since, limit],
+      [since, limit + 1],
     );
 
-    const hasMore = rows.length === limit;
-    const nextCursor = rows.length > 0 ? rows[rows.length - 1].seq : String(since);
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = page.length > 0 ? Number(page[page.length - 1].seq) : since;
 
-    return NextResponse.json({ items: rows, nextCursor, hasMore });
+    return NextResponse.json({ items: page.map(serialize), nextCursor, hasMore });
   } catch (err) {
     console.error("[GET /api/remoteassist/favoritos]", err);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    return NextResponse.json({ error: "erro interno" }, { status: 500 });
   }
 }
 
-const putSchema = z.object({
-  device_id: z.string().trim().regex(/^\d{9}$/, "ID deve ter 9 dígitos"),
-  senha: z.string().max(500).nullable().optional(),
-  apelido: z.string().trim().max(200).nullable().optional(),
-  grupo: z.string().trim().max(200).nullable().optional(),
-  removido: z.boolean().optional().default(false),
-});
-
+/** PUT /api/remoteassist/favoritos — upsert por device_id, sempre gera um seq novo. */
 export async function PUT(req: NextRequest) {
-  if (!authorized(req)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+  if (!authorized(req)) return unauthorized();
 
-  let body: unknown;
+  let body: { device_id?: unknown; senha?: unknown; apelido?: unknown; grupo?: unknown; removido?: unknown };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Body inválido" }, { status: 400 });
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const parsed = putSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Dados inválidos", detalhes: parsed.error.flatten() }, { status: 400 });
+  const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : "";
+  if (!/^\d{9}$/.test(deviceId)) {
+    return NextResponse.json({ error: "device_id precisa ter exatamente 9 dígitos" }, { status: 400 });
   }
-  const { device_id, senha, apelido, grupo, removido } = parsed.data;
+
+  const senha = typeof body.senha === "string" && body.senha.length > 0 ? body.senha : null;
+  const apelido = typeof body.apelido === "string" && body.apelido.length > 0 ? body.apelido.slice(0, 200) : null;
+  const grupo = typeof body.grupo === "string" && body.grupo.length > 0 ? body.grupo.slice(0, 200) : null;
+  const removido = body.removido === true;
 
   try {
+    // ON CONFLICT faz o upsert atômico: mesmo com vários técnicos salvando ao mesmo tempo, não há
+    // condição de corrida entre o insert e o update, e o seq novo sempre vem de nextval() (atômico).
     const row = await queryOne<Row>(
-      `INSERT INTO remoteassist_favoritos (device_id, senha, apelido, grupo, removido, seq)
-       VALUES ($1, $2, $3, $4, $5, nextval('remoteassist_favoritos_seq'))
+      `INSERT INTO remoteassist_favoritos (device_id, senha, apelido, grupo, seq, removido)
+       VALUES ($1, $2, $3, $4, nextval('remoteassist_favoritos_seq'), $5)
        ON CONFLICT (device_id) DO UPDATE SET
          senha = EXCLUDED.senha,
          apelido = EXCLUDED.apelido,
@@ -104,13 +111,13 @@ export async function PUT(req: NextRequest) {
          removido = EXCLUDED.removido,
          seq = nextval('remoteassist_favoritos_seq'),
          atualizado_em = NOW()
-       RETURNING id, device_id, senha, apelido, grupo, seq::text AS seq, removido, criado_em, atualizado_em`,
-      [device_id, senha ?? null, apelido ?? null, grupo ?? null, removido],
+       RETURNING device_id, senha, apelido, grupo, seq::text AS seq, removido`,
+      [deviceId, senha, apelido, grupo, removido],
     );
 
-    return NextResponse.json(row);
+    return NextResponse.json(serialize(row!));
   } catch (err) {
     console.error("[PUT /api/remoteassist/favoritos]", err);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    return NextResponse.json({ error: "erro interno" }, { status: 500 });
   }
 }
